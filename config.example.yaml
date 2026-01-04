@@ -1,0 +1,53 @@
+# ASM Tool Configuration
+# Copy this file to config.yaml and customize
+
+# Domains to monitor
+domains:
+  - crewai.com
+
+# Notification settings
+notifications:
+  slack:
+    enabled: false
+    webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  
+  email:
+    enabled: false
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    from_addr: "alerts@yourdomain.com"
+    to_addr: "security@yourdomain.com"
+
+# Scanning configuration
+scanning:
+  # Common ports to scan
+  ports: "21,22,23,25,53,80,110,143,443,445,993,995,3306,3389,5432,5900,8080,8443,8888,9000,9443"
+  
+  # Nuclei severity filter
+  nuclei_severity: "medium,high,critical"
+  
+  # Use only passive reconnaissance (no active scanning)
+  passive_only: false
+  
+  # Rate limit for scans (requests per second)
+  rate_limit: 100
+
+# External API integrations (optional)
+shodan:
+  enabled: false
+  api_key: ""
+
+censys:
+  api_id: ""
+  api_secret: ""
+
+virustotal:
+  api_key: ""
+
+# Scheduling (cron expressions)
+schedule:
+  # Full scan daily at 6 AM
+  full_scan: "0 6 * * *"
+  
+  # Certificate check every 6 hours
+  cert_check: "0 */6 * * *"
