@@ -7,8 +7,8 @@ by ensuring user inputs conform to expected patterns.
 
 import re
 import shlex
+from pathlib import Path
 from typing import List, Optional, Union
-import ipaddress
 
 
 class ValidationError(Exception):
@@ -37,12 +37,6 @@ def validate_domain(domain: str) -> str:
         raise ValidationError("Domain too long (max 253 characters)")
 
     domain = domain.strip()
-
-    pattern = re.compile(
-        r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$|"
-        r"^(?:\d{1,3}\.){3}\d{1,3}$|"
-        r"^\[[0-9a-fA-F:]+\]$"
-    )
 
     domain_patterns = [
         re.compile(
@@ -236,7 +230,66 @@ def validate_file_path(file_path: str, allowed_dirs: Optional[List[str]] = None)
     return normalized_path
 
 
-from pathlib import Path
+def validate_output_path(output_path: str, base_dir: str = "/app") -> str:
+    """
+    Validate output path to ensure it's within expected directory.
+
+    Args:
+        output_path: Output path to validate
+        base_dir: Base directory that should contain output files
+
+    Returns:
+        The validated, normalized absolute path within base_dir
+
+    Raises:
+        ValidationError: If path is outside base directory
+    """
+    # Security: Reject dangerous patterns that can't be validated by relative_to()
+    # These patterns could be interpreted by shell or filesystem
+    dangerous_patterns = [
+        "~",  # Home directory traversal
+        "${",  # Unix environment variables
+        "%",  # Windows environment variables
+        "\x00",  # Null byte injection
+        "..",  # Parent directory (any variant or encoding)
+    ]
+
+    for pattern in dangerous_patterns:
+        if pattern in output_path:
+            raise ValidationError(f"Path traversal or injection detected: {pattern}")
+
+    # Handle both absolute and relative paths
+    output = Path(output_path)
+
+    # If path is relative, resolve it relative to base_dir
+    # If path is absolute, validate it's within base_dir
+    if output.is_absolute():
+        # Absolute path - validate it's within base_dir
+        resolved_path = output.resolve()
+        resolved_base = Path(base_dir).resolve()
+
+        # Security: Use relative_to() which raises ValueError if outside base
+        try:
+            resolved_path.relative_to(resolved_base)
+        except ValueError:
+            raise ValidationError(f"Output must be within {base_dir} directory")
+
+        return str(resolved_path)
+    else:
+        # Relative path - safely resolve it within base_dir
+        # Security: Join with base_dir first to prevent traversal
+        validated_path = (Path(base_dir) / output).resolve()
+
+        # Final safety check: ensure resolved path is within base_dir
+        resolved_base = Path(base_dir).resolve()
+        try:
+            validated_path.relative_to(resolved_base)
+        except ValueError:
+            raise ValidationError(
+                f"Path traversal detected: output must be within {base_dir} directory"
+            )
+
+        return str(validated_path)
 
 
 def is_safe_input(input_str: str) -> bool:

@@ -4,11 +4,9 @@ Discovers historical URLs from Wayback Machine, Common Crawl, and other sources.
 """
 
 import subprocess
-import json
 import re
 from typing import Set, List, Dict, Optional
 from urllib.parse import urlparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ..core.config import Config
 from ..core.validation import validate_domain
@@ -135,7 +133,7 @@ class URLEnumerator:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=600,  # 10 minute timeout
+                timeout=self.config.timeout_gau,
             )
 
             urls = set()
@@ -148,7 +146,8 @@ class URLEnumerator:
 
         except FileNotFoundError:
             print(
-                "  [!] gau not found. Please install: go install github.com/lc/gau/v2/cmd/gau@latest"
+                "  [!] gau not found. Please install: "
+                "go install github.com/lc/gau/v2/cmd/gau@latest"
             )
             return set()
         except subprocess.TimeoutExpired:

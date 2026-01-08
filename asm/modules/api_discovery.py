@@ -6,9 +6,9 @@ Discovers OpenAPI/Swagger specs, GraphQL endpoints, and API documentation.
 import requests
 import json
 import re
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 from ..core.config import Config
 from ..constants.api_paths import (
@@ -17,6 +17,7 @@ from ..constants.api_paths import (
     GRAPHQL_PATHS,
     API_DOC_PATHS,
     COMMON_API_PATHS,
+    GRAPHQL_INTROSPECTION_QUERY,
 )
 
 
@@ -25,7 +26,6 @@ class APIDiscovery:
 
     def __init__(self, config: Config):
         self.config = config
-        self.timeout = 10
         self.headers = {
             "User-Agent": "Mozilla/5.0 ASM-Tool/1.0",
             "Accept": "application/json, text/html, */*",
@@ -58,7 +58,6 @@ class APIDiscovery:
             }
 
             for future in as_completed(futures):
-                target = futures[future]
                 try:
                     target_results = future.result()
                     if target_results:
@@ -139,7 +138,7 @@ class APIDiscovery:
         try:
             response = requests.get(
                 url,
-                timeout=self.timeout,
+                timeout=self.config.timeout_http,
                 headers=self.headers,
                 verify=False,
                 allow_redirects=True,
@@ -174,7 +173,7 @@ class APIDiscovery:
         try:
             response = requests.get(
                 url,
-                timeout=self.timeout,
+                timeout=self.config.timeout_http,
                 headers=self.headers,
                 verify=False,
                 allow_redirects=True,
@@ -261,7 +260,7 @@ class APIDiscovery:
             response = requests.get(
                 url,
                 params={"query": "{ __typename }"},
-                timeout=self.timeout,
+                timeout=self.config.timeout_http,
                 headers={**self.headers, "Accept": "application/json"},
                 verify=False,
                 allow_redirects=True,
@@ -285,7 +284,7 @@ class APIDiscovery:
             response = requests.post(
                 url,
                 json={"query": "{ __typename }"},
-                timeout=self.timeout,
+                timeout=self.config.timeout_http,
                 headers={**self.headers, "Content-Type": "application/json"},
                 verify=False,
                 allow_redirects=True,
@@ -331,7 +330,7 @@ class APIDiscovery:
             response = requests.post(
                 url,
                 json={"query": GRAPHQL_INTROSPECTION_QUERY},
-                timeout=self.timeout,
+                timeout=self.config.timeout_http,
                 headers={**self.headers, "Content-Type": "application/json"},
                 verify=False,
             )
@@ -366,7 +365,7 @@ class APIDiscovery:
         try:
             response = requests.get(
                 url,
-                timeout=self.timeout,
+                timeout=self.config.timeout_http,
                 headers=self.headers,
                 verify=False,
                 allow_redirects=True,
@@ -403,7 +402,7 @@ class APIDiscovery:
         try:
             response = requests.get(
                 url,
-                timeout=self.timeout,
+                timeout=self.config.timeout_http,
                 headers={**self.headers, "Accept": "application/json"},
                 verify=False,
                 allow_redirects=True,

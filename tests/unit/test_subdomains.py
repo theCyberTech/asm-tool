@@ -2,7 +2,6 @@
 Unit tests for Subdomains module
 """
 
-import pytest
 from unittest.mock import Mock, patch, MagicMock
 
 from asm.modules.subdomains import SubdomainEnumerator

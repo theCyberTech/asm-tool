@@ -14,17 +14,29 @@ class Scheduler:
     """Manage scheduled scan jobs
 
     Note: This creates cron-compatible schedule files.
-    For actual scheduling, use the host's cron or a container orchestrator.
+    For actual scheduling, use host's cron or a container orchestrator.
     """
 
     def __init__(self, config: Config, data_dir: Path):
+        """
+        Initialize scheduler with configuration and data directory
+
+        Args:
+            config: Configuration object containing scan settings
+            data_dir: Directory for storing schedule files
+        """
         self.config = config
         self.data_dir = data_dir
         self.schedule_file = data_dir / "schedules.json"
         self.schedules = self._load_schedules()
 
     def _load_schedules(self) -> List[dict]:
-        """Load existing schedules"""
+        """
+        Load existing schedules from JSON file
+
+        Returns:
+            List[dict]: List of scheduled job configurations
+        """
         if self.schedule_file.exists():
             try:
                 with open(self.schedule_file) as f:
@@ -34,14 +46,25 @@ class Scheduler:
         return []
 
     def _save_schedules(self) -> None:
-        """Save schedules to file"""
+        """
+        Save schedules to JSON file
+
+        Persists current schedule configuration to disk with proper formatting.
+        """
         with open(self.schedule_file, "w") as f:
             json.dump(self.schedules, f, indent=2)
 
     def add_job(
         self, domains: Tuple[str, ...], cron_expr: str, scan_type: str = "full"
     ) -> None:
-        """Add a scheduled scan job"""
+        """
+        Add a scheduled scan job
+
+        Args:
+            domains: Tuple of target domains for the job
+            cron_expr: Cron expression for scheduling (e.g., "0 6 * * *")
+            scan_type: Type of scan ('full', 'discover', 'certificates', etc.)
+        """
         job = {
             "id": len(self.schedules) + 1,
             "domains": list(domains),
@@ -54,7 +77,15 @@ class Scheduler:
         self._save_schedules()
 
     def remove_job(self, job_id: int) -> bool:
-        """Remove a scheduled job"""
+        """
+        Remove a scheduled job
+
+        Args:
+            job_id: ID of job to remove
+
+        Returns:
+            bool: True if job found and removed, False otherwise
+        """
         for i, job in enumerate(self.schedules):
             if job["id"] == job_id:
                 self.schedules.pop(i)
@@ -63,11 +94,21 @@ class Scheduler:
         return False
 
     def list_jobs(self) -> List[dict]:
-        """List all scheduled jobs"""
+        """
+        List all scheduled jobs
+
+        Returns:
+            List[dict]: List of all scheduled job configurations
+        """
         return self.schedules
 
     def generate_crontab(self) -> str:
-        """Generate crontab entries for all jobs"""
+        """
+        Generate crontab entries for all jobs
+
+        Returns:
+            str: Complete crontab file content with ASM job commands
+        """
         lines = [
             "# ASM Tool Scheduled Scans",
             "# Generated automatically - do not edit manually",
@@ -86,7 +127,7 @@ class Scheduler:
             elif scan_type == "discover":
                 cmd = f"cd /app && python -m asm discover {domains}"
             elif scan_type == "certificates":
-                cmd = f"cd /app && python -m asm certificates --all-known"
+                cmd = "cd /app && python -m asm certificates --all-known"
             else:
                 cmd = f"cd /app && python -m asm {scan_type} {domains}"
 
@@ -95,5 +136,10 @@ class Scheduler:
         return "\n".join(lines)
 
     def export_crontab(self, path: Path) -> None:
-        """Export crontab to file"""
+        """
+        Export crontab to file
+
+        Args:
+            path: File path to write crontab content
+        """
         path.write_text(self.generate_crontab())

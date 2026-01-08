@@ -2,10 +2,8 @@
 Unit tests for ASM Reporter module
 """
 
-import pytest
 import json
-from datetime import datetime, timezone
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from asm.core.reporter import Reporter
 from tests.fixtures import (

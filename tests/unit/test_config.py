@@ -8,7 +8,7 @@ import yaml
 from pathlib import Path
 
 from asm.core.config import Config
-from tests.fixtures import MockConfig, TEST_CONFIG_DATA
+from tests.fixtures import TEST_CONFIG_DATA
 
 
 class TestConfig:
@@ -216,7 +216,113 @@ class TestConfig:
     def test_edge_case_special_characters_in_webhook(self):
         """Test config with special characters in webhook URL"""
         config = Config()
-        config.slack_webhook = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+        config.slack_webhook = "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
 
         result = config.to_dict()
         assert result["notifications"]["slack"]["webhook_url"] == config.slack_webhook
+
+    def test_default_timeout_values(self):
+        """Test default timeout configuration values"""
+        config = Config()
+
+        assert config.timeout_subfinder == 300
+        assert config.timeout_nmap == 120
+        assert config.timeout_nuclei == 1800
+        assert config.timeout_gau == 600
+        assert config.timeout_http == 10
+        assert config.timeout_dns == 5
+
+    def test_timeout_from_yaml(self):
+        """Test loading timeout values from YAML config"""
+        config_data = {
+            "domains": ["example.com"],
+            "timeouts": {
+                "subfinder": 600,
+                "nmap": 240,
+                "nuclei": 3600,
+                "gau": 1200,
+                "http": 30,
+                "dns": 10,
+            },
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(config_data, f)
+            config_path = f.name
+
+        try:
+            config = Config.from_file(Path(config_path))
+
+            assert config.timeout_subfinder == 600
+            assert config.timeout_nmap == 240
+            assert config.timeout_nuclei == 3600
+            assert config.timeout_gau == 1200
+            assert config.timeout_http == 30
+            assert config.timeout_dns == 10
+        finally:
+            Path(config_path).unlink()
+
+    def test_timeout_to_dict(self):
+        """Test that timeouts are included in to_dict output"""
+        config = Config()
+        config.timeout_subfinder = 500
+        config.timeout_nmap = 200
+
+        result = config.to_dict()
+
+        assert "timeouts" in result
+        assert result["timeouts"]["subfinder"] == 500
+        assert result["timeouts"]["nmap"] == 200
+        assert result["timeouts"]["nuclei"] == 1800  # default
+        assert result["timeouts"]["gau"] == 600  # default
+        assert result["timeouts"]["http"] == 10  # default
+        assert result["timeouts"]["dns"] == 5  # default
+
+    def test_default_nuclei_optimization_values(self):
+        """Test default nuclei optimization configuration values"""
+        config = Config()
+
+        assert config.nuclei_concurrency == 25
+        assert config.nuclei_batch_size == 25
+        assert config.nuclei_exclude_tags == "dos,fuzz,brute"
+        assert config.nuclei_retries == 1
+
+    def test_nuclei_optimization_from_yaml(self):
+        """Test loading nuclei optimization values from YAML config"""
+        config_data = {
+            "domains": ["example.com"],
+            "nuclei": {
+                "concurrency": 50,
+                "batch_size": 50,
+                "exclude_tags": "dos,fuzz,brute,sqli",
+                "retries": 2,
+            },
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(config_data, f)
+            config_path = f.name
+
+        try:
+            config = Config.from_file(Path(config_path))
+
+            assert config.nuclei_concurrency == 50
+            assert config.nuclei_batch_size == 50
+            assert config.nuclei_exclude_tags == "dos,fuzz,brute,sqli"
+            assert config.nuclei_retries == 2
+        finally:
+            Path(config_path).unlink()
+
+    def test_nuclei_optimization_to_dict(self):
+        """Test that nuclei optimization is included in to_dict output"""
+        config = Config()
+        config.nuclei_concurrency = 30
+        config.nuclei_batch_size = 40
+
+        result = config.to_dict()
+
+        assert "nuclei" in result
+        assert result["nuclei"]["concurrency"] == 30
+        assert result["nuclei"]["batch_size"] == 40
+        assert result["nuclei"]["exclude_tags"] == "dos,fuzz,brute"  # default
+        assert result["nuclei"]["retries"] == 1  # default

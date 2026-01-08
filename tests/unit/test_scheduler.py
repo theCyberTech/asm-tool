@@ -2,14 +2,9 @@
 Unit tests for ASM Core Scheduler module
 """
 
-import pytest
 import json
-import tempfile
-from pathlib import Path
-from unittest.mock import Mock, patch
 
 from asm.core.scheduler import Scheduler
-from asm.core.config import Config
 from tests.fixtures import MockConfig, TEST_DOMAIN, TempDirectory
 
 

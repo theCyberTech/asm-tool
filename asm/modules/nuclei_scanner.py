@@ -7,7 +7,6 @@ import json
 import tempfile
 import os
 from typing import Dict, List, Optional
-from pathlib import Path
 
 from ..core.config import Config
 from ..core.validation import validate_domain
@@ -74,8 +73,13 @@ class NucleiScanner:
                 "-timeout",
                 "10",
                 "-retries",
-                "1",
+                str(self.config.nuclei_retries),
                 "-no-update-templates",
+                # Optimization flags for 2-4x speedup
+                "-c",
+                str(self.config.nuclei_concurrency),  # concurrent templates
+                "-bs",
+                str(self.config.nuclei_batch_size),  # batch size
             ]
 
             if tags:
@@ -84,11 +88,13 @@ class NucleiScanner:
             if templates:
                 cmd.extend(["-t", templates])
 
-            if exclude_tags:
-                cmd.extend(["-exclude-tags", exclude_tags])
+            # Apply exclude_tags: use param if provided, otherwise use config default
+            effective_exclude_tags = exclude_tags or self.config.nuclei_exclude_tags
+            if effective_exclude_tags:
+                cmd.extend(["-exclude-tags", effective_exclude_tags])
 
             # Run nuclei
-            subprocess.run(cmd, capture_output=True, timeout=1800)  # 30 min timeout
+            subprocess.run(cmd, capture_output=True, timeout=self.config.timeout_nuclei)
 
             # Parse results
             if os.path.exists(output_file):

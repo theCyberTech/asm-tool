@@ -12,10 +12,9 @@ from concurrent.futures import ThreadPoolExecutor
 import urllib3
 
 from ..core.validation import validate_domain
+from ..core.config import Config
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-from ..core.config import Config
 
 
 class TechnologyFingerprinter:

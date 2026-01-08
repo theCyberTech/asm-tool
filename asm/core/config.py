@@ -5,7 +5,7 @@ Configuration management for ASM Tool
 import yaml
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 
 @dataclass
@@ -28,6 +28,20 @@ class Config:
     nuclei_severity: str = "medium,high,critical"
     passive_only: bool = False
     scan_rate_limit: int = 100  # requests per second
+
+    # Nuclei optimization settings
+    nuclei_concurrency: int = 25  # concurrent template execution (-c)
+    nuclei_batch_size: int = 25  # batch size for host processing (-bs)
+    nuclei_exclude_tags: str = "dos,fuzz,brute"  # slow template categories to skip
+    nuclei_retries: int = 1  # number of retries for failed requests
+
+    # Timeout settings (in seconds)
+    timeout_subfinder: int = 300  # 5 minutes for subdomain enumeration
+    timeout_nmap: int = 120  # 2 minutes for port scanning
+    timeout_nuclei: int = 1800  # 30 minutes for vulnerability scanning
+    timeout_gau: int = 600  # 10 minutes for URL enumeration
+    timeout_http: int = 10  # HTTP request timeout
+    timeout_dns: int = 5  # DNS query timeout
 
     # External API keys
     shodan_api_key: str = ""
@@ -81,6 +95,22 @@ class Config:
         config.passive_only = scanning.get("passive_only", False)
         config.scan_rate_limit = scanning.get("rate_limit", 100)
 
+        # Nuclei optimization
+        nuclei = data.get("nuclei", {})
+        config.nuclei_concurrency = nuclei.get("concurrency", config.nuclei_concurrency)
+        config.nuclei_batch_size = nuclei.get("batch_size", config.nuclei_batch_size)
+        config.nuclei_exclude_tags = nuclei.get("exclude_tags", config.nuclei_exclude_tags)
+        config.nuclei_retries = nuclei.get("retries", config.nuclei_retries)
+
+        # Timeouts
+        timeouts = data.get("timeouts", {})
+        config.timeout_subfinder = timeouts.get("subfinder", config.timeout_subfinder)
+        config.timeout_nmap = timeouts.get("nmap", config.timeout_nmap)
+        config.timeout_nuclei = timeouts.get("nuclei", config.timeout_nuclei)
+        config.timeout_gau = timeouts.get("gau", config.timeout_gau)
+        config.timeout_http = timeouts.get("http", config.timeout_http)
+        config.timeout_dns = timeouts.get("dns", config.timeout_dns)
+
         # External APIs
         shodan = data.get("shodan", {})
         config.shodan_enabled = shodan.get("enabled", False)
@@ -122,6 +152,20 @@ class Config:
                 "nuclei_severity": self.nuclei_severity,
                 "passive_only": self.passive_only,
                 "rate_limit": self.scan_rate_limit,
+            },
+            "nuclei": {
+                "concurrency": self.nuclei_concurrency,
+                "batch_size": self.nuclei_batch_size,
+                "exclude_tags": self.nuclei_exclude_tags,
+                "retries": self.nuclei_retries,
+            },
+            "timeouts": {
+                "subfinder": self.timeout_subfinder,
+                "nmap": self.timeout_nmap,
+                "nuclei": self.timeout_nuclei,
+                "gau": self.timeout_gau,
+                "http": self.timeout_http,
+                "dns": self.timeout_dns,
             },
             "shodan": {"enabled": self.shodan_enabled, "api_key": self.shodan_api_key},
             "schedule": {

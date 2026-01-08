@@ -4,7 +4,6 @@ Uses multiple sources: subfinder, assetfinder, certificate transparency, etc.
 """
 
 import subprocess
-import json
 import requests
 from typing import Set, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -55,7 +54,7 @@ class SubdomainEnumerator:
                 ["subfinder", "-d", domain, "-silent", "-all"],
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=self.config.timeout_subfinder,
             )
             return set(
                 line.strip() for line in result.stdout.splitlines() if line.strip()
@@ -72,7 +71,7 @@ class SubdomainEnumerator:
                 ["assetfinder", "--subs-only", domain],
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=self.config.timeout_subfinder,
             )
             return set(
                 line.strip() for line in result.stdout.splitlines() if line.strip()
@@ -88,7 +87,7 @@ class SubdomainEnumerator:
         try:
             response = requests.get(
                 f"https://crt.sh/?q=%.{domain}&output=json",
-                timeout=30,
+                timeout=self.config.timeout_http,
                 headers={"User-Agent": "ASM-Tool/1.0"},
             )
             if response.ok:
@@ -110,7 +109,7 @@ class SubdomainEnumerator:
         try:
             response = requests.get(
                 f"https://api.hackertarget.com/hostsearch/?q={domain}",
-                timeout=30,
+                timeout=self.config.timeout_http,
                 headers={"User-Agent": "ASM-Tool/1.0"},
             )
             if response.ok and "error" not in response.text.lower():

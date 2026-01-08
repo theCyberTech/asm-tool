@@ -3,10 +3,9 @@ Central error handling and logging for ASM Tool
 """
 
 import logging
-from typing import TypeVar, Optional, Dict, Any
+from typing import TypeVar, Optional, Any
 from functools import wraps
 import traceback
-from datetime import datetime, timezone
 
 # Configure structured logging
 logger = logging.getLogger("asm")
@@ -38,7 +37,7 @@ def handle_errors(default_return: Any = None):
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
-            except ASMError:
+            except ASMError as e:
                 logger.error(f"[{func.__name__}] {e.message}")
                 raise e
             except Exception as e:

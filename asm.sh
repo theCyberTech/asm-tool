@@ -32,13 +32,16 @@ print_help() {
     echo "  vulns <domain>     Run vulnerability scan"
     echo "  report             Generate a report"
     echo "  status             Show database status"
+    echo "  trends <domain>    Show historical trend analysis"
+    echo "  trends <domain>    Show historical trend analysis"
+    echo "  trends <domain>    Show historical trend analysis"
     echo "  update             Update nuclei templates"
     echo "  clean              Remove containers and volumes"
     echo ""
     echo "Examples:"
     echo "  ./asm.sh build"
-    echo "  ./asm.sh scan crewai.com"
-    echo "  ./asm.sh discover crewai.com"
+    echo "  ./asm.sh scan example.com"
+    echo "  ./asm.sh discover example.com"
     echo "  ./asm.sh shell"
 }
 
@@ -136,11 +139,28 @@ update() {
         asm-tool -update-templates
 }
 
-clean() {
-    echo -e "${YELLOW}Removing containers...${NC}"
-    docker rm -f asm-tool asm-scheduler 2>/dev/null || true
-    echo -e "${GREEN}Done${NC}"
-}
+    clean() {
+        echo -e "${YELLOW}Removing containers...${NC}"
+        docker rm -f asm-tool asm-scheduler 2>/dev/null || true
+        echo -e "${GREEN}Done${NC}"
+    }
+
+    trends() {
+        if [ -z "$1" ]; then
+            echo -e "${RED}Error: Domain required${NC}"
+            echo -e "Usage: ./asm.sh trends <domain> [options]"
+            echo -e ""
+            echo -e "Options:"
+            echo -e "  --days N              Show trends over the last N days"
+            echo -e "  --type, -t            Asset type to analyze (subdomains|ports|certificates|vulnerabilities|all)"
+            echo -e "  --format, -f              Output format (table|json|ascii)"
+            echo -e "  --alert-threshold       Alert threshold (critical|high|medium)"
+            echo -e ""
+            exit 1
+        fi
+        echo -e "${GREEN}Showing trends for $1...${NC}"
+        run_cmd trends "$@"
+    }
 
 init() {
     echo -e "${GREEN}Initializing ASM Tool...${NC}"
@@ -206,6 +226,10 @@ case "${1:-help}" in
     vulns)
         shift
         vulns "$@"
+        ;;
+    trends)
+        shift
+        trends "$@"
         ;;
     report)
         report "$2"

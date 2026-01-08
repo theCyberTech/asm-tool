@@ -2,13 +2,7 @@
 Unit tests for ASM Core Database module
 """
 
-import pytest
-import tempfile
-import shutil
-from pathlib import Path
-from datetime import datetime, timedelta
-from unittest.mock import patch, Mock
-
+import time
 from asm.core.database import Database
 from tests.fixtures import (
     TEST_DOMAIN,
@@ -312,6 +306,62 @@ class TestDatabase:
 
             db.close()
 
+    def test_add_urls_bulk(self):
+        """Test bulk URL insertion with mixed new and existing URLs"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Pre-add some URLs
+            db.add_url(TEST_DOMAIN, "https://example.com/existing1")
+            db.add_url(TEST_DOMAIN, "https://example.com/existing2")
+
+            # Bulk add with mix of new and existing
+            url_data = {
+                "urls": [
+                    "https://example.com/existing1",  # existing
+                    "https://example.com/new1",  # new
+                    "https://example.com/new2",  # new, interesting
+                    "https://example.com/existing2",  # existing
+                    "https://example.com/new3",  # new
+                ],
+                "interesting": ["https://example.com/new2"],
+                "total": 5,
+                "unique_paths": ["/existing1", "/new1", "/new2", "/existing2", "/new3"],
+                "endpoints": [],
+                "parameters": {},
+                "by_extension": {},
+            }
+
+            counts = db.add_urls_bulk(TEST_DOMAIN, url_data)
+
+            assert counts["new"] == 3
+            assert counts["existing"] == 2
+            assert counts["interesting_new"] == 1
+
+            # Verify all URLs are stored
+            all_urls = db.get_urls(TEST_DOMAIN)
+            assert len(all_urls) == 5
+
+            # Verify interesting URL is marked correctly
+            interesting = db.get_urls(TEST_DOMAIN, interesting_only=True)
+            assert "https://example.com/new2" in interesting
+
+            db.close()
+
+    def test_add_urls_bulk_empty(self):
+        """Test bulk URL insertion with empty URL list"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            url_data = {"urls": [], "interesting": [], "total": 0}
+            counts = db.add_urls_bulk(TEST_DOMAIN, url_data)
+
+            assert counts["new"] == 0
+            assert counts["existing"] == 0
+            assert counts["interesting_new"] == 0
+
+            db.close()
+
     def test_add_finding_new(self):
         """Test adding a new vulnerability finding"""
         with TempDirectory() as temp_dir:
@@ -484,5 +534,327 @@ class TestDatabase:
 
             retrieved = db.get_technologies("www." + special_domain)
             assert retrieved["title"] == special_title
+
+            db.close()
+
+    def test_add_emails_bulk(self):
+        """Test bulk email insertion with mixed new and existing emails"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Pre-add some emails
+            db.add_email(TEST_DOMAIN, "existing1@example.com", "manual")
+            db.add_email(TEST_DOMAIN, "existing2@example.com", "manual")
+
+            # Bulk add with mix of new and existing
+            email_data = {
+                "by_source": {
+                    "hunter": [
+                        "existing1@example.com",  # existing
+                        "new1@example.com",  # new
+                    ],
+                    "clearbit": [
+                        "new2@example.com",  # new
+                        "existing2@example.com",  # existing
+                    ],
+                    "github": [
+                        "new3@example.com",  # new
+                    ],
+                }
+            }
+
+            counts = db.add_emails_bulk(TEST_DOMAIN, email_data)
+
+            assert counts["new"] == 3
+            assert counts["existing"] == 2
+
+            # Verify all emails are stored
+            all_emails = db.get_emails(TEST_DOMAIN)
+            assert len(all_emails) == 5
+
+            # Verify sources are preserved
+            emails_by_email = {e["email"]: e for e in all_emails}
+            assert emails_by_email["new1@example.com"]["source"] == "hunter"
+            assert emails_by_email["new2@example.com"]["source"] == "clearbit"
+
+            db.close()
+
+    def test_add_emails_bulk_empty(self):
+        """Test bulk email insertion with empty data"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            email_data = {"by_source": {}}
+            counts = db.add_emails_bulk(TEST_DOMAIN, email_data)
+
+            assert counts["new"] == 0
+            assert counts["existing"] == 0
+
+            db.close()
+
+    def test_add_emails_bulk_duplicates_in_batch(self):
+        """Test bulk email handles duplicates within same batch"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Same email appears in multiple sources
+            email_data = {
+                "by_source": {
+                    "hunter": ["duplicate@example.com", "unique1@example.com"],
+                    "clearbit": ["duplicate@example.com", "unique2@example.com"],
+                }
+            }
+
+            counts = db.add_emails_bulk(TEST_DOMAIN, email_data)
+
+            # duplicate@example.com should only be counted once as new
+            assert counts["new"] == 3
+            assert counts["existing"] == 1  # second occurrence of duplicate
+
+            # Only 3 unique emails stored
+            all_emails = db.get_emails(TEST_DOMAIN)
+            assert len(all_emails) == 3
+
+            db.close()
+
+    def test_get_ports_for_hosts_batch(self):
+        """Test batch port query returns all ports for multiple hosts"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Add ports for multiple hosts
+            db.add_port("host1.example.com", 80, "http")
+            db.add_port("host1.example.com", 443, "https")
+            db.add_port("host2.example.com", 22, "ssh")
+            db.add_port("host3.example.com", 8080, "http-proxy")
+            db.add_port("other.domain.com", 3306, "mysql")  # Different domain
+
+            # Batch query
+            hosts = ["host1.example.com", "host2.example.com", "host3.example.com"]
+            ports = db.port_repo.get_ports_for_hosts(hosts)
+
+            assert len(ports) == 4
+            port_keys = {(p["host"], p["port"]) for p in ports}
+            assert ("host1.example.com", 80) in port_keys
+            assert ("host1.example.com", 443) in port_keys
+            assert ("host2.example.com", 22) in port_keys
+            assert ("host3.example.com", 8080) in port_keys
+            assert ("other.domain.com", 3306) not in port_keys
+
+            db.close()
+
+    def test_get_ports_for_hosts_empty(self):
+        """Test batch port query with empty host list"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            db.add_port("host1.example.com", 80, "http")
+
+            # Empty host list should return empty result
+            ports = db.port_repo.get_ports_for_hosts([])
+            assert ports == []
+
+            db.close()
+
+    def test_get_certificates_for_hosts_batch(self):
+        """Test batch certificate query returns all certs for multiple hosts"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Add certificates for multiple hosts
+            cert1 = TEST_CERT_INFO.copy()
+            cert1["fingerprint"] = "AA:BB:CC:11"
+            db.add_certificate("host1.example.com", cert1)
+
+            cert2 = TEST_CERT_INFO.copy()
+            cert2["fingerprint"] = "AA:BB:CC:22"
+            db.add_certificate("host2.example.com", cert2)
+
+            cert3 = TEST_CERT_INFO.copy()
+            cert3["fingerprint"] = "AA:BB:CC:33"
+            db.add_certificate("other.domain.com", cert3)  # Different domain
+
+            # Batch query
+            hosts = ["host1.example.com", "host2.example.com", "missing.example.com"]
+            certs = db.cert_repo.get_certificates_for_hosts(hosts)
+
+            assert len(certs) == 2
+            assert "host1.example.com" in certs
+            assert "host2.example.com" in certs
+            assert "other.domain.com" not in certs
+            assert "missing.example.com" not in certs
+            assert certs["host1.example.com"]["fingerprint"] == "AA:BB:CC:11"
+            assert certs["host2.example.com"]["fingerprint"] == "AA:BB:CC:22"
+
+            db.close()
+
+    def test_get_certificates_for_hosts_empty(self):
+        """Test batch certificate query with empty host list"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            db.add_certificate("host1.example.com", TEST_CERT_INFO)
+
+            # Empty host list should return empty result
+            certs = db.cert_repo.get_certificates_for_hosts([])
+            assert certs == {}
+
+            db.close()
+
+    def test_save_snapshot_with_batch_queries(self):
+        """Test snapshot uses optimized batch queries"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Set up test data
+            db.add_subdomain(TEST_DOMAIN, "sub1.example.com")
+            db.add_subdomain(TEST_DOMAIN, "sub2.example.com")
+
+            # Add ports
+            db.add_port("sub1.example.com", 80, "http")
+            db.add_port("sub1.example.com", 443, "https")
+            db.add_port("sub2.example.com", 22, "ssh")
+
+            # Add certificates
+            cert1 = TEST_CERT_INFO.copy()
+            cert1["fingerprint"] = "SNAP:CERT:01"
+            db.add_certificate("sub1.example.com", cert1)
+
+            cert2 = TEST_CERT_INFO.copy()
+            cert2["fingerprint"] = "SNAP:CERT:02"
+            db.add_certificate("sub2.example.com", cert2)
+
+            # Add a finding
+            db.add_finding(TEST_FINDING)
+
+            # Save snapshot
+            snapshot_id = db.save_snapshot(TEST_DOMAIN)
+
+            # Verify snapshot
+            snapshot = db.get_snapshot(snapshot_id)
+            assert snapshot is not None
+            assert snapshot["domain"] == TEST_DOMAIN
+            assert snapshot["subdomain_count"] == 2
+            assert snapshot["port_count"] == 3
+            assert snapshot["certificate_count"] == 2
+
+            # Verify ports are correctly captured
+            ports = snapshot["ports"]
+            assert len(ports) == 3
+            assert "sub1.example.com:80" in ports
+            assert "sub1.example.com:443" in ports
+            assert "sub2.example.com:22" in ports
+
+            # Verify certificates are correctly captured
+            certs = snapshot["certificates"]
+            assert len(certs) == 2
+            cert_hosts = {c["host"] for c in certs}
+            assert "sub1.example.com" in cert_hosts
+            assert "sub2.example.com" in cert_hosts
+
+            db.close()
+
+    def test_statistics_cache_returns_cached_value(self):
+        """Test that get_statistics returns cached value within TTL"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Add initial data
+            db.add_domain(TEST_DOMAIN)
+
+            # First call - should calculate fresh stats
+            stats1 = db.get_statistics()
+            assert stats1["domains"] == 1
+
+            # Add more data
+            db.add_domain("another.com")
+
+            # Second call within TTL - should return cached (stale) value
+            stats2 = db.get_statistics()
+            assert stats2["domains"] == 1  # Still cached value
+
+            db.close()
+
+    def test_statistics_cache_expires_after_ttl(self):
+        """Test that cache expires after TTL"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Set very short TTL for testing
+            db.STATS_CACHE_TTL = 0.1  # 100ms
+
+            # Add initial data
+            db.add_domain(TEST_DOMAIN)
+
+            # First call
+            stats1 = db.get_statistics()
+            assert stats1["domains"] == 1
+
+            # Add more data
+            db.add_domain("another.com")
+
+            # Wait for cache to expire
+            time.sleep(0.15)
+
+            # Should get fresh stats now
+            stats2 = db.get_statistics()
+            assert stats2["domains"] == 2
+
+            db.close()
+
+    def test_statistics_cache_bypass(self):
+        """Test that use_cache=False bypasses cache"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Add initial data
+            db.add_domain(TEST_DOMAIN)
+
+            # First call - populates cache
+            stats1 = db.get_statistics()
+            assert stats1["domains"] == 1
+
+            # Add more data
+            db.add_domain("another.com")
+
+            # Bypass cache - should get fresh stats
+            stats2 = db.get_statistics(use_cache=False)
+            assert stats2["domains"] == 2
+
+            db.close()
+
+    def test_statistics_cache_invalidation(self):
+        """Test that invalidate_statistics_cache clears the cache"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Add initial data
+            db.add_domain(TEST_DOMAIN)
+
+            # First call - populates cache
+            stats1 = db.get_statistics()
+            assert stats1["domains"] == 1
+
+            # Add more data
+            db.add_domain("another.com")
+
+            # Invalidate cache
+            db.invalidate_statistics_cache()
+
+            # Should get fresh stats now
+            stats2 = db.get_statistics()
+            assert stats2["domains"] == 2
+
+            db.close()
+
+    def test_statistics_cache_initial_state(self):
+        """Test that cache starts empty"""
+        with TempDirectory() as temp_dir:
+            db = Database(temp_dir / "test.db")
+
+            # Cache should be empty initially
+            cache_time, cached_stats = db._stats_cache
+            assert cache_time == 0.0
+            assert cached_stats is None
 
             db.close()

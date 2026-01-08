@@ -32,7 +32,7 @@ services:
     environment:
       - TZ=Australia/Perth
     # Run scheduled scans
-    command: ["schedule", "--cron", "0 6 * * *", "crewai.com"]
+    command: ["schedule", "--cron", "0 6 * * *", "example.com"]
     restart: unless-stopped
     profiles:
       - scheduled

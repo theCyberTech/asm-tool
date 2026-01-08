@@ -2,13 +2,9 @@
 Unit tests for ASM Core Notifier module
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-import requests
-import smtplib
+from unittest.mock import Mock, patch
 
 from asm.core.notifier import Notifier, WebhookNotifier
-from asm.core.config import Config
 from tests.fixtures import MockConfig, TEST_DOMAIN
 
 
