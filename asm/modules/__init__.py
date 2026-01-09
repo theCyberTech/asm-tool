@@ -12,6 +12,9 @@ from .urls import URLEnumerator
 from .takeover import TakeoverDetector
 from .api_discovery import APIDiscovery
 from .emails import EmailEnumerator
+from .screenshots import ScreenshotCapture
+from .whois_monitor import WHOISMonitor
+from .cloud_storage import CloudStorageDetector
 
 __all__ = [
     "SubdomainEnumerator",
@@ -24,4 +27,7 @@ __all__ = [
     "TakeoverDetector",
     "APIDiscovery",
     "EmailEnumerator",
+    "ScreenshotCapture",
+    "WHOISMonitor",
+    "CloudStorageDetector",
 ]
