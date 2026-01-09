@@ -411,3 +411,63 @@ class CloudStorageDetector:
             return "medium"
         else:
             return "low"
+
+    def scan(
+        self,
+        targets: List[str],
+        urls: List[str] = None,
+        passive_only: bool = False,
+        workers: int = 10,
+    ) -> List[Dict]:
+        """
+        Run full cloud storage detection (passive + active + access checks).
+
+        Combines passive extraction from URLs, active bucket probing, and
+        access level checking into a complete detection workflow.
+
+        Args:
+            targets: List of target domains to scan.
+            urls: Optional list of URLs for passive extraction.
+            passive_only: If True, skip active bucket probing.
+            workers: Number of parallel workers for active probing (default 10).
+
+        Returns:
+            List of complete findings with keys: url, provider, bucket_name,
+            source, access_level, severity, evidence, status
+        """
+        discovered_buckets: Dict[str, Dict] = {}
+
+        if urls is not None:
+            for bucket in self.extract_from_urls(urls):
+                if bucket["url"] not in discovered_buckets:
+                    discovered_buckets[bucket["url"]] = bucket
+
+        if not passive_only:
+            for target in targets:
+                for bucket in self.probe_buckets(target, workers=workers):
+                    if bucket["url"] not in discovered_buckets:
+                        discovered_buckets[bucket["url"]] = bucket
+
+        results = []
+        for bucket in discovered_buckets.values():
+            access_info = self.check_access(bucket["url"], bucket["provider"])
+            severity = self.classify_severity(
+                access_info["access_level"], bucket["bucket_name"]
+            )
+
+            status = "open" if access_info["access_level"] in (
+                "listing_enabled", "public_read"
+            ) else "closed"
+
+            results.append({
+                "url": bucket["url"],
+                "provider": bucket["provider"],
+                "bucket_name": bucket["bucket_name"],
+                "source": bucket["source"],
+                "access_level": access_info["access_level"],
+                "severity": severity,
+                "evidence": access_info["evidence"],
+                "status": status,
+            })
+
+        return results
