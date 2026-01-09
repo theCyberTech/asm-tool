@@ -10,7 +10,11 @@ from typing import Dict, List
 import httpx
 
 from ..core.config import Config
-from ..constants.cloud_storage import BUCKET_NAME_SUFFIXES, CLOUD_STORAGE_PATTERNS
+from ..constants.cloud_storage import (
+    BUCKET_NAME_SUFFIXES,
+    CLOUD_STORAGE_PATTERNS,
+    SENSITIVE_KEYWORDS,
+)
 
 
 class CloudStorageDetector:
@@ -378,3 +382,32 @@ class CloudStorageDetector:
                 "access_level": "not_found",
                 "evidence": f"Request error: {str(e)}",
             }
+
+    def classify_severity(self, access_level: str, bucket_name: str) -> str:
+        """
+        Classify the severity of a cloud storage finding.
+
+        Severity is based on access level and whether the bucket name
+        contains keywords indicating sensitive content.
+
+        Args:
+            access_level: The access level from check_access() - one of
+                'listing_enabled', 'public_read', 'authenticated_only', 'not_found'.
+            bucket_name: The name of the bucket to check for sensitive keywords.
+
+        Returns:
+            Severity level: 'critical', 'high', 'medium', or 'low'.
+        """
+        bucket_lower = bucket_name.lower()
+        has_sensitive_keyword = any(
+            keyword in bucket_lower for keyword in SENSITIVE_KEYWORDS
+        )
+
+        if access_level == "listing_enabled":
+            if has_sensitive_keyword:
+                return "critical"
+            return "high"
+        elif access_level == "public_read":
+            return "medium"
+        else:
+            return "low"
