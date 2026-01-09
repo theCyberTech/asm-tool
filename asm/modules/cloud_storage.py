@@ -198,3 +198,183 @@ class CloudStorageDetector:
             return response.status_code != 404
         except (httpx.RequestError, httpx.TimeoutException):
             return False
+
+    def check_access(self, bucket_url: str, provider: str) -> Dict:
+        """
+        Check the public access level of a cloud storage bucket.
+
+        Probes the bucket to determine if it allows listing, public read,
+        or requires authentication.
+
+        Args:
+            bucket_url: The bucket URL to check.
+            provider: Cloud provider (s3, azure, gcs).
+
+        Returns:
+            Dict with keys: access_level, evidence
+            access_level is one of: 'listing_enabled', 'public_read',
+                                    'authenticated_only', 'not_found'
+        """
+        if provider == "s3":
+            return self._check_s3_access(bucket_url)
+        elif provider == "azure":
+            return self._check_azure_access(bucket_url)
+        elif provider == "gcs":
+            return self._check_gcs_access(bucket_url)
+        return {"access_level": "not_found", "evidence": "Unknown provider"}
+
+    def _check_s3_access(self, bucket_url: str) -> Dict:
+        """
+        Check S3 bucket access level.
+
+        Args:
+            bucket_url: S3 bucket URL (e.g., https://bucket.s3.amazonaws.com).
+
+        Returns:
+            Dict with access_level and evidence.
+        """
+        try:
+            list_response = httpx.get(
+                f"{bucket_url}/?list-type=2", timeout=5.0, follow_redirects=True
+            )
+
+            if list_response.status_code == 200:
+                snippet = list_response.text[:500] if list_response.text else ""
+                return {
+                    "access_level": "listing_enabled",
+                    "evidence": f"Status {list_response.status_code}: {snippet}",
+                }
+
+            if list_response.status_code == 404:
+                return {
+                    "access_level": "not_found",
+                    "evidence": f"Status {list_response.status_code}",
+                }
+
+            read_response = httpx.get(
+                bucket_url, timeout=5.0, follow_redirects=True
+            )
+
+            if read_response.status_code == 200:
+                snippet = read_response.text[:500] if read_response.text else ""
+                return {
+                    "access_level": "public_read",
+                    "evidence": f"Status {read_response.status_code}: {snippet}",
+                }
+
+            return {
+                "access_level": "authenticated_only",
+                "evidence": f"List status {list_response.status_code}, Read status {read_response.status_code}",
+            }
+
+        except (httpx.RequestError, httpx.TimeoutException) as e:
+            return {
+                "access_level": "not_found",
+                "evidence": f"Request error: {str(e)}",
+            }
+
+    def _check_azure_access(self, bucket_url: str) -> Dict:
+        """
+        Check Azure Blob storage container access level.
+
+        Args:
+            bucket_url: Azure Blob URL (e.g., https://account.blob.core.windows.net).
+
+        Returns:
+            Dict with access_level and evidence.
+        """
+        try:
+            list_response = httpx.get(
+                f"{bucket_url}/?restype=container&comp=list",
+                timeout=5.0,
+                follow_redirects=True,
+            )
+
+            if list_response.status_code == 200:
+                snippet = list_response.text[:500] if list_response.text else ""
+                return {
+                    "access_level": "listing_enabled",
+                    "evidence": f"Status {list_response.status_code}: {snippet}",
+                }
+
+            if list_response.status_code == 404:
+                return {
+                    "access_level": "not_found",
+                    "evidence": f"Status {list_response.status_code}",
+                }
+
+            read_response = httpx.get(
+                bucket_url, timeout=5.0, follow_redirects=True
+            )
+
+            if read_response.status_code == 200:
+                snippet = read_response.text[:500] if read_response.text else ""
+                return {
+                    "access_level": "public_read",
+                    "evidence": f"Status {read_response.status_code}: {snippet}",
+                }
+
+            return {
+                "access_level": "authenticated_only",
+                "evidence": f"List status {list_response.status_code}, Read status {read_response.status_code}",
+            }
+
+        except (httpx.RequestError, httpx.TimeoutException) as e:
+            return {
+                "access_level": "not_found",
+                "evidence": f"Request error: {str(e)}",
+            }
+
+    def _check_gcs_access(self, bucket_url: str) -> Dict:
+        """
+        Check Google Cloud Storage bucket access level.
+
+        Args:
+            bucket_url: GCS bucket URL (e.g., https://storage.googleapis.com/bucket).
+
+        Returns:
+            Dict with access_level and evidence.
+        """
+        bucket_name = bucket_url.rstrip("/").split("/")[-1]
+
+        try:
+            list_response = httpx.get(
+                f"https://storage.googleapis.com/storage/v1/b/{bucket_name}/o",
+                timeout=5.0,
+                follow_redirects=True,
+            )
+
+            if list_response.status_code == 200:
+                snippet = list_response.text[:500] if list_response.text else ""
+                return {
+                    "access_level": "listing_enabled",
+                    "evidence": f"Status {list_response.status_code}: {snippet}",
+                }
+
+            if list_response.status_code == 404:
+                return {
+                    "access_level": "not_found",
+                    "evidence": f"Status {list_response.status_code}",
+                }
+
+            read_response = httpx.get(
+                bucket_url, timeout=5.0, follow_redirects=True
+            )
+
+            if read_response.status_code == 200:
+                snippet = read_response.text[:500] if read_response.text else ""
+                return {
+                    "access_level": "public_read",
+                    "evidence": f"Status {read_response.status_code}: {snippet}",
+                }
+
+            return {
+                "access_level": "authenticated_only",
+                "evidence": f"List status {list_response.status_code}, Read status {read_response.status_code}",
+            }
+
+        except (httpx.RequestError, httpx.TimeoutException) as e:
+            return {
+                "access_level": "not_found",
+                "evidence": f"Request error: {str(e)}",
+            }
