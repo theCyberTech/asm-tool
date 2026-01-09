@@ -22,6 +22,9 @@ from .modules.urls import URLEnumerator
 from .modules.takeover import TakeoverDetector
 from .modules.api_discovery import APIDiscovery
 from .modules.emails import EmailEnumerator
+from .modules.screenshots import ScreenshotCapture
+from .modules.whois_monitor import WHOISMonitor
+from .modules.cloud_storage import CloudStorageDetector
 from .core.reporter import Reporter
 from .core.notifier import Notifier
 from .core.helpers import resolve_targets
@@ -30,10 +33,24 @@ from .core.scheduler import Scheduler
 console = Console()
 
 
+def get_default_paths():
+    """Get default config and data paths based on environment"""
+    import os
+    # Check if running in Docker (has writable /app directory with config)
+    app_path = Path("/app")
+    if app_path.is_dir() and os.access("/app", os.W_OK) and Path("/app/config.yaml").exists():
+        return "/app/config.yaml", "/app/data"
+    # Local development - use current directory
+    return "./config.yaml", "./data"
+
+
+DEFAULT_CONFIG, DEFAULT_DATA = get_default_paths()
+
+
 @click.group()
-@click.option("--config", "-c", default="/app/config.yaml", help="Path to config file")
+@click.option("--config", "-c", default=DEFAULT_CONFIG, help="Path to config file")
 @click.option(
-    "--data-dir", "-d", default="/app/data", help="Data directory for persistence"
+    "--data-dir", "-d", default=DEFAULT_DATA, help="Data directory for persistence"
 )
 @click.pass_context
 def cli(ctx, config, data_dir):
@@ -760,6 +777,364 @@ def emails(ctx, domain):
 
 
 @cli.command()
+@click.argument("domain", required=False)
+@click.option("--all-known", is_flag=True, help="Screenshot all known subdomains")
+@click.option("--workers", "-w", default=3, help="Parallel capture workers (default 3)")
+@click.option("--width", default=1920, help="Viewport width (default 1920)")
+@click.option("--height", default=1080, help="Viewport height (default 1080)")
+@click.option("--full-page", is_flag=True, help="Capture full scrollable page")
+@click.option("--timeout", "-t", default=30, help="Timeout per screenshot in seconds")
+@click.option("--output-dir", "-o", help="Output directory for screenshots")
+@click.pass_context
+def screenshots(ctx, domain, all_known, workers, width, height, full_page, timeout, output_dir):
+    """Capture screenshots of web assets using headless Chrome"""
+    db = ctx.obj["db"]
+    config = ctx.obj["config"]
+
+    output_path = Path(output_dir) if output_dir else ctx.obj["data_dir"].parent / "reports" / "screenshots"
+
+    capturer = ScreenshotCapture(config, output_dir=output_path)
+
+    if not capturer.chrome_available:
+        console.print("[red]Error:[/] Chrome/Chromium not available. Screenshots require headless Chrome.")
+        console.print("[dim]Install chromium or run in the Docker container.[/]")
+        return
+
+    targets = resolve_targets(db, config, domain, all_known)
+
+    if not targets:
+        console.print(
+            "[red]Error:[/] No targets found. Run 'discover' first or specify a domain."
+        )
+        return
+
+    console.print(f"\n[bold blue]Capturing screenshots for {len(targets)} targets[/]")
+    console.print(f"[dim]Viewport: {width}x{height}, Workers: {workers}, Output: {output_path}[/]")
+
+    if full_page:
+        console.print("[dim]Mode: Full page capture[/]")
+
+    results = capturer.capture_batch(
+        targets,
+        workers=workers,
+        width=width,
+        height=height,
+        full_page=full_page,
+        timeout=timeout
+    )
+
+    success_count = 0
+    new_count = 0
+    changed_count = 0
+
+    for result in results:
+        target = result.get("target", "unknown")
+
+        if result.get("success"):
+            success_count += 1
+
+            # Check if screenshot changed from previous
+            change_info = db.check_screenshot_changed(
+                target,
+                result.get("image_hash", "")
+            )
+
+            is_new = db.add_screenshot(result)
+
+            if is_new:
+                new_count += 1
+                status = "[green]+ NEW[/]"
+            elif change_info.get("changed"):
+                changed_count += 1
+                status = "[yellow]↻ CHANGED[/]"
+            else:
+                status = "[dim]✓ Unchanged[/]"
+
+            file_size_kb = result.get("file_size", 0) / 1024
+            console.print(
+                f"  {status} {target} "
+                f"[dim]({file_size_kb:.1f} KB)[/]"
+            )
+        else:
+            error = result.get("error", "Unknown error")[:60]
+            console.print(f"  [red]✗ Failed:[/] {target} - {error}")
+
+    console.print(f"\n[bold]Summary:[/]")
+    console.print(f"  Captured: {success_count}/{len(targets)}")
+    console.print(f"  New: {new_count}")
+    console.print(f"  Changed: {changed_count}")
+    console.print(f"  Output: {output_path}")
+
+
+@cli.command()
+@click.argument("domain", required=False)
+@click.option("--days-warning", default=30, help="Warn if domain expires within N days")
+@click.option("--days-critical", default=7, help="Critical alert if domain expires within N days")
+@click.option("--check-changes", is_flag=True, help="Check for WHOIS changes from previous lookup")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed WHOIS information")
+@click.pass_context
+def whois(ctx, domain, days_warning, days_critical, check_changes, verbose):
+    """Monitor domain WHOIS information and registration changes"""
+    db = ctx.obj["db"]
+    config = ctx.obj["config"]
+
+    # Use configured domains if none specified
+    domains = [domain] if domain else config.domains
+    if not domains:
+        console.print(
+            "[red]Error:[/] No domain specified and none configured in config.yaml"
+        )
+        return
+
+    monitor = WHOISMonitor(config)
+
+    if not monitor.available:
+        console.print("[red]Error:[/] WHOIS lookups not available.")
+        console.print("[dim]Install python-whois or run in the Docker container.[/]")
+        return
+
+    console.print(f"\n[bold blue]Checking WHOIS for {len(domains)} domain(s)[/]")
+
+    expiry_warnings = []
+    changes_detected = []
+
+    for target_domain in domains:
+        console.print(f"\n[cyan]Domain:[/] {target_domain}")
+
+        whois_info = monitor.lookup(target_domain)
+
+        if not whois_info:
+            console.print(f"  [red]✗ Failed to retrieve WHOIS data[/]")
+            continue
+
+        if whois_info.get("error"):
+            console.print(f"  [red]✗ Error: {whois_info['error']}[/]")
+            continue
+
+        # Check for changes if requested
+        if check_changes:
+            changes = db.check_whois_changes(target_domain, whois_info)
+            if changes.get("has_changes"):
+                changes_detected.append({
+                    "domain": target_domain,
+                    "changes": changes["changes"]
+                })
+                console.print(f"  [yellow]⚠ WHOIS changes detected![/]")
+                for change in changes["changes"]:
+                    console.print(
+                        f"    [yellow]→[/] {change['label']}: "
+                        f"'{change.get('previous', 'N/A')}' → '{change.get('current', 'N/A')}'"
+                    )
+            elif changes.get("is_new"):
+                console.print(f"  [green]+ First WHOIS record[/]")
+            else:
+                console.print(f"  [dim]No changes from previous lookup[/]")
+
+        # Save to database
+        is_new = db.save_whois(target_domain, whois_info)
+        if is_new and not check_changes:
+            console.print(f"  [green]+ NEW:[/] First WHOIS record saved")
+
+        # Display summary
+        console.print(f"  [dim]Registrar:[/] {whois_info.get('registrar', 'Unknown')}")
+        console.print(f"  [dim]Created:[/] {whois_info.get('creation_date', 'Unknown')}")
+
+        days_left = whois_info.get("days_until_expiry")
+        expires = whois_info.get("expiration_date", "Unknown")
+
+        if days_left is not None:
+            if days_left < 0:
+                console.print(
+                    f"  [red]✗ EXPIRED:[/] {expires} "
+                    f"({abs(days_left)} days ago)"
+                )
+            elif days_left <= days_critical:
+                console.print(
+                    f"  [red]⚠ CRITICAL:[/] Expires {expires} "
+                    f"({days_left} days)"
+                )
+                expiry_warnings.append((target_domain, days_left, "critical"))
+            elif days_left <= days_warning:
+                console.print(
+                    f"  [yellow]⚠ WARNING:[/] Expires {expires} "
+                    f"({days_left} days)"
+                )
+                expiry_warnings.append((target_domain, days_left, "warning"))
+            else:
+                console.print(
+                    f"  [green]✓ Expires:[/] {expires} "
+                    f"({days_left} days)"
+                )
+        else:
+            console.print(f"  [dim]Expires:[/] {expires}")
+
+        # Verbose output
+        if verbose:
+            console.print(f"\n  [bold]Detailed Information:[/]")
+            console.print(f"    Registrar URL: {whois_info.get('registrar_url', 'N/A')}")
+            console.print(f"    Updated: {whois_info.get('updated_date', 'N/A')}")
+            console.print(f"    DNSSEC: {whois_info.get('dnssec', 'N/A')}")
+            console.print(f"    Registrant Org: {whois_info.get('registrant_org', 'N/A')}")
+            console.print(f"    Registrant Country: {whois_info.get('registrant_country', 'N/A')}")
+
+            ns_list = whois_info.get("name_servers", [])
+            if ns_list:
+                console.print(f"    Name Servers:")
+                for ns in ns_list[:5]:
+                    console.print(f"      - {ns}")
+                if len(ns_list) > 5:
+                    console.print(f"      [dim]... and {len(ns_list) - 5} more[/]")
+
+            status_list = whois_info.get("status", [])
+            if status_list:
+                console.print(f"    Status: {', '.join(status_list[:3])}")
+
+    # Summary
+    if expiry_warnings:
+        console.print(
+            f"\n[bold yellow]⚠ {len(expiry_warnings)} domain(s) "
+            f"expiring within {days_warning} days[/]"
+        )
+        for domain_name, days, severity in expiry_warnings:
+            color = "red" if severity == "critical" else "yellow"
+            console.print(f"  [{color}]{domain_name}[/] - {days} days remaining")
+
+    if changes_detected:
+        console.print(
+            f"\n[bold red]⚠ WHOIS changes detected for {len(changes_detected)} domain(s)[/]"
+        )
+        console.print(
+            "[dim]Review changes carefully - registrar or nameserver changes "
+            "may indicate domain hijacking.[/]"
+        )
+
+
+@cli.command()
+@click.argument("domain", required=False)
+@click.option("--all-known", is_flag=True, help="Scan all known domains")
+@click.option("--include-urls", is_flag=True, help="Also scan discovered URLs from DB")
+@click.option("--passive-only", is_flag=True, help="Skip active bucket probing")
+@click.option("--workers", "-w", default=10, help="Parallel probe workers (default 10)")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed output")
+@click.pass_context
+def cloudstorage(ctx, domain, all_known, include_urls, passive_only, workers, verbose):
+    """Detect exposed cloud storage buckets (S3, Azure Blob, GCS)
+
+    Discovers misconfigured cloud storage through:
+    - Passive extraction from discovered URLs
+    - Active probing of common bucket naming patterns
+    - Access level checking for discovered buckets
+    """
+    db = ctx.obj["db"]
+    config = ctx.obj["config"]
+
+    detector = CloudStorageDetector(config)
+
+    # Resolve target domains
+    if all_known:
+        targets = [d["domain"] for d in db.get_domains()]
+    elif domain:
+        targets = [domain]
+    else:
+        targets = config.domains
+
+    if not targets:
+        console.print(
+            "[red]Error:[/] No domain specified and none configured in config.yaml"
+        )
+        return
+
+    # Get URLs from DB if requested
+    urls = None
+    if include_urls:
+        urls = []
+        for target in targets:
+            domain_urls = db.get_urls(target)
+            urls.extend([u.get("url", "") for u in domain_urls if u.get("url")])
+        if urls:
+            console.print(f"[dim]Including {len(urls)} URLs from database for passive scan[/]")
+
+    mode = "passive only" if passive_only else "passive + active"
+    parallel_note = f" ({workers} workers)" if not passive_only else ""
+    console.print(
+        f"\n[bold blue]Scanning {len(targets)} domain(s) for exposed cloud storage[/]"
+    )
+    console.print(f"[dim]Mode: {mode}{parallel_note}[/]")
+
+    findings = detector.scan(
+        targets=targets,
+        urls=urls,
+        passive_only=passive_only,
+        workers=workers
+    )
+
+    if not findings:
+        console.print("\n[bold green]✓ No exposed cloud storage buckets found[/]")
+        return
+
+    # Group findings by severity for display
+    severity_colors = {
+        "critical": "red",
+        "high": "yellow",
+        "medium": "blue",
+        "low": "dim",
+    }
+
+    new_count = 0
+    for finding in findings:
+        sev = finding["severity"]
+        color = severity_colors.get(sev, "white")
+
+        # Add domain field for storage (use first target or extract from URL)
+        finding["domain"] = targets[0] if targets else "unknown"
+
+        is_new = db.add_bucket(finding)
+        if is_new:
+            new_count += 1
+
+        status_indicator = "[green]+ NEW[/]" if is_new else "[dim]Known[/]"
+
+        console.print(f"\n[{color}][{sev.upper()}][/] {finding['bucket_name']}")
+        console.print(f"  {status_indicator} {finding['url']}")
+        console.print(f"  [dim]Provider:[/] {finding['provider'].upper()}")
+        console.print(f"  [dim]Access:[/] {finding['access_level']}")
+        console.print(f"  [dim]Source:[/] {finding['source']}")
+
+        if verbose and finding.get("evidence"):
+            evidence = finding["evidence"][:200]
+            console.print(f"  [dim]Evidence:[/] {evidence}")
+
+    # Summary
+    console.print(f"\n[bold]{'━' * 50}[/]")
+    console.print("[bold]Cloud Storage Scan Summary[/]")
+    console.print(f"[bold]{'━' * 50}[/]")
+
+    # Count by severity
+    by_severity = {}
+    for finding in findings:
+        sev = finding["severity"]
+        by_severity[sev] = by_severity.get(sev, 0) + 1
+
+    for sev in ["critical", "high", "medium", "low"]:
+        if sev in by_severity:
+            color = severity_colors[sev]
+            console.print(f"  [{color}]{sev.upper()}:[/] {by_severity[sev]}")
+
+    console.print(f"\n[bold]Total:[/] {len(findings)} bucket(s) found, {new_count} new")
+
+    # Show warnings for critical/high findings
+    critical_high = [f for f in findings if f["severity"] in ("critical", "high")]
+    if critical_high:
+        console.print(
+            f"\n[bold red]⚠ {len(critical_high)} bucket(s) with critical/high severity![/]"
+        )
+        console.print(
+            "[dim]These buckets may expose sensitive data. "
+            "Review and restrict access immediately.[/]"
+        )
+
+
+@cli.command()
 @click.argument("domain")
 @click.option(
     "--notify/--no-notify", default=False, help="Send notifications for changes"
@@ -812,6 +1187,8 @@ def scan(ctx, domain, notify, parallel, workers):
         runner.register_module("urls", make_invoker(urls))
         runner.register_module("emails", make_invoker(emails))
         runner.register_module("apis", make_invoker(apis))
+        runner.register_module("screenshots", make_invoker(screenshots))
+        runner.register_module("whois", make_invoker(whois, check_changes=True))
         runner.register_module("vulnscan", make_invoker(vulnscan))
 
         # Run with parallel execution
@@ -833,6 +1210,8 @@ def scan(ctx, domain, notify, parallel, workers):
         ctx.invoke(takeover, domain=domain)
         ctx.invoke(apis, domain=domain)
         ctx.invoke(emails, domain=domain)
+        ctx.invoke(screenshots, domain=domain)
+        ctx.invoke(whois, domain=domain, check_changes=True)
         ctx.invoke(vulnscan, domain=domain)
 
         elapsed = time.time() - start_time
@@ -896,6 +1275,9 @@ def status(ctx):
     table.add_row("Interesting URLs", str(stats.get("interesting_urls", 0)))
     table.add_row("API endpoints/specs", str(stats.get("apis", 0)))
     table.add_row("Emails discovered", str(stats.get("emails", 0)))
+    table.add_row("Screenshots captured", str(stats.get("screenshots", 0)))
+    table.add_row("WHOIS records", str(stats.get("whois_records", 0)))
+    table.add_row("Domains expiring soon", str(stats.get("expiring_domains", 0)))
     table.add_row("Takeover vulnerabilities", str(stats.get("takeovers", 0)))
     table.add_row("Vulnerability findings", str(stats["findings"]))
     table.add_row("Last scan", stats.get("last_scan", "Never"))
@@ -1127,6 +1509,31 @@ def init(ctx):
     config_path.write_text(yaml.dump(default_config, default_flow_style=False))
     console.print(f"[green]Created config file:[/] {config_path}")
     console.print("[dim]Edit this file to configure your domains and notifications[/]")
+
+
+@cli.command()
+@click.option("--host", "-h", default="0.0.0.0", help="Host to bind to")
+@click.option("--port", "-p", default=8080, help="Port to listen on")
+@click.option("--reload", is_flag=True, help="Enable auto-reload for development")
+@click.pass_context
+def web(ctx, host, port, reload):
+    """Start the web dashboard server"""
+    from .web.app import run_server
+
+    config_path = Path("/app/config.yaml")
+    data_dir = ctx.obj["data_dir"]
+
+    console.print(f"\n[bold blue]Starting ASM Web Dashboard[/]")
+    console.print(f"[dim]Server: http://{host}:{port}[/]")
+    console.print("[dim]Press Ctrl+C to stop[/]\n")
+
+    run_server(
+        host=host,
+        port=port,
+        config_path=config_path,
+        data_dir=data_dir,
+        reload=reload
+    )
 
 
 def main():
