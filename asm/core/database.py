@@ -22,6 +22,9 @@ from ..repositories.asset import (
 from ..repositories.finding import FindingRepository, TakeoverRepository
 from ..repositories.discovery import URLRepository, APIRepository, EmailRepository
 from ..repositories.analytics import AnalyticsRepository
+from ..repositories.screenshots import ScreenshotRepository
+from ..repositories.whois import WHOISRepository
+from ..repositories.cloud_storage import CloudStorageRepository
 
 
 class Database:
@@ -46,6 +49,9 @@ class Database:
         self.api_repo = APIRepository(self.db)
         self.email_repo = EmailRepository(self.db)
         self.analytics_repo = AnalyticsRepository(self.db)
+        self.screenshot_repo = ScreenshotRepository(self.db)
+        self.whois_repo = WHOISRepository(self.db)
+        self.cloud_storage_repo = CloudStorageRepository(self.db)
 
         # Statistics cache: (timestamp, cached_stats)
         self._stats_cache: Tuple[float, Optional[Dict]] = (0.0, None)
@@ -105,6 +111,15 @@ class Database:
     
     @property
     def trend_history(self): return self.analytics_repo.trend_history
+
+    @property
+    def screenshots(self): return self.screenshot_repo.table
+
+    @property
+    def whois_records(self): return self.whois_repo.table
+
+    @property
+    def cloud_storage(self): return self.cloud_storage_repo.table
 
 
     # === Domain Management ===
@@ -253,6 +268,60 @@ class Database:
         """Get count of discovered emails"""
         return self.email_repo.get_email_count(domain)
 
+    # === Screenshot Management ===
+
+    def add_screenshot(self, screenshot: Dict) -> bool:
+        """Add a screenshot record. Returns True if new."""
+        return self.screenshot_repo.add_screenshot(screenshot)
+
+    def get_screenshot(self, target: str) -> Optional[Dict]:
+        """Get the latest screenshot for a target"""
+        return self.screenshot_repo.get_screenshot(target)
+
+    def get_screenshots(self, host: str = None) -> List[Dict]:
+        """Get screenshots, optionally filtered by host"""
+        return self.screenshot_repo.get_screenshots(host)
+
+    def check_screenshot_changed(self, target: str, new_hash: str) -> Dict:
+        """Check if a screenshot has changed"""
+        return self.screenshot_repo.check_screenshot_changed(target, new_hash)
+
+    # === WHOIS Management ===
+
+    def save_whois(self, domain: str, whois_info: Dict) -> bool:
+        """Save WHOIS information for a domain"""
+        return self.whois_repo.save_whois(domain, whois_info)
+
+    def get_whois(self, domain: str) -> Optional[Dict]:
+        """Get WHOIS record for a domain"""
+        return self.whois_repo.get_whois(domain)
+
+    def get_all_whois(self) -> List[Dict]:
+        """Get all WHOIS records"""
+        return self.whois_repo.get_all_whois()
+
+    def get_expiring_domains(self, days: int = 30) -> List[Dict]:
+        """Get domains expiring within N days"""
+        return self.whois_repo.get_expiring_domains(days)
+
+    def check_whois_changes(self, domain: str, new_whois: Dict) -> Dict:
+        """Compare new WHOIS data with stored data"""
+        return self.whois_repo.check_whois_changes(domain, new_whois)
+
+    # === Cloud Storage Management ===
+
+    def add_bucket(self, bucket: Dict) -> bool:
+        """Add a cloud storage bucket finding. Returns True if new."""
+        return self.cloud_storage_repo.add_bucket(bucket)
+
+    def get_buckets(self, domain: str = None, severity: str = None) -> List[Dict]:
+        """Get cloud storage buckets, optionally filtered by domain and/or severity"""
+        return self.cloud_storage_repo.get_buckets(domain, severity)
+
+    def get_open_buckets(self) -> List[Dict]:
+        """Get all buckets with status='open'"""
+        return self.cloud_storage_repo.get_open_buckets()
+
     # === Vulnerability Findings ===
 
     def add_finding(self, finding: Dict) -> bool:
@@ -295,6 +364,9 @@ class Database:
             "interesting_urls": len(self.url_repo.get_all_urls(interesting_only=True)),
             "apis": len(self.apis.all()),
             "emails": len(self.emails.all()),
+            "screenshots": len(self.screenshots.all()),
+            "whois_records": len(self.whois_records.all()),
+            "expiring_domains": len(self.whois_repo.get_expiring_domains(30)),
             "takeovers": len(self.takeover_repo.get_takeovers(status="open")),
             "findings": len(self.finding_repo.get_open_findings()),
             "last_scan": self.analytics_repo.get_last_scan_time(),
