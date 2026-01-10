@@ -1,0 +1,357 @@
+package notifier
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/smtp"
+	"strings"
+	"time"
+
+	"github.com/asm-tool/asm-go/internal/parallel"
+)
+
+// Notifier sends notifications about scan results
+type Notifier struct {
+	SlackWebhook string
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUser     string
+	SMTPPassword string
+	EmailFrom    string
+	EmailTo      []string
+	HTTPClient   *http.Client
+}
+
+// DefaultNotifier creates a notifier with default HTTP client
+func DefaultNotifier() *Notifier {
+	return &Notifier{
+		HTTPClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}
+}
+
+// NotifySlack sends a scan summary to Slack
+func (n *Notifier) NotifySlack(result *parallel.ScanResult) error {
+	if n.SlackWebhook == "" {
+		return fmt.Errorf("slack webhook not configured")
+	}
+
+	message := n.buildSlackMessage(result)
+
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("marshaling slack payload: %w", err)
+	}
+
+	resp, err := n.HTTPClient.Post(n.SlackWebhook, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("posting to slack: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("slack returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// SlackMessage represents a Slack webhook payload
+type SlackMessage struct {
+	Text        string       `json:"text,omitempty"`
+	Blocks      []SlackBlock `json:"blocks,omitempty"`
+	Attachments []SlackAttachment `json:"attachments,omitempty"`
+}
+
+type SlackBlock struct {
+	Type     string          `json:"type"`
+	Text     *SlackText      `json:"text,omitempty"`
+	Fields   []SlackText     `json:"fields,omitempty"`
+	Elements []SlackElement  `json:"elements,omitempty"`
+}
+
+type SlackText struct {
+	Type  string `json:"type"`
+	Text  string `json:"text"`
+	Emoji bool   `json:"emoji,omitempty"`
+}
+
+type SlackElement struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+type SlackAttachment struct {
+	Color  string       `json:"color"`
+	Blocks []SlackBlock `json:"blocks,omitempty"`
+}
+
+func (n *Notifier) buildSlackMessage(result *parallel.ScanResult) SlackMessage {
+	// Count findings
+	vulnTakeovers := 0
+	for _, t := range result.Takeovers {
+		if t.Vulnerable {
+			vulnTakeovers++
+		}
+	}
+
+	publicBuckets := 0
+	for _, b := range result.CloudStorage {
+		if b.AccessLevel == "listing_enabled" || b.AccessLevel == "public_read" {
+			publicBuckets++
+		}
+	}
+
+	techCount := 0
+	for _, t := range result.Technologies {
+		techCount += len(t.Technologies)
+	}
+
+	// Determine alert color
+	color := "#36a64f" // green
+	if vulnTakeovers > 0 || publicBuckets > 0 {
+		color = "#dc3545" // red
+	} else if len(result.Errors) > 0 {
+		color = "#ffc107" // yellow
+	}
+
+	blocks := []SlackBlock{
+		{
+			Type: "header",
+			Text: &SlackText{
+				Type:  "plain_text",
+				Text:  fmt.Sprintf("ASM Scan Complete: %s", result.Domain),
+				Emoji: true,
+			},
+		},
+		{
+			Type: "section",
+			Fields: []SlackText{
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Duration:*\n%s", result.Duration.Round(time.Millisecond))},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Scan Time:*\n%s", result.StartTime.Format("2006-01-02 15:04"))},
+			},
+		},
+		{
+			Type: "section",
+			Fields: []SlackText{
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Subdomains:* %d", len(result.Subdomains))},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Open Ports:* %d", len(result.Ports))},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Certificates:* %d", len(result.Certificates))},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Technologies:* %d", techCount)},
+			},
+		},
+		{
+			Type: "section",
+			Fields: []SlackText{
+				{Type: "mrkdwn", Text: fmt.Sprintf("*URLs:* %d", len(result.URLs))},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*APIs:* %d", len(result.APIs))},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Emails:* %d", len(result.Emails))},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Buckets:* %d", len(result.CloudStorage))},
+			},
+		},
+	}
+
+	// Add warnings section
+	var warnings []string
+	if vulnTakeovers > 0 {
+		warnings = append(warnings, fmt.Sprintf(":warning: *%d subdomain takeover vulnerabilities*", vulnTakeovers))
+	}
+	if publicBuckets > 0 {
+		warnings = append(warnings, fmt.Sprintf(":warning: *%d public cloud storage buckets*", publicBuckets))
+	}
+
+	if len(warnings) > 0 {
+		blocks = append(blocks, SlackBlock{
+			Type: "section",
+			Text: &SlackText{
+				Type: "mrkdwn",
+				Text: strings.Join(warnings, "\n"),
+			},
+		})
+	}
+
+	// Add errors if any
+	if len(result.Errors) > 0 {
+		var errMsgs []string
+		for module, err := range result.Errors {
+			errMsgs = append(errMsgs, fmt.Sprintf("• %s: %s", module, err))
+		}
+		blocks = append(blocks, SlackBlock{
+			Type: "section",
+			Text: &SlackText{
+				Type: "mrkdwn",
+				Text: fmt.Sprintf("*Errors:*\n%s", strings.Join(errMsgs, "\n")),
+			},
+		})
+	}
+
+	return SlackMessage{
+		Attachments: []SlackAttachment{
+			{
+				Color:  color,
+				Blocks: blocks,
+			},
+		},
+	}
+}
+
+// NotifyEmail sends a scan summary via email
+func (n *Notifier) NotifyEmail(result *parallel.ScanResult) error {
+	if n.SMTPHost == "" {
+		return fmt.Errorf("SMTP not configured")
+	}
+	if len(n.EmailTo) == 0 {
+		return fmt.Errorf("no email recipients configured")
+	}
+
+	subject := fmt.Sprintf("ASM Scan Complete: %s", result.Domain)
+	body := n.buildEmailBody(result)
+
+	msg := fmt.Sprintf("From: %s\r\n"+
+		"To: %s\r\n"+
+		"Subject: %s\r\n"+
+		"MIME-Version: 1.0\r\n"+
+		"Content-Type: text/html; charset=\"UTF-8\"\r\n"+
+		"\r\n%s",
+		n.EmailFrom,
+		strings.Join(n.EmailTo, ","),
+		subject,
+		body)
+
+	var auth smtp.Auth
+	if n.SMTPUser != "" && n.SMTPPassword != "" {
+		auth = smtp.PlainAuth("", n.SMTPUser, n.SMTPPassword, n.SMTPHost)
+	}
+
+	addr := fmt.Sprintf("%s:%d", n.SMTPHost, n.SMTPPort)
+	err := smtp.SendMail(addr, auth, n.EmailFrom, n.EmailTo, []byte(msg))
+	if err != nil {
+		return fmt.Errorf("sending email: %w", err)
+	}
+
+	return nil
+}
+
+func (n *Notifier) buildEmailBody(result *parallel.ScanResult) string {
+	vulnTakeovers := 0
+	for _, t := range result.Takeovers {
+		if t.Vulnerable {
+			vulnTakeovers++
+		}
+	}
+
+	publicBuckets := 0
+	for _, b := range result.CloudStorage {
+		if b.AccessLevel == "listing_enabled" || b.AccessLevel == "public_read" {
+			publicBuckets++
+		}
+	}
+
+	techCount := 0
+	for _, t := range result.Technologies {
+		techCount += len(t.Technologies)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(`<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { font-family: -apple-system, sans-serif; line-height: 1.6; color: #333; }
+.header { background: #1a1a2e; color: white; padding: 20px; }
+.content { padding: 20px; }
+.stat { display: inline-block; margin: 10px 20px 10px 0; }
+.stat-number { font-size: 24px; font-weight: bold; color: #1a1a2e; }
+.stat-label { color: #666; font-size: 14px; }
+.warning { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 15px 0; border-radius: 4px; }
+.critical { background: #f8d7da; border: 1px solid #dc3545; padding: 15px; margin: 15px 0; border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+th { background: #f5f5f5; }
+</style>
+</head>
+<body>
+`)
+
+	sb.WriteString(fmt.Sprintf(`<div class="header">
+<h1>ASM Scan Report</h1>
+<p>Domain: %s</p>
+<p>Scan Time: %s | Duration: %s</p>
+</div>
+<div class="content">
+`, result.Domain, result.StartTime.Format("2006-01-02 15:04:05"), result.Duration.Round(time.Millisecond)))
+
+	// Stats
+	sb.WriteString(`<h2>Summary</h2>`)
+	sb.WriteString(fmt.Sprintf(`
+<div class="stat"><div class="stat-number">%d</div><div class="stat-label">Subdomains</div></div>
+<div class="stat"><div class="stat-number">%d</div><div class="stat-label">Open Ports</div></div>
+<div class="stat"><div class="stat-number">%d</div><div class="stat-label">Certificates</div></div>
+<div class="stat"><div class="stat-number">%d</div><div class="stat-label">Technologies</div></div>
+<div class="stat"><div class="stat-number">%d</div><div class="stat-label">URLs</div></div>
+<div class="stat"><div class="stat-number">%d</div><div class="stat-label">APIs</div></div>
+<div class="stat"><div class="stat-number">%d</div><div class="stat-label">Emails</div></div>
+<div class="stat"><div class="stat-number">%d</div><div class="stat-label">Buckets</div></div>
+`,
+		len(result.Subdomains),
+		len(result.Ports),
+		len(result.Certificates),
+		techCount,
+		len(result.URLs),
+		len(result.APIs),
+		len(result.Emails),
+		len(result.CloudStorage)))
+
+	// Warnings
+	if vulnTakeovers > 0 {
+		sb.WriteString(fmt.Sprintf(`<div class="critical"><strong>%d Subdomain Takeover Vulnerabilities Found</strong></div>`, vulnTakeovers))
+	}
+	if publicBuckets > 0 {
+		sb.WriteString(fmt.Sprintf(`<div class="critical"><strong>%d Public Cloud Storage Buckets Found</strong></div>`, publicBuckets))
+	}
+
+	// Takeover details
+	if vulnTakeovers > 0 {
+		sb.WriteString(`<h3>Subdomain Takeover Vulnerabilities</h3>`)
+		sb.WriteString(`<table><tr><th>Host</th><th>Service</th><th>Confidence</th></tr>`)
+		for _, t := range result.Takeovers {
+			if t.Vulnerable {
+				sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
+					t.Host, t.Service, t.Confidence))
+			}
+		}
+		sb.WriteString(`</table>`)
+	}
+
+	// Public buckets
+	if publicBuckets > 0 {
+		sb.WriteString(`<h3>Public Cloud Storage</h3>`)
+		sb.WriteString(`<table><tr><th>Provider</th><th>Bucket</th><th>Access</th></tr>`)
+		for _, b := range result.CloudStorage {
+			if b.AccessLevel == "listing_enabled" || b.AccessLevel == "public_read" {
+				sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
+					strings.ToUpper(b.Provider), b.BucketName, b.AccessLevel))
+			}
+		}
+		sb.WriteString(`</table>`)
+	}
+
+	// Errors
+	if len(result.Errors) > 0 {
+		sb.WriteString(`<div class="warning"><strong>Scan Errors:</strong><ul>`)
+		for module, err := range result.Errors {
+			sb.WriteString(fmt.Sprintf(`<li>%s: %s</li>`, module, err))
+		}
+		sb.WriteString(`</ul></div>`)
+	}
+
+	sb.WriteString(`</div>
+<p style="color: #666; font-size: 12px; padding: 20px;">Generated by ASM Tool</p>
+</body>
+</html>`)
+
+	return sb.String()
+}
