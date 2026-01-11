@@ -192,12 +192,12 @@ func (s *Scanner) scanPort(ctx context.Context, host string, port int) *Port {
 
 // grabBanner attempts to read a service banner
 func (s *Scanner) grabBanner(conn net.Conn, port int) string {
-	conn.SetReadDeadline(time.Now().Add(s.BannerTimeout))
+	_ = conn.SetReadDeadline(time.Now().Add(s.BannerTimeout))
 
 	// Some services need a probe first
 	probe := getProbe(port)
 	if probe != "" {
-		conn.Write([]byte(probe))
+		_, _ = conn.Write([]byte(probe))
 	}
 
 	buf := make([]byte, 1024)

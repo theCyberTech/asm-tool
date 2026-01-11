@@ -193,7 +193,7 @@ func (s *Scanner) Scan(ctx context.Context, targets []string) (*Result, error) {
 	defer os.Remove(targetFile.Name())
 
 	for _, t := range targets {
-		targetFile.WriteString(t + "\n")
+		_, _ = targetFile.WriteString(t + "\n")
 	}
 	targetFile.Close()
 
@@ -271,7 +271,7 @@ func (s *Scanner) ScanWithCallback(ctx context.Context, targets []string, callba
 	defer os.Remove(targetFile.Name())
 
 	for _, t := range targets {
-		targetFile.WriteString(t + "\n")
+		_, _ = targetFile.WriteString(t + "\n")
 	}
 	targetFile.Close()
 
@@ -307,7 +307,7 @@ func (s *Scanner) ScanWithCallback(ctx context.Context, targets []string, callba
 		}
 	}
 
-	cmd.Wait()
+	_ = cmd.Wait()
 	result.Duration = time.Since(start)
 	result.Stats = s.calculateStats(result)
 
@@ -366,7 +366,7 @@ func (s *Scanner) buildArgs(targetFile string) []string {
 
 	// Add output directory for detailed results
 	if s.OutputDir != "" {
-		os.MkdirAll(s.OutputDir, 0755)
+		_ = os.MkdirAll(s.OutputDir, 0755)
 		args = append(args, "-output", filepath.Join(s.OutputDir, "nuclei-output.txt"))
 	}
 

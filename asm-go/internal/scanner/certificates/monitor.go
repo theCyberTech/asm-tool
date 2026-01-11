@@ -237,9 +237,7 @@ func extractSANs(cert *x509.Certificate) []string {
 	var sans []string
 
 	// DNS names
-	for _, name := range cert.DNSNames {
-		sans = append(sans, name)
-	}
+	sans = append(sans, cert.DNSNames...)
 
 	// IP addresses
 	for _, ip := range cert.IPAddresses {
@@ -247,9 +245,7 @@ func extractSANs(cert *x509.Certificate) []string {
 	}
 
 	// Email addresses
-	for _, email := range cert.EmailAddresses {
-		sans = append(sans, email)
-	}
+	sans = append(sans, cert.EmailAddresses...)
 
 	// URIs
 	for _, uri := range cert.URIs {

@@ -142,7 +142,7 @@ func runPortscan(db *database.Database, hosts []string, scanPorts []int, workers
 				State:    p.State,
 				Banner:   p.Banner,
 			}
-			db.Ports.Add(dbPort)
+			_ = db.Ports.Add(dbPort)
 		}
 	} else {
 		// Batch scan
@@ -164,7 +164,7 @@ func runPortscan(db *database.Database, hosts []string, scanPorts []int, workers
 						State:    p.State,
 						Banner:   p.Banner,
 					}
-					db.Ports.Add(dbPort)
+					_ = db.Ports.Add(dbPort)
 				}
 			}
 		}
