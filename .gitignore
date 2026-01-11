@@ -58,3 +58,4 @@ config.yaml
 
 # Claude/AI assistant files
 .claude/
+/asm
