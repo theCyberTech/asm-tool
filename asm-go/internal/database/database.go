@@ -446,3 +446,143 @@ func (r *FindingRepository) Resolve(id int64) error {
 func (d *Database) Exec(query string, args ...interface{}) (sql.Result, error) {
 	return d.db.Exec(query, args...)
 }
+
+// Takeover represents a subdomain takeover finding
+type Takeover struct {
+	ID         int64     `db:"id"`
+	Host       string    `db:"host"`
+	Vulnerable bool      `db:"vulnerable"`
+	Service    string    `db:"service"`
+	Confidence string    `db:"confidence"`
+	Evidence   string    `db:"evidence"`
+	Status     string    `db:"status"`
+	CheckedAt  time.Time `db:"checked_at"`
+}
+
+// URL represents a discovered URL
+type URL struct {
+	ID           int64          `db:"id"`
+	URL          string         `db:"url"`
+	Domain       string         `db:"domain"`
+	Category     sql.NullString `db:"category"`
+	Interesting  int            `db:"interesting"`
+	DiscoveredAt time.Time      `db:"discovered_at"`
+}
+
+// API represents a discovered API endpoint
+type API struct {
+	ID           int64          `db:"id"`
+	URL          string         `db:"url"`
+	Type         sql.NullString `db:"api_type"`
+	Title        sql.NullString `db:"title"`
+	Version      sql.NullString `db:"version"`
+	DiscoveredAt time.Time      `db:"discovered_at"`
+}
+
+// Email represents a discovered email address
+type Email struct {
+	ID           int64     `db:"id"`
+	Address      string    `db:"email"`
+	Domain       string    `db:"domain"`
+	Source       string    `db:"source"`
+	DiscoveredAt time.Time `db:"discovered_at"`
+}
+
+// CloudStorage represents a cloud storage bucket
+type CloudStorage struct {
+	ID          int64     `db:"id"`
+	Provider    string    `db:"provider"`
+	BucketName  string    `db:"bucket_name"`
+	URL         string    `db:"url"`
+	Domain      string    `db:"domain"`
+	AccessLevel string    `db:"access_level"`
+	Severity    string    `db:"severity"`
+	Evidence    string    `db:"evidence"`
+	Status      string    `db:"status"`
+	CheckedAt   time.Time `db:"checked_at"`
+}
+
+// GetCertificatesForDomain returns all certificates for hosts matching a domain
+func (d *Database) GetCertificatesForDomain(domain string) ([]Certificate, error) {
+	var certs []Certificate
+	err := d.db.Select(&certs, `
+		SELECT * FROM certificates
+		WHERE host LIKE ? OR host = ?
+		ORDER BY days_until_expiry
+	`, "%"+domain, domain)
+	return certs, err
+}
+
+// GetTakeoversForDomain returns all takeover findings for a domain
+func (d *Database) GetTakeoversForDomain(domain string) ([]Takeover, error) {
+	var takeovers []Takeover
+	err := d.db.Select(&takeovers, `
+		SELECT * FROM takeovers
+		WHERE host LIKE ? AND status = 'open'
+		ORDER BY host
+	`, "%"+domain)
+	return takeovers, err
+}
+
+// GetURLsForDomain returns all URLs for a domain
+func (d *Database) GetURLsForDomain(domain string) ([]URL, error) {
+	var urls []URL
+	err := d.db.Select(&urls, `
+		SELECT * FROM urls
+		WHERE domain = ? OR domain LIKE ?
+		ORDER BY url
+	`, domain, "%."+domain)
+	return urls, err
+}
+
+// GetAPIsForDomain returns all APIs for a domain
+func (d *Database) GetAPIsForDomain(domain string) ([]API, error) {
+	var apis []API
+	err := d.db.Select(&apis, `
+		SELECT id, url, api_type, title, version, discovered_at FROM apis
+		WHERE url LIKE ?
+		ORDER BY url
+	`, "%"+domain+"%")
+	return apis, err
+}
+
+// GetEmailsForDomain returns all emails for a domain
+func (d *Database) GetEmailsForDomain(domain string) ([]Email, error) {
+	var emails []Email
+	err := d.db.Select(&emails, `
+		SELECT id, email, domain, source, discovered_at FROM emails
+		WHERE domain = ?
+		ORDER BY email
+	`, domain)
+	return emails, err
+}
+
+// GetCloudStorageForDomain returns all cloud storage buckets for a domain
+func (d *Database) GetCloudStorageForDomain(domain string) ([]CloudStorage, error) {
+	var buckets []CloudStorage
+	err := d.db.Select(&buckets, `
+		SELECT * FROM cloud_storage
+		WHERE domain = ?
+		ORDER BY severity DESC, bucket_name
+	`, domain)
+	return buckets, err
+}
+
+// GetVulnerabilitiesForDomain returns all vulnerabilities for a domain
+func (d *Database) GetVulnerabilitiesForDomain(domain string) ([]Finding, error) {
+	var findings []Finding
+	err := d.db.Select(&findings, `
+		SELECT * FROM findings
+		WHERE host LIKE ? AND status = 'open'
+		ORDER BY
+			CASE severity
+				WHEN 'critical' THEN 1
+				WHEN 'high' THEN 2
+				WHEN 'medium' THEN 3
+				WHEN 'low' THEN 4
+				ELSE 5
+			END,
+			name
+	`, "%"+domain)
+	return findings, err
+}

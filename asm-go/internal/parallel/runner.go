@@ -73,6 +73,18 @@ type CloudBucket = cloud.Bucket
 // VulnFinding is an alias for nuclei.Finding
 type VulnFinding = nuclei.Finding
 
+// VulnInfo is an alias for nuclei.TemplateInfo
+type VulnInfo = nuclei.TemplateInfo
+
+// URLResult is an alias for urls.URL
+type URLResult = urls.URL
+
+// APIResult is an alias for apis.API
+type APIResult = apis.API
+
+// EmailResult is an alias for emails.Email
+type EmailResult = emails.Email
+
 // ScanResult holds the complete scan results
 type ScanResult struct {
 	Domain          string
