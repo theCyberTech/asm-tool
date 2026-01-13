@@ -64,3 +64,88 @@
     {{end}}
 </div>
 {{end}}
+
+{{define "modal-close-button"}}
+<button class="modal-close" @click="open = false" aria-label="Close modal">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+</button>
+{{end}}
+
+{{define "modal-search"}}
+<div class="modal-search">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input type="text" placeholder="Search..." x-model="search" @input="filterRows()">
+</div>
+{{end}}
+
+{{define "sortable-table-scripts"}}
+<script>
+function sortableTable(initialData) {
+    return {
+        data: initialData,
+        filteredData: initialData,
+        search: '',
+        sortColumn: '',
+        sortDir: 'asc',
+
+        sortBy(column) {
+            if (this.sortColumn === column) {
+                this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.sortColumn = column;
+                this.sortDir = 'asc';
+            }
+            this.applySort();
+        },
+
+        applySort() {
+            if (!this.sortColumn) return;
+
+            this.filteredData = [...this.filteredData].sort((a, b) => {
+                let aVal = a[this.sortColumn];
+                let bVal = b[this.sortColumn];
+
+                // Handle null/undefined
+                if (aVal == null) aVal = '';
+                if (bVal == null) bVal = '';
+
+                // Case-insensitive string comparison
+                if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+                if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+
+                let result = 0;
+                if (aVal < bVal) result = -1;
+                else if (aVal > bVal) result = 1;
+
+                return this.sortDir === 'asc' ? result : -result;
+            });
+        },
+
+        filterRows() {
+            const term = this.search.toLowerCase();
+            if (!term) {
+                this.filteredData = [...this.data];
+            } else {
+                this.filteredData = this.data.filter(row => {
+                    return Object.values(row).some(val =>
+                        String(val).toLowerCase().includes(term)
+                    );
+                });
+            }
+            this.applySort();
+        },
+
+        getSortClass(column) {
+            if (this.sortColumn !== column) return 'sortable';
+            return 'sortable ' + this.sortDir;
+        }
+    };
+}
+</script>
+{{end}}
