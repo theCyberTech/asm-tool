@@ -143,6 +143,24 @@ func getPageData(deps *Deps, activePage string) dashboard.PageData {
 		}
 	}
 
+	// Get domains with stats for the landing page
+	domains, err := deps.DB.GetDomainsWithStats()
+	if err == nil {
+		data.Domains = make([]dashboard.DomainStats, len(domains))
+		for i, d := range domains {
+			data.Domains[i] = dashboard.DomainStats{
+				ID:             d.ID,
+				Domain:         d.Domain,
+				AddedAt:        d.AddedAt,
+				LastScanned:    d.LastScanned,
+				SubdomainCount: d.SubdomainCount,
+				PortCount:      d.PortCount,
+				CriticalCount:  d.CriticalCount,
+				HighCount:      d.HighCount,
+			}
+		}
+	}
+
 	return data
 }
 

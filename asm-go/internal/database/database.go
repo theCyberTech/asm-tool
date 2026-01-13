@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -119,14 +120,36 @@ func (d *Database) GetStats() (*Stats, error) {
 		{"SELECT COUNT(*) FROM cloud_storage WHERE status = 'open'", &stats.CloudBuckets},
 	}
 
+	var errs []string
 	for _, q := range queries {
 		if err := d.db.Get(q.dest, q.query); err != nil {
-			// Table might not exist yet, default to 0
+			// Table not existing is expected for fresh databases
+			if isTableNotExistsError(err) {
+				*q.dest = 0
+				continue
+			}
+			// Log unexpected errors but continue to collect other stats
+			errs = append(errs, fmt.Sprintf("query %q: %v", q.query, err))
 			*q.dest = 0
 		}
 	}
 
+	// Return aggregate error if any unexpected errors occurred
+	if len(errs) > 0 {
+		return stats, fmt.Errorf("stats query errors: %s", strings.Join(errs, "; "))
+	}
+
 	return stats, nil
+}
+
+// isTableNotExistsError checks if the error is due to a missing table
+func isTableNotExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "no such table") ||
+		strings.Contains(errStr, "doesn't exist")
 }
 
 // FindingSeverityCounts returns counts of findings by severity
@@ -149,7 +172,11 @@ func (d *Database) GetFindingSeverityCounts() (*FindingSeverityCounts, error) {
 		GROUP BY severity
 	`)
 	if err != nil {
-		return counts, nil // Return empty counts if query fails
+		// Table not existing is expected for fresh databases
+		if isTableNotExistsError(err) {
+			return counts, nil
+		}
+		return counts, fmt.Errorf("querying finding severity counts: %w", err)
 	}
 	defer rows.Close()
 
@@ -157,7 +184,7 @@ func (d *Database) GetFindingSeverityCounts() (*FindingSeverityCounts, error) {
 		var severity string
 		var count int
 		if err := rows.Scan(&severity, &count); err != nil {
-			continue
+			return counts, fmt.Errorf("scanning severity count row: %w", err)
 		}
 		switch severity {
 		case "critical":
@@ -171,6 +198,10 @@ func (d *Database) GetFindingSeverityCounts() (*FindingSeverityCounts, error) {
 		case "info":
 			counts.Info = count
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return counts, fmt.Errorf("iterating severity counts: %w", err)
 	}
 
 	return counts, nil
@@ -566,6 +597,73 @@ func (d *Database) GetCloudStorageForDomain(domain string) ([]CloudStorage, erro
 		ORDER BY severity DESC, bucket_name
 	`, domain)
 	return buckets, err
+}
+
+// DomainWithStats represents a domain with aggregate statistics
+type DomainWithStats struct {
+	ID             int64      `db:"id"`
+	Domain         string     `db:"domain"`
+	AddedAt        time.Time  `db:"added_at"`
+	LastScanned    *time.Time `db:"last_scanned"`
+	Active         bool       `db:"active"`
+	SubdomainCount int        `db:"subdomain_count"`
+	PortCount      int        `db:"port_count"`
+	CriticalCount  int        `db:"critical_count"`
+	HighCount      int        `db:"high_count"`
+}
+
+// GetDomainsWithStats returns all active domains with their aggregate statistics
+func (d *Database) GetDomainsWithStats() ([]DomainWithStats, error) {
+	var domains []DomainWithStats
+
+	err := d.db.Select(&domains, `
+		SELECT
+			d.id,
+			d.domain,
+			d.added_at,
+			d.last_scanned,
+			d.active,
+			COALESCE(sub.subdomain_count, 0) as subdomain_count,
+			COALESCE(p.port_count, 0) as port_count,
+			COALESCE(f.critical_count, 0) as critical_count,
+			COALESCE(f.high_count, 0) as high_count
+		FROM domains d
+		LEFT JOIN (
+			SELECT domain_id, COUNT(*) as subdomain_count
+			FROM subdomains
+			WHERE active = 1
+			GROUP BY domain_id
+		) sub ON sub.domain_id = d.id
+		LEFT JOIN (
+			SELECT
+				d2.id as domain_id,
+				COUNT(*) as port_count
+			FROM domains d2
+			JOIN subdomains s ON s.domain_id = d2.id
+			JOIN ports pt ON pt.host = s.subdomain AND pt.state = 'open'
+			GROUP BY d2.id
+		) p ON p.domain_id = d.id
+		LEFT JOIN (
+			SELECT
+				d3.id as domain_id,
+				SUM(CASE WHEN f.severity = 'critical' THEN 1 ELSE 0 END) as critical_count,
+				SUM(CASE WHEN f.severity = 'high' THEN 1 ELSE 0 END) as high_count
+			FROM domains d3
+			JOIN findings f ON f.host LIKE '%' || d3.domain AND f.status = 'open'
+			GROUP BY d3.id
+		) f ON f.domain_id = d.id
+		WHERE d.active = 1
+		ORDER BY d.domain
+	`)
+
+	if err != nil {
+		if isTableNotExistsError(err) {
+			return []DomainWithStats{}, nil
+		}
+		return nil, fmt.Errorf("querying domains with stats: %w", err)
+	}
+
+	return domains, nil
 }
 
 // GetVulnerabilitiesForDomain returns all vulnerabilities for a domain

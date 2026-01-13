@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"io"
 	"sync"
+	"time"
 )
 
 //go:embed templates/*.html
@@ -21,7 +22,20 @@ type PageData struct {
 	ActivePage string
 	Stats      Stats
 	Findings   FindingCounts
+	Domains    []DomainStats
 	Error      string
+}
+
+// DomainStats represents a domain with its aggregate statistics for display
+type DomainStats struct {
+	ID             int64
+	Domain         string
+	AddedAt        time.Time
+	LastScanned    *time.Time
+	SubdomainCount int
+	PortCount      int
+	CriticalCount  int
+	HighCount      int
 }
 
 // Stats represents asset counts

@@ -414,6 +414,22 @@ tbody tr:hover {
     background-color: var(--bg-hover);
 }
 
+.domain-link {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.domain-link:hover {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+.domain-row:hover .domain-link {
+    color: var(--accent-blue);
+}
+
 /* Buttons */
 .btn {
     display: inline-flex;
@@ -670,6 +686,7 @@ select.form-input {
 .flex-wrap { flex-wrap: wrap; }
 .items-center { align-items: center; }
 .justify-between { justify-content: space-between; }
+.justify-center { justify-content: center; }
 .gap-sm { gap: var(--space-sm); }
 .gap-md { gap: var(--space-md); }
 
