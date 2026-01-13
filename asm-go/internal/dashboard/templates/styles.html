@@ -879,6 +879,103 @@ select.form-input {
     margin-left: auto;
 }
 
+/* Search and Filter Bar */
+.search-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+    flex-wrap: wrap;
+    padding: var(--space-md);
+    background-color: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+}
+
+.search-input-container {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+}
+
+.search-input-container svg {
+    position: absolute;
+    left: var(--space-sm);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.search-input {
+    width: 100%;
+    padding: var(--space-sm) var(--space-md);
+    padding-left: calc(var(--space-md) + 20px);
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    transition: border-color 0.15s ease;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+}
+
+.search-input::placeholder {
+    color: var(--text-muted);
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.filter-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.date-input {
+    padding: var(--space-sm) var(--space-sm);
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-family: var(--font-sans);
+    transition: border-color 0.15s ease;
+}
+
+.date-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+}
+
+/* Style the date picker for dark theme */
+.date-input::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+    cursor: pointer;
+}
+
+.clear-filters-btn {
+    white-space: nowrap;
+}
+
+/* Loading indicator for htmx on search/filter */
+.search-filter-bar .htmx-request .search-input,
+.search-filter-bar .htmx-request .date-input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' stroke='%2358a6ff' stroke-width='2' fill='none' stroke-dasharray='32' stroke-dashoffset='0'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 12 12' to='360 12 12' dur='0.75s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right var(--space-sm) center;
+    background-size: 14px 14px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .sidebar {
@@ -899,6 +996,28 @@ select.form-input {
         max-width: 100%;
         max-height: 90vh;
         margin: var(--space-sm);
+    }
+
+    .search-filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .search-input-container {
+        min-width: 100%;
+    }
+
+    .filter-group {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .date-input {
+        flex: 1;
+    }
+
+    .clear-filters-btn {
+        width: 100%;
     }
 }
 {{end}}

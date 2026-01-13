@@ -50,6 +50,7 @@ func runDashboard(deps *Deps, host string, port int) error {
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/stats", makeStatsHandler(deps))
 	mux.HandleFunc("/partials/stats", makeStatsPartialHandler(deps))
+	mux.HandleFunc("/partials/domains", makeDomainsPartialHandler(deps))
 
 	// Create server
 	server := &http.Server{
@@ -191,6 +192,75 @@ func makeStatsPartialHandler(deps *Deps) http.HandlerFunc {
 		data := getPageData(deps, "dashboard")
 
 		if err := dashboard.RenderPartial(w, "stats-content", data); err != nil {
+			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+func makeDomainsPartialHandler(deps *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		// Parse query params for filtering
+		query := r.URL.Query()
+		searchTerm := strings.TrimSpace(query.Get("q"))
+		dateFrom := query.Get("from")
+		dateTo := query.Get("to")
+
+		// Get all domains with stats
+		domains, err := deps.DB.GetDomainsWithStats()
+		if err != nil {
+			http.Error(w, "Failed to get domains: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Apply filters
+		filteredDomains := make([]dashboard.DomainStats, 0)
+		for _, d := range domains {
+			// Search filter (case-insensitive domain name match)
+			if searchTerm != "" && !strings.Contains(strings.ToLower(d.Domain), strings.ToLower(searchTerm)) {
+				continue
+			}
+
+			// Date from filter (scanned after)
+			if dateFrom != "" && d.LastScanned != nil {
+				fromDate, err := time.Parse("2006-01-02", dateFrom)
+				if err == nil && d.LastScanned.Before(fromDate) {
+					continue
+				}
+			}
+
+			// Date to filter (scanned before)
+			if dateTo != "" && d.LastScanned != nil {
+				toDate, err := time.Parse("2006-01-02", dateTo)
+				if err == nil && d.LastScanned.After(toDate.Add(24*time.Hour)) {
+					continue
+				}
+			}
+
+			// If no LastScanned and date filters are set, skip domains that have never been scanned
+			if (dateFrom != "" || dateTo != "") && d.LastScanned == nil {
+				continue
+			}
+
+			filteredDomains = append(filteredDomains, dashboard.DomainStats{
+				ID:             d.ID,
+				Domain:         d.Domain,
+				AddedAt:        d.AddedAt,
+				LastScanned:    d.LastScanned,
+				SubdomainCount: d.SubdomainCount,
+				PortCount:      d.PortCount,
+				CriticalCount:  d.CriticalCount,
+				HighCount:      d.HighCount,
+			})
+		}
+
+		data := dashboard.PageData{
+			Domains: filteredDomains,
+		}
+
+		if err := dashboard.RenderPartial(w, "domains-table-rows", data); err != nil {
 			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
