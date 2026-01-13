@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -45,6 +46,7 @@ func runDashboard(deps *Deps, host string, port int) error {
 
 	// Register routes
 	mux.HandleFunc("/", makeIndexHandler(deps))
+	mux.HandleFunc("/domains/", makeDomainDetailHandler(deps))
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/stats", makeStatsHandler(deps))
 	mux.HandleFunc("/partials/stats", makeStatsPartialHandler(deps))
@@ -250,4 +252,230 @@ func makeStatsHandler(deps *Deps) http.HandlerFunc {
 			findings.Info,
 			stats.Takeovers)
 	}
+}
+
+func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract domain from URL path: /domains/{domain}
+		path := r.URL.Path
+		domain := strings.TrimPrefix(path, "/domains/")
+		domain = strings.TrimSuffix(domain, "/")
+		domain = strings.TrimSuffix(domain, "/refresh")
+
+		if domain == "" {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		data := getDomainDetailPageData(deps, domain)
+
+		// Check if this is a refresh request (htmx partial)
+		if strings.HasSuffix(r.URL.Path, "/refresh") {
+			if err := dashboard.RenderPartial(w, "domain-detail-content", data); err != nil {
+				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+
+		// Full page render
+		if err := dashboard.RenderPage(w, "domain-base", data); err != nil {
+			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+// getDomainDetailPageData fetches all domain-specific data for the detail view
+func getDomainDetailPageData(deps *Deps, domainName string) dashboard.PageData {
+	data := dashboard.PageData{
+		ActivePage: "domains",
+	}
+
+	// Get domain info
+	domain, err := deps.DB.Domains.GetByName(domainName)
+	if err != nil {
+		data.Error = "Domain not found"
+		return data
+	}
+
+	// Initialize domain detail data
+	detail := &dashboard.DomainDetailData{
+		Domain:      domain.Domain,
+		AddedAt:     domain.AddedAt,
+		LastScanned: domain.LastScanned,
+	}
+
+	// Get stats
+	stats, _ := deps.DB.GetDomainDetailStats(domainName)
+	if stats != nil {
+		detail.Stats = dashboard.DomainDetailStats{
+			SubdomainCount:   stats.SubdomainCount,
+			PortCount:        stats.PortCount,
+			CertificateCount: stats.CertificateCount,
+			TechnologyCount:  stats.TechnologyCount,
+			DNSRecordCount:   stats.DNSRecordCount,
+			VulnCount:        stats.VulnCount,
+			URLCount:         stats.URLCount,
+			APICount:         stats.APICount,
+			EmailCount:       stats.EmailCount,
+			CloudCount:       stats.CloudCount,
+			TakeoverCount:    stats.TakeoverCount,
+		}
+	}
+
+	// Get subdomains
+	subs, _ := deps.DB.GetSubdomainsForDomain(domainName)
+	detail.Subdomains = make([]dashboard.SubdomainView, len(subs))
+	for i, s := range subs {
+		detail.Subdomains[i] = dashboard.SubdomainView{
+			Subdomain:    s.Subdomain,
+			DiscoveredAt: s.DiscoveredAt,
+			LastSeen:     s.LastSeen,
+		}
+	}
+
+	// Get ports
+	ports, _ := deps.DB.GetPortsForDomain(domainName)
+	detail.Ports = make([]dashboard.PortView, len(ports))
+	for i, p := range ports {
+		detail.Ports[i] = dashboard.PortView{
+			Host:         p.Host,
+			Port:         p.Port,
+			Protocol:     p.Protocol,
+			Service:      p.Service,
+			Version:      p.Version,
+			Product:      p.Product,
+			State:        p.State,
+			Banner:       p.Banner,
+			DiscoveredAt: p.DiscoveredAt,
+		}
+	}
+
+	// Get certificates
+	certs, _ := deps.DB.GetCertificatesForDomain(domainName)
+	detail.Certificates = make([]dashboard.CertificateView, len(certs))
+	for i, c := range certs {
+		detail.Certificates[i] = dashboard.CertificateView{
+			Host:            c.Host,
+			Port:            c.Port,
+			Subject:         c.Subject,
+			Issuer:          c.Issuer,
+			NotAfter:        c.NotAfter,
+			DaysUntilExpiry: c.DaysUntilExpiry,
+			SAN:             c.SAN,
+		}
+	}
+
+	// Get technologies
+	techs, _ := deps.DB.GetTechnologiesForDomain(domainName)
+	detail.Technologies = make([]dashboard.TechnologyView, len(techs))
+	for i, t := range techs {
+		detail.Technologies[i] = dashboard.TechnologyView{
+			Host:         t.Host,
+			StatusCode:   t.StatusCode,
+			Title:        t.Title,
+			Server:       t.Server,
+			Technologies: t.Technologies,
+			CheckedAt:    t.CheckedAt,
+		}
+	}
+
+	// Get DNS records
+	dns, _ := deps.DB.GetDNSRecordsForDomain(domainName)
+	detail.DNSRecords = make([]dashboard.DNSRecordView, len(dns))
+	for i, d := range dns {
+		detail.DNSRecords[i] = dashboard.DNSRecordView{
+			Domain:    d.Domain,
+			Records:   d.Records,
+			CheckedAt: d.CheckedAt,
+		}
+	}
+
+	// Get findings/vulnerabilities
+	findings, _ := deps.DB.GetVulnerabilitiesForDomain(domainName)
+	detail.Findings = make([]dashboard.FindingView, len(findings))
+	for i, f := range findings {
+		detail.Findings[i] = dashboard.FindingView{
+			ID:           f.ID,
+			Name:         f.Name,
+			Severity:     f.Severity,
+			Description:  f.Description,
+			Host:         f.Host,
+			MatchedAt:    f.MatchedAt,
+			Tags:         f.Tags,
+			DiscoveredAt: f.DiscoveredAt,
+		}
+	}
+
+	// Get URLs
+	urls, _ := deps.DB.GetURLsForDomain(domainName)
+	detail.URLs = make([]dashboard.URLView, len(urls))
+	for i, u := range urls {
+		detail.URLs[i] = dashboard.URLView{
+			URL:          u.URL,
+			Domain:       u.Domain,
+			Category:     u.Category,
+			Interesting:  u.Interesting > 0,
+			DiscoveredAt: u.DiscoveredAt,
+		}
+	}
+
+	// Get APIs
+	apis, _ := deps.DB.GetAPIsForDomain(domainName)
+	detail.APIs = make([]dashboard.APIView, len(apis))
+	for i, a := range apis {
+		detail.APIs[i] = dashboard.APIView{
+			URL:          a.URL,
+			Type:         a.Type,
+			Title:        a.Title,
+			Version:      a.Version,
+			DiscoveredAt: a.DiscoveredAt,
+		}
+	}
+
+	// Get emails
+	emails, _ := deps.DB.GetEmailsForDomain(domainName)
+	detail.Emails = make([]dashboard.EmailView, len(emails))
+	for i, e := range emails {
+		detail.Emails[i] = dashboard.EmailView{
+			Address:      e.Address,
+			Source:       e.Source,
+			DiscoveredAt: e.DiscoveredAt,
+		}
+	}
+
+	// Get cloud storage
+	cloud, _ := deps.DB.GetCloudStorageForDomain(domainName)
+	detail.CloudStorage = make([]dashboard.CloudStorageView, len(cloud))
+	for i, c := range cloud {
+		detail.CloudStorage[i] = dashboard.CloudStorageView{
+			Provider:    c.Provider,
+			BucketName:  c.BucketName,
+			URL:         c.URL,
+			AccessLevel: c.AccessLevel,
+			Severity:    c.Severity,
+			Evidence:    c.Evidence,
+			Status:      c.Status,
+		}
+	}
+
+	// Get takeovers
+	takeovers, _ := deps.DB.GetTakeoversForDomain(domainName)
+	detail.Takeovers = make([]dashboard.TakeoverView, len(takeovers))
+	for i, t := range takeovers {
+		detail.Takeovers[i] = dashboard.TakeoverView{
+			Subdomain:    t.Subdomain,
+			CNAME:        t.CNAME,
+			Service:      t.Service,
+			TakeoverType: t.TakeoverType,
+			Confidence:   t.Confidence,
+			Evidence:     t.Evidence,
+			DiscoveredAt: t.DiscoveredAt,
+		}
+	}
+
+	data.DomainDetail = detail
+	return data
 }

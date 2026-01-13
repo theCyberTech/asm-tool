@@ -1,0 +1,721 @@
+{{define "domain-base"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .DomainDetail}}{{.DomainDetail.Domain}}{{else}}Domain{{end}} - ASM Dashboard</title>
+
+    <!-- htmx -->
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
+
+    <!-- Alpine.js for lightweight interactivity -->
+    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+
+    <style>
+        {{template "styles" .}}
+    </style>
+</head>
+<body hx-boost="true">
+    {{template "nav" .}}
+
+    <div class="layout">
+        {{template "sidebar" .}}
+
+        <main class="main-content">
+            {{template "domain-content" .}}
+        </main>
+    </div>
+</body>
+</html>
+{{end}}
+
+{{define "domain-title"}}{{.DomainDetail.Domain}} - ASM{{end}}
+
+{{define "domain-content"}}
+<div class="page-header">
+    <div>
+        <div class="flex items-center gap-md mb-sm">
+            <a href="/" class="text-muted" style="text-decoration: none;">&larr; Back to Dashboard</a>
+        </div>
+        <h1 class="page-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px; color: var(--accent-blue);">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="2" y1="12" x2="22" y2="12"/>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            <span class="text-mono">{{.DomainDetail.Domain}}</span>
+        </h1>
+        <p class="page-description">
+            Added {{.DomainDetail.AddedAt.Format "Jan 02, 2006"}}
+            {{if .DomainDetail.LastScanned}}
+            &bull; Last scanned {{.DomainDetail.LastScanned.Format "Jan 02, 2006 15:04"}}
+            {{end}}
+        </p>
+    </div>
+    <div class="flex gap-sm">
+        <button class="btn btn-secondary" hx-get="/domains/{{.DomainDetail.Domain}}/refresh" hx-target="#domain-content" hx-swap="innerHTML">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            Refresh
+            {{template "loading-indicator" .}}
+        </button>
+    </div>
+</div>
+
+<div id="domain-content">
+{{template "domain-detail-content" .}}
+</div>
+{{end}}
+
+{{define "domain-detail-content"}}
+<!-- Stats Overview -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Subdomains</div>
+        <div class="stat-value">{{.DomainDetail.Stats.SubdomainCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Open Ports</div>
+        <div class="stat-value">{{.DomainDetail.Stats.PortCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Certificates</div>
+        <div class="stat-value">{{.DomainDetail.Stats.CertificateCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Technologies</div>
+        <div class="stat-value">{{.DomainDetail.Stats.TechnologyCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">DNS Records</div>
+        <div class="stat-value">{{.DomainDetail.Stats.DNSRecordCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Vulnerabilities</div>
+        <div class="stat-value">{{.DomainDetail.Stats.VulnCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">URLs</div>
+        <div class="stat-value">{{.DomainDetail.Stats.URLCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">APIs</div>
+        <div class="stat-value">{{.DomainDetail.Stats.APICount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Emails</div>
+        <div class="stat-value">{{.DomainDetail.Stats.EmailCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Cloud Storage</div>
+        <div class="stat-value">{{.DomainDetail.Stats.CloudCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Takeovers</div>
+        <div class="stat-value {{if .DomainDetail.Stats.TakeoverCount}}severity-critical{{end}}">{{.DomainDetail.Stats.TakeoverCount}}</div>
+    </div>
+</div>
+
+<!-- Subdomains Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="2" y1="12" x2="22" y2="12"/>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            Subdomains
+        </h2>
+        <span class="badge badge-blue">{{len .DomainDetail.Subdomains}} found</span>
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.Subdomains}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Subdomain</th>
+                        <th>Discovered</th>
+                        <th>Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.Subdomains}}
+                    <tr>
+                        <td><span class="text-mono">{{.Subdomain}}</span></td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                        <td class="text-muted">{{.LastSeen.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="2" y1="12" x2="22" y2="12"/>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            <h3>No subdomains discovered</h3>
+            <p>Run subdomain enumeration to discover subdomains</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Open Ports Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                <line x1="6" y1="6" x2="6.01" y2="6"/>
+                <line x1="6" y1="18" x2="6.01" y2="18"/>
+            </svg>
+            Open Ports
+        </h2>
+        <span class="badge badge-yellow">{{len .DomainDetail.Ports}} open</span>
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.Ports}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Host</th>
+                        <th>Port</th>
+                        <th>Service</th>
+                        <th>Product/Version</th>
+                        <th>Discovered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.Ports}}
+                    <tr>
+                        <td><span class="text-mono">{{.Host}}</span></td>
+                        <td><span class="badge badge-blue">{{.Port}}/{{.Protocol}}</span></td>
+                        <td>{{if .Service}}{{.Service}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td>{{if .Product}}{{.Product}}{{if .Version}} {{.Version}}{{end}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                <line x1="6" y1="6" x2="6.01" y2="6"/>
+                <line x1="6" y1="18" x2="6.01" y2="18"/>
+            </svg>
+            <h3>No open ports detected</h3>
+            <p>Run a port scan to discover open ports</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Certificates Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            TLS Certificates
+        </h2>
+        <span class="badge badge-green">{{len .DomainDetail.Certificates}} found</span>
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.Certificates}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Host</th>
+                        <th>Subject</th>
+                        <th>Issuer</th>
+                        <th>Expires</th>
+                        <th>Days Left</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.Certificates}}
+                    <tr>
+                        <td><span class="text-mono">{{.Host}}:{{.Port}}</span></td>
+                        <td>{{.Subject}}</td>
+                        <td class="text-muted">{{.Issuer}}</td>
+                        <td class="text-muted">{{.NotAfter.Format "Jan 02, 2006"}}</td>
+                        <td>
+                            {{if le .DaysUntilExpiry 7}}
+                            <span class="severity severity-critical">{{.DaysUntilExpiry}} days</span>
+                            {{else if le .DaysUntilExpiry 30}}
+                            <span class="severity severity-high">{{.DaysUntilExpiry}} days</span>
+                            {{else if le .DaysUntilExpiry 90}}
+                            <span class="severity severity-medium">{{.DaysUntilExpiry}} days</span>
+                            {{else}}
+                            <span class="badge badge-green">{{.DaysUntilExpiry}} days</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <h3>No certificates found</h3>
+            <p>Run certificate checking to discover TLS certificates</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Technologies Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <polyline points="16 18 22 12 16 6"/>
+                <polyline points="8 6 2 12 8 18"/>
+            </svg>
+            Technologies
+        </h2>
+        <span class="badge badge-purple">{{len .DomainDetail.Technologies}} hosts</span>
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.Technologies}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Host</th>
+                        <th>Status</th>
+                        <th>Title</th>
+                        <th>Server</th>
+                        <th>Technologies</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.Technologies}}
+                    <tr>
+                        <td><span class="text-mono">{{.Host}}</span></td>
+                        <td>
+                            {{if and (ge .StatusCode 200) (lt .StatusCode 300)}}
+                            <span class="badge badge-green">{{.StatusCode}}</span>
+                            {{else if and (ge .StatusCode 300) (lt .StatusCode 400)}}
+                            <span class="badge badge-blue">{{.StatusCode}}</span>
+                            {{else if and (ge .StatusCode 400) (lt .StatusCode 500)}}
+                            <span class="badge badge-yellow">{{.StatusCode}}</span>
+                            {{else}}
+                            <span class="badge badge-red">{{.StatusCode}}</span>
+                            {{end}}
+                        </td>
+                        <td>{{if .Title}}{{.Title}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td class="text-muted">{{if .Server}}{{.Server}}{{else}}-{{end}}</td>
+                        <td>{{if .Technologies}}<span class="text-mono" style="font-size: 0.75rem;">{{.Technologies}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 18 22 12 16 6"/>
+                <polyline points="8 6 2 12 8 18"/>
+            </svg>
+            <h3>No technologies detected</h3>
+            <p>Run fingerprinting to detect technologies</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- DNS Records Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+            </svg>
+            DNS Records
+        </h2>
+        <span class="badge badge-blue">{{len .DomainDetail.DNSRecords}} records</span>
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.DNSRecords}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th>Records</th>
+                        <th>Checked</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.DNSRecords}}
+                    <tr>
+                        <td><span class="text-mono">{{.Domain}}</span></td>
+                        <td><pre style="margin: 0; background: transparent; border: none; padding: 0; font-size: 0.75rem; white-space: pre-wrap;">{{.Records}}</pre></td>
+                        <td class="text-muted">{{.CheckedAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+            </svg>
+            <h3>No DNS records found</h3>
+            <p>Run DNS enumeration to discover records</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Vulnerabilities Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            Vulnerabilities
+        </h2>
+        {{if .DomainDetail.Findings}}
+        <span class="badge badge-red">{{len .DomainDetail.Findings}} open</span>
+        {{else}}
+        <span class="badge badge-green">0 open</span>
+        {{end}}
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.Findings}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Severity</th>
+                        <th>Name</th>
+                        <th>Host</th>
+                        <th>Matched At</th>
+                        <th>Discovered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.Findings}}
+                    <tr>
+                        <td><span class="severity severity-{{.Severity}}">{{.Severity}}</span></td>
+                        <td>{{.Name}}</td>
+                        <td><span class="text-mono">{{.Host}}</span></td>
+                        <td class="text-muted text-mono" style="font-size: 0.75rem;">{{.MatchedAt}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <h3>No vulnerabilities detected</h3>
+            <p>Run vulnerability scanning with Nuclei to detect issues</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- URLs Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            URLs
+        </h2>
+        <span class="badge badge-blue">{{len .DomainDetail.URLs}} found</span>
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.URLs}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>URL</th>
+                        <th>Category</th>
+                        <th>Interesting</th>
+                        <th>Discovered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.URLs}}
+                    <tr>
+                        <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
+                        <td>{{if .Category.Valid}}{{.Category.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td>{{if .Interesting}}<span class="badge badge-yellow">Yes</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            <h3>No URLs discovered</h3>
+            <p>Run URL enumeration to discover URLs</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- APIs Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+            </svg>
+            API Endpoints
+        </h2>
+        <span class="badge badge-purple">{{len .DomainDetail.APIs}} found</span>
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.APIs}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>URL</th>
+                        <th>Type</th>
+                        <th>Title</th>
+                        <th>Version</th>
+                        <th>Discovered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.APIs}}
+                    <tr>
+                        <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
+                        <td>{{if .Type.Valid}}<span class="badge badge-blue">{{.Type.String}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td>{{if .Title.Valid}}{{.Title.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td class="text-muted">{{if .Version.Valid}}{{.Version.String}}{{else}}-{{end}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+            </svg>
+            <h3>No API endpoints discovered</h3>
+            <p>Run API discovery to find API endpoints</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Emails Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+            </svg>
+            Email Addresses
+        </h2>
+        <span class="badge badge-blue">{{len .DomainDetail.Emails}} found</span>
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.Emails}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>Source</th>
+                        <th>Discovered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.Emails}}
+                    <tr>
+                        <td><span class="text-mono">{{.Address}}</span></td>
+                        <td class="text-muted">{{.Source}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+            </svg>
+            <h3>No email addresses found</h3>
+            <p>Run email enumeration to discover addresses</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Cloud Storage Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+            </svg>
+            Cloud Storage
+        </h2>
+        {{if .DomainDetail.CloudStorage}}
+        <span class="badge badge-red">{{len .DomainDetail.CloudStorage}} buckets</span>
+        {{else}}
+        <span class="badge badge-green">0 buckets</span>
+        {{end}}
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.CloudStorage}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Provider</th>
+                        <th>Bucket Name</th>
+                        <th>Access Level</th>
+                        <th>Severity</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.CloudStorage}}
+                    <tr>
+                        <td>
+                            {{if eq .Provider "s3"}}
+                            <span class="badge badge-yellow">AWS S3</span>
+                            {{else if eq .Provider "azure"}}
+                            <span class="badge badge-blue">Azure Blob</span>
+                            {{else if eq .Provider "gcs"}}
+                            <span class="badge badge-red">GCS</span>
+                            {{else}}
+                            <span class="badge">{{.Provider}}</span>
+                            {{end}}
+                        </td>
+                        <td><span class="text-mono">{{.BucketName}}</span></td>
+                        <td>{{.AccessLevel}}</td>
+                        <td>{{if .Severity}}<span class="severity severity-{{.Severity}}">{{.Severity}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td>{{if eq .Status "open"}}<span class="badge badge-red">Open</span>{{else}}<span class="badge badge-green">Resolved</span>{{end}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+            </svg>
+            <h3>No cloud storage found</h3>
+            <p>Run cloud storage detection to find exposed buckets</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Subdomain Takeovers Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            Subdomain Takeovers
+        </h2>
+        {{if .DomainDetail.Takeovers}}
+        <span class="badge badge-red">{{len .DomainDetail.Takeovers}} vulnerable</span>
+        {{else}}
+        <span class="badge badge-green">0 vulnerable</span>
+        {{end}}
+    </div>
+    <div class="card-body">
+        {{if .DomainDetail.Takeovers}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Subdomain</th>
+                        <th>CNAME</th>
+                        <th>Service</th>
+                        <th>Confidence</th>
+                        <th>Discovered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .DomainDetail.Takeovers}}
+                    <tr>
+                        <td><span class="text-mono">{{.Subdomain}}</span></td>
+                        <td><span class="text-mono text-muted">{{.CNAME}}</span></td>
+                        <td>{{.Service}}</td>
+                        <td>
+                            {{if eq .Confidence "HIGH"}}
+                            <span class="severity severity-critical">HIGH</span>
+                            {{else if eq .Confidence "MEDIUM"}}
+                            <span class="severity severity-medium">MEDIUM</span>
+                            {{else}}
+                            <span class="severity severity-low">LOW</span>
+                            {{end}}
+                        </td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <h3>No takeover vulnerabilities</h3>
+            <p>Run subdomain takeover detection to find vulnerable subdomains</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

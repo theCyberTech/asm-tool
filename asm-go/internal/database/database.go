@@ -480,14 +480,17 @@ func (d *Database) Exec(query string, args ...interface{}) (sql.Result, error) {
 
 // Takeover represents a subdomain takeover finding
 type Takeover struct {
-	ID         int64     `db:"id"`
-	Host       string    `db:"host"`
-	Vulnerable bool      `db:"vulnerable"`
-	Service    string    `db:"service"`
-	Confidence string    `db:"confidence"`
-	Evidence   string    `db:"evidence"`
-	Status     string    `db:"status"`
-	CheckedAt  time.Time `db:"checked_at"`
+	ID            int64      `db:"id"`
+	Subdomain     string     `db:"subdomain"`
+	CNAME         string     `db:"cname"`
+	Service       string     `db:"service"`
+	TakeoverType  string     `db:"takeover_type"`
+	Confidence    string     `db:"confidence"`
+	Evidence      string     `db:"evidence"`
+	Documentation string     `db:"documentation"`
+	Status        string     `db:"status"`
+	DiscoveredAt  time.Time  `db:"discovered_at"`
+	ResolvedAt    *time.Time `db:"resolved_at"`
 }
 
 // URL represents a discovered URL
@@ -549,9 +552,12 @@ func (d *Database) GetTakeoversForDomain(domain string) ([]Takeover, error) {
 	var takeovers []Takeover
 	err := d.db.Select(&takeovers, `
 		SELECT * FROM takeovers
-		WHERE host LIKE ? AND status = 'open'
-		ORDER BY host
+		WHERE subdomain LIKE ? AND status = 'open'
+		ORDER BY subdomain
 	`, "%"+domain)
+	if err != nil && isTableNotExistsError(err) {
+		return []Takeover{}, nil
+	}
 	return takeovers, err
 }
 
@@ -683,4 +689,172 @@ func (d *Database) GetVulnerabilitiesForDomain(domain string) ([]Finding, error)
 			name
 	`, "%"+domain)
 	return findings, err
+}
+
+// Technology represents a technology fingerprint result
+type Technology struct {
+	ID            int64     `db:"id"`
+	Host          string    `db:"host"`
+	StatusCode    int       `db:"status_code"`
+	Title         string    `db:"title"`
+	Server        string    `db:"server"`
+	Technologies  string    `db:"technologies"`
+	Headers       string    `db:"headers"`
+	ContentLength int       `db:"content_length"`
+	RedirectURL   string    `db:"redirect_url"`
+	CheckedAt     time.Time `db:"checked_at"`
+}
+
+// DNSRecord represents stored DNS records
+type DNSRecord struct {
+	ID        int64     `db:"id"`
+	Domain    string    `db:"domain"`
+	Records   string    `db:"records"`
+	CheckedAt time.Time `db:"checked_at"`
+}
+
+// GetTechnologiesForDomain returns all technology fingerprints for a domain
+func (d *Database) GetTechnologiesForDomain(domain string) ([]Technology, error) {
+	var techs []Technology
+	err := d.db.Select(&techs, `
+		SELECT * FROM technologies
+		WHERE host LIKE ? OR host = ?
+		ORDER BY host
+	`, "%."+domain, domain)
+	if err != nil && isTableNotExistsError(err) {
+		return []Technology{}, nil
+	}
+	return techs, err
+}
+
+// GetDNSRecordsForDomain returns DNS records for a domain
+func (d *Database) GetDNSRecordsForDomain(domain string) ([]DNSRecord, error) {
+	var records []DNSRecord
+	err := d.db.Select(&records, `
+		SELECT * FROM dns_records
+		WHERE domain LIKE ? OR domain = ?
+		ORDER BY domain
+	`, "%."+domain, domain)
+	if err != nil && isTableNotExistsError(err) {
+		return []DNSRecord{}, nil
+	}
+	return records, err
+}
+
+// GetPortsForDomain returns all open ports for hosts under a domain
+func (d *Database) GetPortsForDomain(domain string) ([]Port, error) {
+	var ports []Port
+	err := d.db.Select(&ports, `
+		SELECT * FROM ports
+		WHERE (host LIKE ? OR host = ?) AND state = 'open'
+		ORDER BY host, port
+	`, "%."+domain, domain)
+	if err != nil && isTableNotExistsError(err) {
+		return []Port{}, nil
+	}
+	return ports, err
+}
+
+// GetSubdomainsForDomain returns all subdomains for a domain name
+func (d *Database) GetSubdomainsForDomain(domain string) ([]Subdomain, error) {
+	var subs []Subdomain
+	err := d.db.Select(&subs, `
+		SELECT s.* FROM subdomains s
+		JOIN domains d ON s.domain_id = d.id
+		WHERE d.domain = ? AND s.active = 1
+		ORDER BY s.subdomain
+	`, domain)
+	if err != nil && isTableNotExistsError(err) {
+		return []Subdomain{}, nil
+	}
+	return subs, err
+}
+
+// DomainDetailStats holds counts for a domain detail view
+type DomainDetailStats struct {
+	SubdomainCount   int
+	PortCount        int
+	CertificateCount int
+	TechnologyCount  int
+	DNSRecordCount   int
+	VulnCount        int
+	URLCount         int
+	APICount         int
+	EmailCount       int
+	CloudCount       int
+	TakeoverCount    int
+}
+
+// GetDomainDetailStats returns aggregate counts for a specific domain
+func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, error) {
+	stats := &DomainDetailStats{}
+
+	// Count subdomains
+	d.db.Get(&stats.SubdomainCount, `
+		SELECT COUNT(*) FROM subdomains s
+		JOIN domains d ON s.domain_id = d.id
+		WHERE d.domain = ? AND s.active = 1
+	`, domain)
+
+	// Count ports
+	d.db.Get(&stats.PortCount, `
+		SELECT COUNT(*) FROM ports
+		WHERE (host LIKE ? OR host = ?) AND state = 'open'
+	`, "%."+domain, domain)
+
+	// Count certificates
+	d.db.Get(&stats.CertificateCount, `
+		SELECT COUNT(*) FROM certificates
+		WHERE host LIKE ? OR host = ?
+	`, "%."+domain, domain)
+
+	// Count technologies
+	d.db.Get(&stats.TechnologyCount, `
+		SELECT COUNT(*) FROM technologies
+		WHERE host LIKE ? OR host = ?
+	`, "%."+domain, domain)
+
+	// Count DNS records
+	d.db.Get(&stats.DNSRecordCount, `
+		SELECT COUNT(*) FROM dns_records
+		WHERE domain LIKE ? OR domain = ?
+	`, "%."+domain, domain)
+
+	// Count vulns
+	d.db.Get(&stats.VulnCount, `
+		SELECT COUNT(*) FROM findings
+		WHERE host LIKE ? AND status = 'open'
+	`, "%"+domain)
+
+	// Count URLs
+	d.db.Get(&stats.URLCount, `
+		SELECT COUNT(*) FROM urls
+		WHERE domain = ? OR domain LIKE ?
+	`, domain, "%."+domain)
+
+	// Count APIs
+	d.db.Get(&stats.APICount, `
+		SELECT COUNT(*) FROM apis
+		WHERE url LIKE ?
+	`, "%"+domain+"%")
+
+	// Count emails
+	d.db.Get(&stats.EmailCount, `
+		SELECT COUNT(*) FROM emails
+		WHERE domain = ?
+	`, domain)
+
+	// Count cloud storage
+	d.db.Get(&stats.CloudCount, `
+		SELECT COUNT(*) FROM cloud_storage
+		WHERE domain = ?
+	`, domain)
+
+	// Count takeovers
+	d.db.Get(&stats.TakeoverCount, `
+		SELECT COUNT(*) FROM takeovers
+		WHERE subdomain LIKE ? AND status = 'open'
+	`, "%"+domain)
+
+	return stats, nil
 }

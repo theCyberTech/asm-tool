@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/parallel"
 	"github.com/asm-tool/asm-go/internal/reporter"
@@ -15,7 +14,7 @@ import (
 )
 
 // ReportCmd creates the report command for generating reports
-func ReportCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func ReportCmd(deps *Deps) *cobra.Command {
 	var (
 		domain       string
 		inputFile    string
@@ -55,7 +54,7 @@ Examples:
 				return fmt.Errorf("please specify a domain or use --input with a JSON file\n\nExamples:\n  asm report example.com\n  asm report example.com --format html")
 			}
 
-			return runReportFromDB(*db, domain, outputFormat, outputDir)
+			return runReportFromDB(deps.DB, domain, outputFormat, outputDir)
 		},
 	}
 
@@ -143,8 +142,8 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	if err == nil {
 		for _, t := range takeovers {
 			result.Takeovers = append(result.Takeovers, parallel.TakeoverResult{
-				Host:       t.Host,
-				Vulnerable: t.Vulnerable,
+				Host:       t.Subdomain,
+				Vulnerable: t.Status == "open",
 				Service:    t.Service,
 				Confidence: t.Confidence,
 				Evidence:   t.Evidence,
