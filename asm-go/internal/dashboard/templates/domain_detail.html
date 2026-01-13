@@ -16,7 +16,7 @@
         {{template "styles" .}}
     </style>
 </head>
-<body hx-boost="true">
+<body hx-boost="true" x-data="toastManager()">
     {{template "nav" .}}
 
     <div class="layout">
@@ -26,6 +26,118 @@
             {{template "domain-content" .}}
         </main>
     </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="toast" :class="'toast-' + toast.type" x-show="toast.visible"
+                 x-transition:enter="toast-enter"
+                 x-transition:enter-start="toast-enter-start"
+                 x-transition:enter-end="toast-enter-end"
+                 x-transition:leave="toast-leave"
+                 x-transition:leave-start="toast-leave-start"
+                 x-transition:leave-end="toast-leave-end">
+                <div class="toast-icon">
+                    <template x-if="toast.type === 'error'">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                        </svg>
+                    </template>
+                    <template x-if="toast.type === 'success'">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                    </template>
+                    <template x-if="toast.type === 'warning'">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                    </template>
+                    <template x-if="toast.type === 'info'">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                    </template>
+                </div>
+                <span class="toast-message" x-text="toast.message"></span>
+                <button class="toast-close" @click="removeToast(toast.id)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+        </template>
+    </div>
+
+    <script>
+    // Toast notification manager
+    function toastManager() {
+        return {
+            toasts: [],
+            toastCounter: 0,
+
+            addToast(message, type = 'info', duration = 5000) {
+                const id = ++this.toastCounter;
+                const toast = { id, message, type, visible: true };
+                this.toasts.push(toast);
+
+                if (duration > 0) {
+                    setTimeout(() => this.removeToast(id), duration);
+                }
+            },
+
+            removeToast(id) {
+                const toast = this.toasts.find(t => t.id === id);
+                if (toast) {
+                    toast.visible = false;
+                    setTimeout(() => {
+                        this.toasts = this.toasts.filter(t => t.id !== id);
+                    }, 300);
+                }
+            },
+
+            showError(message) { this.addToast(message, 'error', 8000); },
+            showSuccess(message) { this.addToast(message, 'success'); },
+            showWarning(message) { this.addToast(message, 'warning'); },
+            showInfo(message) { this.addToast(message, 'info'); }
+        };
+    }
+
+    // Global htmx error handling
+    document.body.addEventListener('htmx:responseError', function(evt) {
+        const toastEl = document.body;
+        if (toastEl.__x) {
+            const status = evt.detail.xhr.status;
+            let message = 'An error occurred while loading data';
+
+            if (status === 404) {
+                message = 'The requested resource was not found';
+            } else if (status === 500) {
+                message = 'Server error. Please try again later';
+            } else if (status === 0) {
+                message = 'Network error. Please check your connection';
+            }
+
+            toastEl.__x.$data.showError(message);
+        }
+    });
+
+    // Handle network errors
+    document.body.addEventListener('htmx:sendError', function(evt) {
+        const toastEl = document.body;
+        if (toastEl.__x) {
+            toastEl.__x.$data.showError('Network error. Please check your connection');
+        }
+    });
+
+    // Handle timeout errors
+    document.body.addEventListener('htmx:timeout', function(evt) {
+        const toastEl = document.body;
+        if (toastEl.__x) {
+            toastEl.__x.$data.showWarning('Request timed out. Please try again');
+        }
+    });
+    </script>
 </body>
 </html>
 {{end}}
@@ -33,6 +145,36 @@
 {{define "domain-title"}}{{.DomainDetail.Domain}} - ASM{{end}}
 
 {{define "domain-content"}}
+{{if .Error}}
+<div class="page-header">
+    <div>
+        <div class="flex items-center gap-md mb-sm">
+            <a href="/" class="text-muted" style="text-decoration: none;">&larr; Back to Dashboard</a>
+        </div>
+        <h1 class="page-title">Domain Not Found</h1>
+    </div>
+</div>
+<div class="card">
+    <div class="card-body">
+        <div class="error-state">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                <line x1="8" y1="11" x2="14" y2="11"/>
+            </svg>
+            <h3>{{.Error}}</h3>
+            <p>The domain you're looking for doesn't exist or hasn't been scanned yet.</p>
+            <a href="/" class="btn btn-secondary mt-md">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"/>
+                    <polyline points="12 19 5 12 12 5"/>
+                </svg>
+                Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+{{else}}
 <div class="page-header">
     <div>
         <div class="flex items-center gap-md mb-sm">
@@ -69,6 +211,7 @@
 <div id="domain-content">
 {{template "domain-detail-content" .}}
 </div>
+{{end}}
 {{end}}
 
 {{define "domain-detail-content"}}
