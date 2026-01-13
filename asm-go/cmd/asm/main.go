@@ -14,8 +14,7 @@ import (
 var (
 	cfgFile string
 	dbPath  string
-	cfg     *config.Config
-	db      *database.Database
+	deps    = commands.NewDeps()
 )
 
 func main() {
@@ -34,21 +33,22 @@ DNS records, vulnerabilities, URLs, subdomain takeovers, API endpoints, and emai
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "database path (default: data/asm.db)")
 
 	// Add commands
-	rootCmd.AddCommand(commands.StatusCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.DiscoverCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.PortscanCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.CertificatesCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.DNSCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.TakeoverCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.FingerprintCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.URLsCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.APIsCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.EmailsCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.CloudStorageCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.ScanCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.ReportCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.NucleiCmd(&db, &cfg))
-	rootCmd.AddCommand(commands.MigrateCmd(&db, &cfg))
+	rootCmd.AddCommand(commands.StatusCmd(deps))
+	rootCmd.AddCommand(commands.DiscoverCmd(deps))
+	rootCmd.AddCommand(commands.PortscanCmd(deps))
+	rootCmd.AddCommand(commands.CertificatesCmd(deps))
+	rootCmd.AddCommand(commands.DNSCmd(deps))
+	rootCmd.AddCommand(commands.TakeoverCmd(deps))
+	rootCmd.AddCommand(commands.FingerprintCmd(deps))
+	rootCmd.AddCommand(commands.URLsCmd(deps))
+	rootCmd.AddCommand(commands.APIsCmd(deps))
+	rootCmd.AddCommand(commands.EmailsCmd(deps))
+	rootCmd.AddCommand(commands.CloudStorageCmd(deps))
+	rootCmd.AddCommand(commands.ScanCmd(deps))
+	rootCmd.AddCommand(commands.ReportCmd(deps))
+	rootCmd.AddCommand(commands.NucleiCmd(deps))
+	rootCmd.AddCommand(commands.MigrateCmd(deps))
+	rootCmd.AddCommand(commands.DashboardCmd(deps))
 	rootCmd.AddCommand(versionCmd())
 
 	if err := rootCmd.Execute(); err != nil {
@@ -60,18 +60,18 @@ func initConfig(cmd *cobra.Command, args []string) error {
 	var err error
 
 	// Load config
-	cfg, err = config.Load(cfgFile)
+	deps.Cfg, err = config.Load(cfgFile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
 	// Override database path if specified
 	if dbPath != "" {
-		cfg.DatabasePath = dbPath
+		deps.Cfg.DatabasePath = dbPath
 	}
 
 	// Ensure data directory exists
-	dataDir := filepath.Dir(cfg.DatabasePath)
+	dataDir := filepath.Dir(deps.Cfg.DatabasePath)
 	if dataDir != "" && dataDir != "." {
 		if err := os.MkdirAll(dataDir, 0755); err != nil {
 			return fmt.Errorf("creating data directory: %w", err)
@@ -79,7 +79,7 @@ func initConfig(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize database
-	db, err = database.New(cfg.DatabasePath)
+	deps.DB, err = database.New(deps.Cfg.DatabasePath)
 	if err != nil {
 		return fmt.Errorf("initializing database: %w", err)
 	}
@@ -88,8 +88,8 @@ func initConfig(cmd *cobra.Command, args []string) error {
 }
 
 func cleanup(cmd *cobra.Command, args []string) {
-	if db != nil {
-		db.Close()
+	if deps.DB != nil {
+		deps.DB.Close()
 	}
 }
 

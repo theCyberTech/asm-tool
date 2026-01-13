@@ -35,6 +35,9 @@ type Config struct {
 	// Schedule settings
 	Schedule ScheduleConfig `mapstructure:"schedule"`
 
+	// Dashboard settings
+	Dashboard DashboardConfig `mapstructure:"dashboard"`
+
 	// Database path
 	DatabasePath string `mapstructure:"database_path"`
 }
@@ -58,10 +61,11 @@ type EmailConfig struct {
 }
 
 type ScanningConfig struct {
-	Ports          string `mapstructure:"ports"`
-	NucleiSeverity string `mapstructure:"nuclei_severity"`
-	PassiveOnly    bool   `mapstructure:"passive_only"`
-	RateLimit      int    `mapstructure:"rate_limit"`
+	Ports              string `mapstructure:"ports"`
+	NucleiSeverity     string `mapstructure:"nuclei_severity"`
+	PassiveOnly        bool   `mapstructure:"passive_only"`
+	RateLimit          int    `mapstructure:"rate_limit"`
+	InsecureSkipVerify bool   `mapstructure:"insecure_skip_verify"` // Skip TLS certificate verification (use with caution)
 }
 
 type NucleiConfig struct {
@@ -110,6 +114,11 @@ type ScheduleConfig struct {
 	CertCheck string `mapstructure:"cert_check"`
 }
 
+type DashboardConfig struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"port"`
+}
+
 // Default returns a Config with sensible defaults
 func Default() *Config {
 	return &Config{
@@ -147,6 +156,10 @@ func Default() *Config {
 		Schedule: ScheduleConfig{
 			FullScan:  "0 6 * * *",
 			CertCheck: "0 */6 * * *",
+		},
+		Dashboard: DashboardConfig{
+			Host: "127.0.0.1",
+			Port: 8080,
 		},
 		DatabasePath: "data/asm.db",
 	}
