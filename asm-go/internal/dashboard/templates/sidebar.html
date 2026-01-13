@@ -1,0 +1,143 @@
+{{define "sidebar"}}
+<aside class="sidebar">
+    <div class="sidebar-section">
+        <div class="sidebar-title">Overview</div>
+        <ul class="sidebar-nav">
+            <li class="sidebar-item">
+                <a href="/" class="sidebar-link{{if eq .ActivePage "dashboard"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    Dashboard
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <div class="sidebar-section">
+        <div class="sidebar-title">Discovery</div>
+        <ul class="sidebar-nav">
+            <li class="sidebar-item">
+                <a href="/domains" class="sidebar-link{{if eq .ActivePage "domains"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="2" y1="12" x2="22" y2="12"/>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                    </svg>
+                    Domains
+                    {{if .Stats.Domains}}<span class="sidebar-badge">{{.Stats.Domains}}</span>{{end}}
+                </a>
+            </li>
+            <li class="sidebar-item">
+                <a href="/subdomains" class="sidebar-link{{if eq .ActivePage "subdomains"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="16 18 22 12 16 6"/>
+                        <polyline points="8 6 2 12 8 18"/>
+                    </svg>
+                    Subdomains
+                    {{if .Stats.Subdomains}}<span class="sidebar-badge">{{.Stats.Subdomains}}</span>{{end}}
+                </a>
+            </li>
+            <li class="sidebar-item">
+                <a href="/ports" class="sidebar-link{{if eq .ActivePage "ports"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                        <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                        <line x1="6" y1="6" x2="6.01" y2="6"/>
+                        <line x1="6" y1="18" x2="6.01" y2="18"/>
+                    </svg>
+                    Ports
+                    {{if .Stats.Ports}}<span class="sidebar-badge">{{.Stats.Ports}}</span>{{end}}
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <div class="sidebar-section">
+        <div class="sidebar-title">Assets</div>
+        <ul class="sidebar-nav">
+            <li class="sidebar-item">
+                <a href="/certificates" class="sidebar-link{{if eq .ActivePage "certificates"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    Certificates
+                    {{if .Stats.Certificates}}<span class="sidebar-badge">{{.Stats.Certificates}}</span>{{end}}
+                </a>
+            </li>
+            <li class="sidebar-item">
+                <a href="/urls" class="sidebar-link{{if eq .ActivePage "urls"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                    URLs
+                    {{if .Stats.URLs}}<span class="sidebar-badge">{{.Stats.URLs}}</span>{{end}}
+                </a>
+            </li>
+            <li class="sidebar-item">
+                <a href="/apis" class="sidebar-link{{if eq .ActivePage "apis"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                        <polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                    APIs
+                    {{if .Stats.APIs}}<span class="sidebar-badge">{{.Stats.APIs}}</span>{{end}}
+                </a>
+            </li>
+            <li class="sidebar-item">
+                <a href="/emails" class="sidebar-link{{if eq .ActivePage "emails"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                        <polyline points="22,6 12,13 2,6"/>
+                    </svg>
+                    Emails
+                    {{if .Stats.Emails}}<span class="sidebar-badge">{{.Stats.Emails}}</span>{{end}}
+                </a>
+            </li>
+            <li class="sidebar-item">
+                <a href="/cloud" class="sidebar-link{{if eq .ActivePage "cloud"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+                    </svg>
+                    Cloud Storage
+                    {{if .Stats.CloudBuckets}}<span class="sidebar-badge">{{.Stats.CloudBuckets}}</span>{{end}}
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <div class="sidebar-section">
+        <div class="sidebar-title">Security</div>
+        <ul class="sidebar-nav">
+            <li class="sidebar-item">
+                <a href="/findings" class="sidebar-link{{if eq .ActivePage "findings"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    Findings
+                    {{if .Findings.Total}}<span class="sidebar-badge">{{.Findings.Total}}</span>{{end}}
+                </a>
+            </li>
+            <li class="sidebar-item">
+                <a href="/takeovers" class="sidebar-link{{if eq .ActivePage "takeovers"}} active{{end}}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                    Takeovers
+                    {{if .Stats.Takeovers}}<span class="sidebar-badge">{{.Stats.Takeovers}}</span>{{end}}
+                </a>
+            </li>
+        </ul>
+    </div>
+</aside>
+{{end}}

@@ -1,0 +1,34 @@
+{{define "base"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}ASM Dashboard{{end}}</title>
+
+    <!-- htmx -->
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
+
+    <!-- Alpine.js for lightweight interactivity -->
+    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+
+    <style>
+        {{template "styles" .}}
+    </style>
+    {{block "head" .}}{{end}}
+</head>
+<body hx-boost="true">
+    {{template "nav" .}}
+
+    <div class="layout">
+        {{template "sidebar" .}}
+
+        <main class="main-content">
+            {{block "content" .}}{{end}}
+        </main>
+    </div>
+
+    {{block "scripts" .}}{{end}}
+</body>
+</html>
+{{end}}

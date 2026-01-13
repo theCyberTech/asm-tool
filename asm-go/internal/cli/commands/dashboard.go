@@ -11,6 +11,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
+
+	"github.com/asm-tool/asm-go/internal/dashboard"
 )
 
 var (
@@ -42,9 +44,10 @@ func runDashboard(deps *Deps, host string, port int) error {
 	mux := http.NewServeMux()
 
 	// Register routes
-	mux.HandleFunc("/", handleIndex)
+	mux.HandleFunc("/", makeIndexHandler(deps))
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/stats", makeStatsHandler(deps))
+	mux.HandleFunc("/partials/stats", makeStatsPartialHandler(deps))
 
 	// Create server
 	server := &http.Server{
@@ -105,34 +108,73 @@ func runDashboard(deps *Deps, host string, port int) error {
 	return nil
 }
 
-func handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
+// getPageData fetches data from the database and returns PageData for templates
+func getPageData(deps *Deps, activePage string) dashboard.PageData {
+	data := dashboard.PageData{
+		ActivePage: activePage,
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, `<!DOCTYPE html>
-<html>
-<head>
-    <title>ASM Dashboard</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #0d1117; color: #c9d1d9; }
-        h1 { color: #58a6ff; }
-        .status { color: #3fb950; }
-    </style>
-</head>
-<body>
-    <h1>ASM Dashboard</h1>
-    <p class="status">Server is running</p>
-    <p>API endpoints:</p>
-    <ul>
-        <li><a href="/health" style="color: #58a6ff;">/health</a> - Health check</li>
-        <li><a href="/api/stats" style="color: #58a6ff;">/api/stats</a> - Database statistics</li>
-    </ul>
-</body>
-</html>`)
+	// Get stats from database
+	stats, err := deps.DB.GetStats()
+	if err == nil {
+		data.Stats = dashboard.Stats{
+			Domains:      stats.Domains,
+			Subdomains:   stats.Subdomains,
+			Ports:        stats.Ports,
+			Certificates: stats.Certificates,
+			URLs:         stats.URLs,
+			APIs:         stats.APIs,
+			Emails:       stats.Emails,
+			CloudBuckets: stats.CloudBuckets,
+			Takeovers:    stats.Takeovers,
+		}
+	}
+
+	// Get finding counts
+	findings, err := deps.DB.GetFindingSeverityCounts()
+	if err == nil {
+		data.Findings = dashboard.FindingCounts{
+			Critical: findings.Critical,
+			High:     findings.High,
+			Medium:   findings.Medium,
+			Low:      findings.Low,
+			Info:     findings.Info,
+			Total:    findings.Critical + findings.High + findings.Medium + findings.Low + findings.Info,
+		}
+	}
+
+	return data
+}
+
+func makeIndexHandler(deps *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		data := getPageData(deps, "dashboard")
+
+		if err := dashboard.RenderPage(w, "base", data); err != nil {
+			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+func makeStatsPartialHandler(deps *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		data := getPageData(deps, "dashboard")
+
+		if err := dashboard.RenderPartial(w, "stats-content", data); err != nil {
+			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,126 @@
+{{define "title"}}Dashboard - ASM{{end}}
+
+{{define "content"}}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Attack Surface Overview</h1>
+        <p class="page-description">Real-time view of your attack surface</p>
+    </div>
+    <div class="flex gap-sm">
+        <button class="btn btn-secondary" hx-get="/partials/stats" hx-target="#stats-container" hx-swap="innerHTML">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            Refresh
+            {{template "loading-indicator" .}}
+        </button>
+    </div>
+</div>
+
+<div id="stats-container">
+    {{template "stats-content" .}}
+</div>
+{{end}}
+
+{{define "stats-content"}}
+<!-- Asset Statistics -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Domains</div>
+        <div class="stat-value">{{.Stats.Domains}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Subdomains</div>
+        <div class="stat-value">{{.Stats.Subdomains}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Open Ports</div>
+        <div class="stat-value">{{.Stats.Ports}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Certificates</div>
+        <div class="stat-value">{{.Stats.Certificates}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">URLs</div>
+        <div class="stat-value">{{.Stats.URLs}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">APIs</div>
+        <div class="stat-value">{{.Stats.APIs}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Emails</div>
+        <div class="stat-value">{{.Stats.Emails}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Cloud Buckets</div>
+        <div class="stat-value">{{.Stats.CloudBuckets}}</div>
+    </div>
+</div>
+
+<!-- Security Findings -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Security Findings</h2>
+        <a href="/findings" class="btn btn-sm btn-secondary">View All</a>
+    </div>
+    <div class="card-body">
+        {{if .Findings.Total}}
+        <div class="flex gap-md flex-wrap mb-md">
+            {{if .Findings.Critical}}
+            <span class="severity severity-critical">{{.Findings.Critical}} Critical</span>
+            {{end}}
+            {{if .Findings.High}}
+            <span class="severity severity-high">{{.Findings.High}} High</span>
+            {{end}}
+            {{if .Findings.Medium}}
+            <span class="severity severity-medium">{{.Findings.Medium}} Medium</span>
+            {{end}}
+            {{if .Findings.Low}}
+            <span class="severity severity-low">{{.Findings.Low}} Low</span>
+            {{end}}
+            {{if .Findings.Info}}
+            <span class="severity severity-info">{{.Findings.Info}} Info</span>
+            {{end}}
+        </div>
+        <p class="text-muted">Total: {{.Findings.Total}} findings across all scans</p>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <h3>No findings yet</h3>
+            <p>Run a vulnerability scan to discover security issues</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Subdomain Takeovers -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Subdomain Takeovers</h2>
+        <a href="/takeovers" class="btn btn-sm btn-secondary">View All</a>
+    </div>
+    <div class="card-body">
+        {{if .Stats.Takeovers}}
+        <div class="flex items-center gap-md">
+            <span class="severity severity-critical">{{.Stats.Takeovers}} Vulnerable</span>
+            <p class="text-muted">subdomains may be vulnerable to takeover</p>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            <h3>No takeover vulnerabilities</h3>
+            <p>No subdomain takeover vulnerabilities detected</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
