@@ -9,14 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/urls"
 	"github.com/spf13/cobra"
 )
 
 // URLsCmd creates the urls command
-func URLsCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func URLsCmd(deps *Deps) *cobra.Command {
 	var (
 		allKnown    bool
 		showAll     bool
@@ -40,7 +39,7 @@ flagged if potentially interesting for security testing.`,
 			if len(args) > 0 {
 				domains = []string{args[0]}
 			} else if allKnown {
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
@@ -56,7 +55,7 @@ flagged if potentially interesting for security testing.`,
 				return nil
 			}
 
-			return runURLs(*db, domains, showAll, interesting)
+			return runURLs(deps.DB, domains, showAll, interesting)
 		},
 	}
 

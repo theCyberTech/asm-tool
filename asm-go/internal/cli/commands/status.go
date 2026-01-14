@@ -41,13 +41,13 @@ var (
 )
 
 // StatusCmd creates the status command
-func StatusCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func StatusCmd(deps *Deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show database statistics and overview",
 		Long:  "Display comprehensive statistics about tracked domains, discovered assets, and findings.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatus(*db, *cfg)
+			return runStatus(deps.DB, deps.Cfg)
 		},
 	}
 }

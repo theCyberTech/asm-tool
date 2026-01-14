@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "sessionId": "816ece36-5a70-4aad-898b-ce7eaab06f72",
+  "status": "running",
+  "startedAt": "2026-01-13T10:32:51.248Z",
+  "updatedAt": "2026-01-13T11:12:19.178Z",
+  "currentIteration": 8,
+  "maxIterations": 10,
+  "tasksCompleted": 8,
+  "isPaused": false,
+  "agentPlugin": "claude",
+  "trackerState": {
+    "plugin": "json",
+    "prdPath": "./tasks/prd.json",
+    "totalTasks": 8,
+    "tasks": [
+      {
+        "id": "US-001",
+        "title": "Dashboard HTTP Server Setup",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "US-002",
+        "title": "Base HTML Templates with Dark Theme",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "US-003",
+        "title": "Landing Page with Domain List",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "US-004",
+        "title": "Domain Detail Page with Cards",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "US-005",
+        "title": "Drill-Down Modals for Findings",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "US-006",
+        "title": "Search and Filter Functionality",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "US-007",
+        "title": "Modal Table Filtering",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "US-008",
+        "title": "Polish and Error Handling",
+        "status": "completed",
+        "completedInSession": true
+      }
+    ]
+  },
+  "iterations": [
+    {
+      "iteration": 1,
+      "status": "completed",
+      "taskId": "US-001",
+      "taskTitle": "Dashboard HTTP Server Setup",
+      "taskCompleted": true,
+      "durationMs": 256445,
+      "startedAt": "2026-01-13T10:32:55.835Z",
+      "endedAt": "2026-01-13T10:37:12.280Z"
+    },
+    {
+      "iteration": 2,
+      "status": "completed",
+      "taskId": "US-002",
+      "taskTitle": "Base HTML Templates with Dark Theme",
+      "taskCompleted": true,
+      "durationMs": 329897,
+      "startedAt": "2026-01-13T10:37:13.302Z",
+      "endedAt": "2026-01-13T10:42:43.199Z"
+    },
+    {
+      "iteration": 3,
+      "status": "completed",
+      "taskId": "US-003",
+      "taskTitle": "Landing Page with Domain List",
+      "taskCompleted": true,
+      "durationMs": 283575,
+      "startedAt": "2026-01-13T10:42:44.213Z",
+      "endedAt": "2026-01-13T10:47:27.788Z"
+    },
+    {
+      "iteration": 4,
+      "status": "completed",
+      "taskId": "US-004",
+      "taskTitle": "Domain Detail Page with Cards",
+      "taskCompleted": true,
+      "durationMs": 425931,
+      "startedAt": "2026-01-13T10:47:28.804Z",
+      "endedAt": "2026-01-13T10:54:34.735Z"
+    },
+    {
+      "iteration": 5,
+      "status": "completed",
+      "taskId": "US-005",
+      "taskTitle": "Drill-Down Modals for Findings",
+      "taskCompleted": true,
+      "durationMs": 319708,
+      "startedAt": "2026-01-13T10:54:35.758Z",
+      "endedAt": "2026-01-13T10:59:55.466Z"
+    },
+    {
+      "iteration": 6,
+      "status": "completed",
+      "taskId": "US-006",
+      "taskTitle": "Search and Filter Functionality",
+      "taskCompleted": true,
+      "durationMs": 236759,
+      "startedAt": "2026-01-13T10:59:56.488Z",
+      "endedAt": "2026-01-13T11:03:53.247Z"
+    },
+    {
+      "iteration": 7,
+      "status": "completed",
+      "taskId": "US-007",
+      "taskTitle": "Modal Table Filtering",
+      "taskCompleted": true,
+      "durationMs": 71007,
+      "startedAt": "2026-01-13T11:03:54.262Z",
+      "endedAt": "2026-01-13T11:05:05.269Z"
+    },
+    {
+      "iteration": 8,
+      "status": "completed",
+      "taskId": "US-008",
+      "taskTitle": "Polish and Error Handling",
+      "taskCompleted": true,
+      "durationMs": 318697,
+      "startedAt": "2026-01-13T11:05:06.282Z",
+      "endedAt": "2026-01-13T11:10:24.979Z"
+    }
+  ],
+  "skippedTaskIds": [],
+  "cwd": "/Users/mattb/Downloads/ASM/asm-tool",
+  "activeTaskIds": [],
+  "subagentPanelVisible": false
+}

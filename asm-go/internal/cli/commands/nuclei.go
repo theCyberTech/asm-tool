@@ -9,24 +9,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
-	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/spf13/cobra"
 )
 
 // NucleiCmd creates the nuclei command for vulnerability scanning
-func NucleiCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func NucleiCmd(deps *Deps) *cobra.Command {
 	var (
-		allKnown       bool
-		severities     []string
-		tags           []string
-		excludeTags    []string
-		templates      []string
-		rateLimit      int
-		concurrency    int
+		allKnown        bool
+		severities      []string
+		tags            []string
+		excludeTags     []string
+		templates       []string
+		rateLimit       int
+		concurrency     int
 		updateTemplates bool
-		outputDir      string
+		outputDir       string
 	)
 
 	cmd := &cobra.Command{
@@ -63,12 +61,12 @@ Examples:
 				targets = args
 			} else if allKnown {
 				// Get all subdomains from database
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
 				for _, d := range dbDomains {
-					subs, _ := (*db).Domains.GetSubdomainsByDomainName(d.Domain)
+					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
 					targets = append(targets, subs...)
 				}
 			} else {

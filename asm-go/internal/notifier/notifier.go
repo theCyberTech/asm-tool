@@ -2,8 +2,10 @@ package notifier
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/smtp"
 	"strings"
@@ -22,14 +24,16 @@ type Notifier struct {
 	EmailFrom    string
 	EmailTo      []string
 	HTTPClient   *http.Client
+	UseTLS       bool // Use TLS for SMTP connection (recommended for security)
 }
 
-// DefaultNotifier creates a notifier with default HTTP client
+// DefaultNotifier creates a notifier with default HTTP client and TLS enabled
 func DefaultNotifier() *Notifier {
 	return &Notifier{
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		UseTLS: true, // Enable TLS by default for secure credential transmission
 	}
 }
 
@@ -221,18 +225,108 @@ func (n *Notifier) NotifyEmail(result *parallel.ScanResult) error {
 		subject,
 		body)
 
+	addr := fmt.Sprintf("%s:%d", n.SMTPHost, n.SMTPPort)
+
+	if n.UseTLS {
+		return n.sendMailTLS(addr, []byte(msg))
+	}
+
+	// Fallback to plain SMTP (not recommended)
 	var auth smtp.Auth
 	if n.SMTPUser != "" && n.SMTPPassword != "" {
 		auth = smtp.PlainAuth("", n.SMTPUser, n.SMTPPassword, n.SMTPHost)
 	}
 
-	addr := fmt.Sprintf("%s:%d", n.SMTPHost, n.SMTPPort)
 	err := smtp.SendMail(addr, auth, n.EmailFrom, n.EmailTo, []byte(msg))
 	if err != nil {
 		return fmt.Errorf("sending email: %w", err)
 	}
 
 	return nil
+}
+
+// sendMailTLS sends email using TLS (supports both STARTTLS on port 587 and implicit TLS on port 465)
+func (n *Notifier) sendMailTLS(addr string, msg []byte) error {
+	tlsConfig := &tls.Config{
+		ServerName: n.SMTPHost,
+	}
+
+	// For port 465, use implicit TLS; for port 587, use STARTTLS
+	if n.SMTPPort == 465 {
+		// Implicit TLS connection
+		conn, err := tls.Dial("tcp", addr, tlsConfig)
+		if err != nil {
+			return fmt.Errorf("TLS dial failed: %w", err)
+		}
+		defer conn.Close()
+
+		client, err := smtp.NewClient(conn, n.SMTPHost)
+		if err != nil {
+			return fmt.Errorf("creating SMTP client: %w", err)
+		}
+		defer client.Close()
+
+		return n.sendWithClient(client, msg)
+	}
+
+	// STARTTLS for port 587 and others
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("dial failed: %w", err)
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, n.SMTPHost)
+	if err != nil {
+		return fmt.Errorf("creating SMTP client: %w", err)
+	}
+	defer client.Close()
+
+	// Upgrade to TLS
+	if err := client.StartTLS(tlsConfig); err != nil {
+		return fmt.Errorf("STARTTLS failed: %w", err)
+	}
+
+	return n.sendWithClient(client, msg)
+}
+
+// sendWithClient sends email using an established SMTP client
+func (n *Notifier) sendWithClient(client *smtp.Client, msg []byte) error {
+	// Authenticate if credentials provided
+	if n.SMTPUser != "" && n.SMTPPassword != "" {
+		auth := smtp.PlainAuth("", n.SMTPUser, n.SMTPPassword, n.SMTPHost)
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+	}
+
+	// Set sender
+	if err := client.Mail(n.EmailFrom); err != nil {
+		return fmt.Errorf("setting sender: %w", err)
+	}
+
+	// Set recipients
+	for _, to := range n.EmailTo {
+		if err := client.Rcpt(to); err != nil {
+			return fmt.Errorf("setting recipient %s: %w", to, err)
+		}
+	}
+
+	// Send message body
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("getting data writer: %w", err)
+	}
+
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("writing message: %w", err)
+	}
+
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("closing data writer: %w", err)
+	}
+
+	return client.Quit()
 }
 
 func (n *Notifier) buildEmailBody(result *parallel.ScanResult) string {

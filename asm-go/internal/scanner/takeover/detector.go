@@ -35,10 +35,11 @@ type Result struct {
 
 // Detector checks for subdomain takeover vulnerabilities
 type Detector struct {
-	HTTPClient   *http.Client
-	Timeout      time.Duration
-	Workers      int
-	Fingerprints []Fingerprint
+	HTTPClient         *http.Client
+	Timeout            time.Duration
+	Workers            int
+	Fingerprints       []Fingerprint
+	InsecureSkipVerify bool // Whether to skip TLS certificate verification
 }
 
 // Fingerprint represents a service takeover fingerprint
@@ -51,21 +52,27 @@ type Fingerprint struct {
 	Vulnerable    bool // Is the service currently vulnerable
 }
 
-// DefaultDetector returns a detector with built-in fingerprints
+// DefaultDetector returns a detector with built-in fingerprints (TLS verification enabled by default)
 func DefaultDetector() *Detector {
+	return NewDetector(false)
+}
+
+// NewDetector returns a detector with configurable TLS verification
+func NewDetector(insecureSkipVerify bool) *Detector {
 	return &Detector{
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
 		},
-		Timeout:      10 * time.Second,
-		Workers:      20,
-		Fingerprints: DefaultFingerprints(),
+		Timeout:            10 * time.Second,
+		Workers:            20,
+		Fingerprints:       DefaultFingerprints(),
+		InsecureSkipVerify: insecureSkipVerify,
 	}
 }
 
@@ -238,6 +245,8 @@ func (d *Detector) checkHTTPStatus(ctx context.Context, subdomain string, expect
 		if err != nil {
 			continue
 		}
+		// Drain body to allow connection reuse, then close
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 1024*1024))
 		resp.Body.Close()
 
 		for _, status := range expectedStatus {

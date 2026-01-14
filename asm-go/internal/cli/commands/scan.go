@@ -18,7 +18,7 @@ import (
 )
 
 // ScanCmd creates the scan command for full domain scanning
-func ScanCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func ScanCmd(deps *Deps) *cobra.Command {
 	var (
 		skipModules      []string
 		onlyModules      []string
@@ -54,7 +54,7 @@ Results can be output to JSON, Markdown, or HTML reports.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			domain := args[0]
-			return runFullScan(*db, *cfg, domain, scanOptions{
+			return runFullScan(deps.DB, deps.Cfg, domain, scanOptions{
 				skipModules:      skipModules,
 				onlyModules:      onlyModules,
 				outputFormat:     outputFormat,
@@ -103,13 +103,22 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle interrupts
+	// Handle interrupts with proper cleanup to prevent goroutine leak
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	done := make(chan struct{})
 	go func() {
-		<-sigCh
-		fmt.Println("\nInterrupted, stopping scan...")
-		cancel()
+		select {
+		case <-sigCh:
+			fmt.Println("\nInterrupted, stopping scan...")
+			cancel()
+		case <-done:
+			// Scan completed normally, exit goroutine
+		}
+	}()
+	defer func() {
+		signal.Stop(sigCh)
+		close(done)
 	}()
 
 	// Print header

@@ -199,7 +199,8 @@ func (s *CrtShSource) Enumerate(ctx context.Context, domain string) ([]string, e
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit response body to 10MB to prevent memory exhaustion
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +252,8 @@ func (s *HackerTargetSource) Enumerate(ctx context.Context, domain string) ([]st
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit response body to 10MB to prevent memory exhaustion
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if err != nil {
 		return nil, err
 	}

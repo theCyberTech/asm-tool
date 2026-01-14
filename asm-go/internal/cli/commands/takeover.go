@@ -9,14 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/takeover"
 	"github.com/spf13/cobra"
 )
 
 // TakeoverCmd creates the takeover command
-func TakeoverCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func TakeoverCmd(deps *Deps) *cobra.Command {
 	var (
 		allKnown bool
 		workers  int
@@ -37,19 +36,19 @@ Supports 30+ services including AWS S3, GitHub Pages, Heroku, Azure, etc.`,
 			var subdomains []string
 			if len(args) > 0 {
 				target := args[0]
-				subs, err := (*db).Domains.GetSubdomainsByDomainName(target)
+				subs, err := deps.DB.Domains.GetSubdomainsByDomainName(target)
 				if err == nil && len(subs) > 0 {
 					subdomains = subs
 				} else {
 					subdomains = []string{target}
 				}
 			} else if allKnown {
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
 				for _, d := range dbDomains {
-					subs, _ := (*db).Domains.GetSubdomainsByDomainName(d.Domain)
+					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
 					subdomains = append(subdomains, subs...)
 				}
 			} else {
@@ -61,7 +60,7 @@ Supports 30+ services including AWS S3, GitHub Pages, Heroku, Azure, etc.`,
 				return nil
 			}
 
-			return runTakeover(*db, subdomains, workers, time.Duration(timeout)*time.Second)
+			return runTakeover(deps.DB, subdomains, workers, time.Duration(timeout)*time.Second)
 		},
 	}
 

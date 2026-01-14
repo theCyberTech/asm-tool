@@ -7,13 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/spf13/cobra"
 )
 
 // MigrateCmd creates the migrate command for TinyDB to SQLite migration
-func MigrateCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func MigrateCmd(deps *Deps) *cobra.Command {
 	var (
 		tinydbPath string
 		dryRun     bool
@@ -43,7 +42,7 @@ Example:
 				// Default to sibling directory
 				tinydbPath = "data/asm.db"
 			}
-			return runMigration(*db, tinydbPath, dryRun)
+			return runMigration(deps.DB, tinydbPath, dryRun)
 		},
 	}
 

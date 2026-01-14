@@ -9,14 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/dns"
 	"github.com/spf13/cobra"
 )
 
 // DNSCmd creates the dns command
-func DNSCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func DNSCmd(deps *Deps) *cobra.Command {
 	var (
 		allKnown bool
 		timeout  int
@@ -37,7 +36,7 @@ Results are saved to the database for change tracking.`,
 			if len(args) > 0 {
 				domains = []string{args[0]}
 			} else if allKnown {
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
@@ -53,7 +52,7 @@ Results are saved to the database for change tracking.`,
 				return nil
 			}
 
-			return runDNS(*db, domains, time.Duration(timeout)*time.Second)
+			return runDNS(deps.DB, domains, time.Duration(timeout)*time.Second)
 		},
 	}
 

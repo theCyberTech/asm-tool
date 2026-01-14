@@ -9,14 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/subdomains"
 	"github.com/spf13/cobra"
 )
 
 // DiscoverCmd creates the discover command
-func DiscoverCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func DiscoverCmd(deps *Deps) *cobra.Command {
 	var allKnown bool
 
 	cmd := &cobra.Command{
@@ -36,7 +35,7 @@ Results are saved to the database for future reference.`,
 			if len(args) > 0 {
 				domains = []string{args[0]}
 			} else if allKnown {
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
@@ -52,7 +51,7 @@ Results are saved to the database for future reference.`,
 				return nil
 			}
 
-			return runDiscover(*db, domains)
+			return runDiscover(deps.DB, domains)
 		},
 	}
 

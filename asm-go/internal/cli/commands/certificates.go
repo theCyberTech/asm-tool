@@ -9,14 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/spf13/cobra"
 )
 
 // CertificatesCmd creates the certificates command
-func CertificatesCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func CertificatesCmd(deps *Deps) *cobra.Command {
 	var (
 		allKnown  bool
 		port      int
@@ -40,7 +39,7 @@ Highlights certificates that are expired or expiring soon.`,
 			if len(args) > 0 {
 				target := args[0]
 				// Check if it's a domain with known subdomains
-				subs, err := (*db).Domains.GetSubdomainsByDomainName(target)
+				subs, err := deps.DB.Domains.GetSubdomainsByDomainName(target)
 				if err == nil && len(subs) > 0 {
 					hosts = subs
 				} else {
@@ -48,12 +47,12 @@ Highlights certificates that are expired or expiring soon.`,
 				}
 			} else if allKnown {
 				// Get all subdomains from all domains
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
 				for _, d := range dbDomains {
-					subs, _ := (*db).Domains.GetSubdomainsByDomainName(d.Domain)
+					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
 					hosts = append(hosts, subs...)
 				}
 			} else {
@@ -65,7 +64,7 @@ Highlights certificates that are expired or expiring soon.`,
 				return nil
 			}
 
-			return runCertificates(*db, hosts, port, workers, time.Duration(timeout)*time.Second, warnDays, insecure)
+			return runCertificates(deps.DB, hosts, port, workers, time.Duration(timeout)*time.Second, warnDays, insecure)
 		},
 	}
 

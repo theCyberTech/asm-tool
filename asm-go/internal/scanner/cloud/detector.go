@@ -35,27 +35,34 @@ type Result struct {
 
 // Detector finds cloud storage buckets
 type Detector struct {
-	HTTPClient *http.Client
-	Timeout    time.Duration
-	Workers    int
-	Patterns   map[string][]*regexp.Regexp
+	HTTPClient         *http.Client
+	Timeout            time.Duration
+	Workers            int
+	Patterns           map[string][]*regexp.Regexp
+	InsecureSkipVerify bool // Whether to skip TLS certificate verification
 }
 
-// DefaultDetector returns a detector with built-in patterns
+// DefaultDetector returns a detector with built-in patterns (TLS verification enabled by default)
 func DefaultDetector() *Detector {
+	return NewDetector(false)
+}
+
+// NewDetector returns a detector with configurable TLS verification
+func NewDetector(insecureSkipVerify bool) *Detector {
 	return &Detector{
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
 		},
-		Timeout:  10 * time.Second,
-		Workers:  20,
-		Patterns: DefaultPatterns(),
+		Timeout:            10 * time.Second,
+		Workers:            20,
+		Patterns:           DefaultPatterns(),
+		InsecureSkipVerify: insecureSkipVerify,
 	}
 }
 

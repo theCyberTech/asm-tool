@@ -8,14 +8,13 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
 	"github.com/spf13/cobra"
 )
 
 // CloudStorageCmd creates the cloudstorage command
-func CloudStorageCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func CloudStorageCmd(deps *Deps) *cobra.Command {
 	var (
 		allKnown bool
 		probe    bool
@@ -41,7 +40,7 @@ Checks bucket access levels:
 			if len(args) > 0 {
 				domains = []string{args[0]}
 			} else if allKnown {
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
@@ -57,7 +56,7 @@ Checks bucket access levels:
 				return nil
 			}
 
-			return runCloudStorage(*db, domains, probe, workers)
+			return runCloudStorage(deps.DB, domains, probe, workers)
 		},
 	}
 

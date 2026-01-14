@@ -16,7 +16,7 @@ import (
 )
 
 // PortscanCmd creates the portscan command
-func PortscanCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func PortscanCmd(deps *Deps) *cobra.Command {
 	var (
 		allKnown   bool
 		portSpec   string
@@ -45,7 +45,7 @@ Use --ports to specify custom ports, or --top100 for the top 100 ports.`,
 			} else if portSpec != "" {
 				scanPorts = config.ParsePortString(portSpec)
 			} else {
-				scanPorts = (*cfg).ParsePorts()
+				scanPorts = deps.Cfg.ParsePorts()
 			}
 
 			if len(scanPorts) == 0 {
@@ -57,7 +57,7 @@ Use --ports to specify custom ports, or --top100 for the top 100 ports.`,
 			if len(args) > 0 {
 				target := args[0]
 				// Check if it's a domain with known subdomains
-				subs, err := (*db).Domains.GetSubdomainsByDomainName(target)
+				subs, err := deps.DB.Domains.GetSubdomainsByDomainName(target)
 				if err == nil && len(subs) > 0 {
 					hosts = subs
 				} else {
@@ -65,12 +65,12 @@ Use --ports to specify custom ports, or --top100 for the top 100 ports.`,
 				}
 			} else if allKnown {
 				// Get all subdomains from all domains
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
 				for _, d := range dbDomains {
-					subs, _ := (*db).Domains.GetSubdomainsByDomainName(d.Domain)
+					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
 					hosts = append(hosts, subs...)
 				}
 			} else {
@@ -82,7 +82,7 @@ Use --ports to specify custom ports, or --top100 for the top 100 ports.`,
 				return nil
 			}
 
-			return runPortscan(*db, hosts, scanPorts, workers, time.Duration(timeout)*time.Second, grabBanner)
+			return runPortscan(deps.DB, hosts, scanPorts, workers, time.Duration(timeout)*time.Second, grabBanner)
 		},
 	}
 

@@ -1,0 +1,415 @@
+{
+  "project_name": "ASM Interactive Dashboard",
+  "description": "A web-based interactive dashboard for viewing and exploring attack surface management scan results with a security-focused dark aesthetic.",
+  "version": "1.0.0",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Dashboard HTTP Server Setup",
+      "description": "Create the core dashboard HTTP server infrastructure with Go net/http, basic routing, and the CLI 'dashboard' command integration.",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Dashboard server starts on configurable port (default 8080)",
+        "CLI command 'asm dashboard' launches the server",
+        "Server serves static assets via Go embed",
+        "Basic health check endpoint responds"
+      ],
+      "subtasks": [
+        {
+          "id": "US-001-1",
+          "title": "Create dashboard package structure",
+          "description": "Set up internal/dashboard/ directory with server.go, handlers.go, and templates/ folder structure",
+          "status": "pending"
+        },
+        {
+          "id": "US-001-2",
+          "title": "Implement HTTP server with chi router",
+          "description": "Create server.go with chi router, static file serving, and graceful shutdown",
+          "status": "pending"
+        },
+        {
+          "id": "US-001-3",
+          "title": "Add dashboard CLI command",
+          "description": "Add 'dashboard' subcommand to Cobra CLI with --port flag",
+          "status": "pending"
+        },
+        {
+          "id": "US-001-4",
+          "title": "Set up Go embed for static assets",
+          "description": "Configure embed.FS for templates and static files",
+          "status": "pending"
+        }
+      ],
+      "passes": true,
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-002",
+      "title": "Base HTML Templates with Dark Theme",
+      "description": "Create the base HTML template structure with the security-focused dark theme, htmx integration, and reusable layout components.",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "US-001"
+      ],
+      "acceptance_criteria": [
+        "Base layout.html with dark theme CSS variables",
+        "Color palette implemented (#0d1117 background, severity colors)",
+        "htmx loaded and configured",
+        "Responsive base layout structure"
+      ],
+      "subtasks": [
+        {
+          "id": "US-002-1",
+          "title": "Create base layout template",
+          "description": "Create layout.html with HTML structure, meta tags, and CSS/JS includes",
+          "status": "pending"
+        },
+        {
+          "id": "US-002-2",
+          "title": "Implement dark theme CSS",
+          "description": "Create styles.css with security dark theme color palette and typography",
+          "status": "pending"
+        },
+        {
+          "id": "US-002-3",
+          "title": "Add htmx integration",
+          "description": "Include htmx library and configure base settings",
+          "status": "pending"
+        },
+        {
+          "id": "US-002-4",
+          "title": "Create reusable component templates",
+          "description": "Build card, modal, table, and button component templates",
+          "status": "pending"
+        }
+      ],
+      "passes": true,
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-003",
+      "title": "Landing Page with Domain List",
+      "description": "Implement the landing page showing all monitored domains with aggregate statistics and quick stats per domain.",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "US-002"
+      ],
+      "acceptance_criteria": [
+        "Landing page shows all domains from database",
+        "Stats bar displays aggregate counts (domains, subdomains, ports, vulns)",
+        "Each domain card shows last scan date and quick stats",
+        "Domains are clickable to navigate to detail view"
+      ],
+      "subtasks": [
+        {
+          "id": "US-003-1",
+          "title": "Create index handler and template",
+          "description": "Implement GET / handler that queries domains and renders index.html",
+          "status": "pending"
+        },
+        {
+          "id": "US-003-2",
+          "title": "Build aggregate stats query",
+          "description": "Create database query for total counts across all domains",
+          "status": "pending"
+        },
+        {
+          "id": "US-003-3",
+          "title": "Implement domain list with quick stats",
+          "description": "Query per-domain stats (subdomain count, port count, vuln count)",
+          "status": "pending"
+        },
+        {
+          "id": "US-003-4",
+          "title": "Style stats bar and domain cards",
+          "description": "Apply dark theme styling to stats bar and domain list cards",
+          "status": "pending"
+        }
+      ],
+      "passes": true,
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-004",
+      "title": "Domain Detail Page with Cards",
+      "description": "Create the domain detail view showing cards for each scan module (subdomains, ports, certs, DNS, techs, vulns, URLs, APIs, emails, cloud, takeovers).",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "US-003"
+      ],
+      "acceptance_criteria": [
+        "Domain page accessible via /domain/{name} route",
+        "Breadcrumb navigation shows Home → domain.com",
+        "Cards displayed for each scan module with counts",
+        "Scan history selector dropdown shows available scan dates"
+      ],
+      "subtasks": [
+        {
+          "id": "US-004-1",
+          "title": "Create domain detail handler and template",
+          "description": "Implement GET /domain/{name} handler and domain.html template",
+          "status": "pending"
+        },
+        {
+          "id": "US-004-2",
+          "title": "Build scan history query",
+          "description": "Query distinct scan dates for domain from finding timestamps",
+          "status": "pending"
+        },
+        {
+          "id": "US-004-3",
+          "title": "Implement module cards with counts",
+          "description": "Create cards for all 11 module types with count queries",
+          "status": "pending"
+        },
+        {
+          "id": "US-004-4",
+          "title": "Add breadcrumb navigation",
+          "description": "Implement breadcrumb component showing navigation path",
+          "status": "pending"
+        }
+      ],
+      "passes": true,
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-005",
+      "title": "Drill-Down Modals for Findings",
+      "description": "Implement clickable cards that open modals with full data tables, sortable columns, and severity color coding.",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": [
+        "US-004"
+      ],
+      "acceptance_criteria": [
+        "Clicking a card opens modal via htmx",
+        "Modal displays full data table for that finding type",
+        "Tables support column sorting",
+        "Severity levels are color-coded (critical=red, high=orange, etc.)"
+      ],
+      "subtasks": [
+        {
+          "id": "US-005-1",
+          "title": "Create modal component and htmx endpoints",
+          "description": "Build modal template and partial endpoints for each finding type",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-2",
+          "title": "Implement subdomains modal",
+          "description": "Create subdomains table with hostname, IP, discovered date",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-3",
+          "title": "Implement ports modal",
+          "description": "Create ports table with port, service, state, banner",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-4",
+          "title": "Implement certificates modal",
+          "description": "Create certificates table with issuer, expiry, highlighting soon-expiring",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-5",
+          "title": "Implement DNS records modal",
+          "description": "Create DNS table with record type, name, value",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-6",
+          "title": "Implement technologies modal",
+          "description": "Create technologies table with name, version, category",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-7",
+          "title": "Implement vulnerabilities modal",
+          "description": "Create vulnerabilities table with severity color coding, template, matched URL",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-8",
+          "title": "Implement URLs modal",
+          "description": "Create URLs table with URL, status code, content type",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-9",
+          "title": "Implement API endpoints modal",
+          "description": "Create API endpoints table with method, path, source",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-10",
+          "title": "Implement emails modal",
+          "description": "Create emails table with address, source",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-11",
+          "title": "Implement cloud storage modal",
+          "description": "Create cloud storage table with bucket name, provider, status",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-12",
+          "title": "Implement takeover risks modal",
+          "description": "Create takeover risks table with subdomain, provider, vulnerability status",
+          "status": "pending"
+        },
+        {
+          "id": "US-005-13",
+          "title": "Add table sorting functionality",
+          "description": "Implement client-side or htmx-based column sorting",
+          "status": "pending"
+        }
+      ],
+      "passes": true,
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-006",
+      "title": "Search and Filter Functionality",
+      "description": "Implement search bar for filtering domains and date range filtering with htmx partial updates.",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": [
+        "US-003"
+      ],
+      "acceptance_criteria": [
+        "Search bar filters domains by name in real-time",
+        "Date range picker limits results to selected period",
+        "Filters apply immediately via htmx partial updates",
+        "Filter state persists in URL parameters"
+      ],
+      "subtasks": [
+        {
+          "id": "US-006-1",
+          "title": "Implement domain search",
+          "description": "Add search input with htmx trigger for domain name filtering",
+          "status": "pending"
+        },
+        {
+          "id": "US-006-2",
+          "title": "Add date range picker",
+          "description": "Implement date range inputs for filtering by scan date",
+          "status": "pending"
+        },
+        {
+          "id": "US-006-3",
+          "title": "Create htmx partial for domain list",
+          "description": "Build partial template for filtered domain list updates",
+          "status": "pending"
+        },
+        {
+          "id": "US-006-4",
+          "title": "Persist filters in URL",
+          "description": "Use URL query params to maintain filter state across navigation",
+          "status": "pending"
+        }
+      ],
+      "passes": true,
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-007",
+      "title": "Modal Table Filtering",
+      "description": "Add filtering capability within modal tables for searching specific findings.",
+      "priority": "low",
+      "status": "pending",
+      "dependencies": [
+        "US-005"
+      ],
+      "acceptance_criteria": [
+        "Each modal table has a filter input",
+        "Filtering works client-side for responsiveness",
+        "Filter matches against relevant columns"
+      ],
+      "subtasks": [
+        {
+          "id": "US-007-1",
+          "title": "Add filter input to modal tables",
+          "description": "Add search input above each modal table",
+          "status": "pending"
+        },
+        {
+          "id": "US-007-2",
+          "title": "Implement client-side table filtering",
+          "description": "Add JavaScript for filtering table rows based on input",
+          "status": "pending"
+        }
+      ],
+      "passes": true,
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-008",
+      "title": "Polish and Error Handling",
+      "description": "Add loading states, empty states, error handling, and responsive layout adjustments.",
+      "priority": "low",
+      "status": "pending",
+      "dependencies": [
+        "US-005",
+        "US-006"
+      ],
+      "acceptance_criteria": [
+        "Loading indicators shown during htmx requests",
+        "Empty states displayed when no data available",
+        "Error messages shown gracefully on failures",
+        "Layout works on tablet and desktop viewports"
+      ],
+      "subtasks": [
+        {
+          "id": "US-008-1",
+          "title": "Add loading indicators",
+          "description": "Implement htmx loading indicators for async requests",
+          "status": "pending"
+        },
+        {
+          "id": "US-008-2",
+          "title": "Create empty state components",
+          "description": "Design and implement empty state messages for no data scenarios",
+          "status": "pending"
+        },
+        {
+          "id": "US-008-3",
+          "title": "Implement error handling",
+          "description": "Add error boundaries and user-friendly error messages",
+          "status": "pending"
+        },
+        {
+          "id": "US-008-4",
+          "title": "Responsive layout adjustments",
+          "description": "Ensure layout works well on various screen sizes",
+          "status": "pending"
+        }
+      ],
+      "passes": true,
+      "completionNotes": "Completed by agent"
+    }
+  ],
+  "metadata": {
+    "created_at": "2025-01-13",
+    "source_prd": "tasks/prd-product-requirements-document-asm-interactive-dashboard.md",
+    "tech_stack": {
+      "backend": "Go HTTP server with chi router",
+      "frontend": "htmx + HTML templates",
+      "styling": "Custom CSS with dark security theme",
+      "database": "SQLite (read-only)"
+    },
+    "success_metrics": [
+      "Dashboard loads in <500ms for typical dataset",
+      "All scan data accessible within 3 clicks",
+      "Zero runtime dependencies beyond Go binary"
+    ],
+    "updatedAt": "2026-01-13T11:10:24.982Z"
+  }
+}

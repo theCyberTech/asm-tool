@@ -9,14 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/spf13/cobra"
 )
 
 // EmailsCmd creates the emails command
-func EmailsCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func EmailsCmd(deps *Deps) *cobra.Command {
 	var allKnown bool
 
 	cmd := &cobra.Command{
@@ -36,7 +35,7 @@ Note: Some sources require API keys for full functionality.`,
 			if len(args) > 0 {
 				domains = []string{args[0]}
 			} else if allKnown {
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
@@ -52,7 +51,7 @@ Note: Some sources require API keys for full functionality.`,
 				return nil
 			}
 
-			return runEmails(*db, domains)
+			return runEmails(deps.DB, domains)
 		},
 	}
 

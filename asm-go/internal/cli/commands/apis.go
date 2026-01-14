@@ -9,14 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/apis"
 	"github.com/spf13/cobra"
 )
 
 // APIsCmd creates the apis command
-func APIsCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func APIsCmd(deps *Deps) *cobra.Command {
 	var (
 		allKnown bool
 		workers  int
@@ -39,19 +38,19 @@ reveal internal endpoints and data structures.`,
 			var hosts []string
 			if len(args) > 0 {
 				target := args[0]
-				subs, err := (*db).Domains.GetSubdomainsByDomainName(target)
+				subs, err := deps.DB.Domains.GetSubdomainsByDomainName(target)
 				if err == nil && len(subs) > 0 {
 					hosts = subs
 				} else {
 					hosts = []string{target}
 				}
 			} else if allKnown {
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
 				for _, d := range dbDomains {
-					subs, _ := (*db).Domains.GetSubdomainsByDomainName(d.Domain)
+					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
 					hosts = append(hosts, subs...)
 				}
 			} else {
@@ -63,7 +62,7 @@ reveal internal endpoints and data structures.`,
 				return nil
 			}
 
-			return runAPIs(*db, hosts, workers, time.Duration(timeout)*time.Second)
+			return runAPIs(deps.DB, hosts, workers, time.Duration(timeout)*time.Second)
 		},
 	}
 

@@ -9,14 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/technologies"
 	"github.com/spf13/cobra"
 )
 
 // FingerprintCmd creates the fingerprint command
-func FingerprintCmd(db **database.Database, cfg **config.Config) *cobra.Command {
+func FingerprintCmd(deps *Deps) *cobra.Command {
 	var (
 		allKnown bool
 		workers  int
@@ -39,19 +38,19 @@ Results are saved to the database for tracking.`,
 			var hosts []string
 			if len(args) > 0 {
 				target := args[0]
-				subs, err := (*db).Domains.GetSubdomainsByDomainName(target)
+				subs, err := deps.DB.Domains.GetSubdomainsByDomainName(target)
 				if err == nil && len(subs) > 0 {
 					hosts = subs
 				} else {
 					hosts = []string{target}
 				}
 			} else if allKnown {
-				dbDomains, err := (*db).Domains.List()
+				dbDomains, err := deps.DB.Domains.List()
 				if err != nil {
 					return fmt.Errorf("listing domains: %w", err)
 				}
 				for _, d := range dbDomains {
-					subs, _ := (*db).Domains.GetSubdomainsByDomainName(d.Domain)
+					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
 					hosts = append(hosts, subs...)
 				}
 			} else {
@@ -63,7 +62,7 @@ Results are saved to the database for tracking.`,
 				return nil
 			}
 
-			return runFingerprint(*db, hosts, workers, time.Duration(timeout)*time.Second)
+			return runFingerprint(deps.DB, hosts, workers, time.Duration(timeout)*time.Second)
 		},
 	}
 
