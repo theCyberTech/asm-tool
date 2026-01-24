@@ -790,71 +790,93 @@ func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, erro
 	stats := &DomainDetailStats{}
 
 	// Count subdomains
-	d.db.Get(&stats.SubdomainCount, `
+	if err := d.db.Get(&stats.SubdomainCount, `
 		SELECT COUNT(*) FROM subdomains s
 		JOIN domains d ON s.domain_id = d.id
 		WHERE d.domain = ? AND s.active = 1
-	`, domain)
+	`, domain); err != nil {
+		return nil, fmt.Errorf("failed to count subdomains: %w", err)
+	}
 
 	// Count ports
-	d.db.Get(&stats.PortCount, `
+	if err := d.db.Get(&stats.PortCount, `
 		SELECT COUNT(*) FROM ports
 		WHERE (host LIKE ? OR host = ?) AND state = 'open'
-	`, "%."+domain, domain)
+	`, "%."+domain, domain); err != nil {
+		return nil, fmt.Errorf("failed to count ports: %w", err)
+	}
 
 	// Count certificates
-	d.db.Get(&stats.CertificateCount, `
+	if err := d.db.Get(&stats.CertificateCount, `
 		SELECT COUNT(*) FROM certificates
 		WHERE host LIKE ? OR host = ?
-	`, "%."+domain, domain)
+	`, "%."+domain, domain); err != nil {
+		return nil, fmt.Errorf("failed to count certificates: %w", err)
+	}
 
 	// Count technologies
-	d.db.Get(&stats.TechnologyCount, `
+	if err := d.db.Get(&stats.TechnologyCount, `
 		SELECT COUNT(*) FROM technologies
 		WHERE host LIKE ? OR host = ?
-	`, "%."+domain, domain)
+	`, "%."+domain, domain); err != nil {
+		return nil, fmt.Errorf("failed to count technologies: %w", err)
+	}
 
 	// Count DNS records
-	d.db.Get(&stats.DNSRecordCount, `
+	if err := d.db.Get(&stats.DNSRecordCount, `
 		SELECT COUNT(*) FROM dns_records
 		WHERE domain LIKE ? OR domain = ?
-	`, "%."+domain, domain)
+	`, "%."+domain, domain); err != nil {
+		return nil, fmt.Errorf("failed to count DNS records: %w", err)
+	}
 
 	// Count vulns
-	d.db.Get(&stats.VulnCount, `
+	if err := d.db.Get(&stats.VulnCount, `
 		SELECT COUNT(*) FROM findings
 		WHERE host LIKE ? AND status = 'open'
-	`, "%"+domain)
+	`, "%"+domain); err != nil {
+		return nil, fmt.Errorf("failed to count findings: %w", err)
+	}
 
 	// Count URLs
-	d.db.Get(&stats.URLCount, `
+	if err := d.db.Get(&stats.URLCount, `
 		SELECT COUNT(*) FROM urls
 		WHERE domain = ? OR domain LIKE ?
-	`, domain, "%."+domain)
+	`, domain, "%."+domain); err != nil {
+		return nil, fmt.Errorf("failed to count URLs: %w", err)
+	}
 
 	// Count APIs
-	d.db.Get(&stats.APICount, `
+	if err := d.db.Get(&stats.APICount, `
 		SELECT COUNT(*) FROM apis
 		WHERE url LIKE ?
-	`, "%"+domain+"%")
+	`, "%"+domain+"%"); err != nil {
+		return nil, fmt.Errorf("failed to count APIs: %w", err)
+	}
 
 	// Count emails
-	d.db.Get(&stats.EmailCount, `
+	if err := d.db.Get(&stats.EmailCount, `
 		SELECT COUNT(*) FROM emails
 		WHERE domain = ?
-	`, domain)
+	`, domain); err != nil {
+		return nil, fmt.Errorf("failed to count emails: %w", err)
+	}
 
 	// Count cloud storage
-	d.db.Get(&stats.CloudCount, `
+	if err := d.db.Get(&stats.CloudCount, `
 		SELECT COUNT(*) FROM cloud_storage
 		WHERE domain = ?
-	`, domain)
+	`, domain); err != nil {
+		return nil, fmt.Errorf("failed to count cloud storage: %w", err)
+	}
 
 	// Count takeovers
-	d.db.Get(&stats.TakeoverCount, `
+	if err := d.db.Get(&stats.TakeoverCount, `
 		SELECT COUNT(*) FROM takeovers
 		WHERE subdomain LIKE ? AND status = 'open'
-	`, "%"+domain)
+	`, "%"+domain); err != nil {
+		return nil, fmt.Errorf("failed to count takeovers: %w", err)
+	}
 
 	return stats, nil
 }
