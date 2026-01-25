@@ -485,8 +485,8 @@ func (r *Runner) runAPIs(ctx context.Context, hosts []string) ([]apis.API, error
 
 	var results []apis.API
 	batch := discovery.DiscoverBatch(ctx, hosts)
-	for _, r := range batch.Results {
-		results = append(results, r.APIs...)
+	for _, res := range batch.Results {
+		results = append(results, res.APIs...)
 	}
 	return results, nil
 }
