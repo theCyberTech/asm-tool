@@ -56,9 +56,8 @@ func DefaultEnumerator() *Enumerator {
 	return &Enumerator{
 		Sources: []Source{
 			&HunterSource{client: client},
-			&EmailRepSource{client: client},
-			&ThatsThem{client: client},
 			&SkymemSource{client: client},
+			&CrtShEmailSource{client: client},
 		},
 		HTTPClient: client,
 		Timeout:    60 * time.Second,
@@ -258,30 +257,6 @@ func (s *HunterSource) Enumerate(ctx context.Context, domain string) ([]string, 
 	}
 
 	return emails, nil
-}
-
-// EmailRepSource queries EmailRep.io
-type EmailRepSource struct {
-	client *http.Client
-}
-
-func (s *EmailRepSource) Name() string { return "emailrep" }
-
-func (s *EmailRepSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	// EmailRep doesn't have domain search, skip
-	return nil, nil
-}
-
-// ThatsThem queries ThatsThem for emails
-type ThatsThem struct {
-	client *http.Client
-}
-
-func (s *ThatsThem) Name() string { return "thatsthem" }
-
-func (s *ThatsThem) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	// ThatsThem requires scraping, limited functionality
-	return nil, nil
 }
 
 // SkymemSource queries Skymem

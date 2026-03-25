@@ -108,9 +108,10 @@ func (d *Detector) Check(ctx context.Context, subdomain string) *Finding {
 		finding.Service = fp.Service
 		finding.Documentation = fp.Documentation
 
-		// If CNAME doesn't resolve, it's likely vulnerable
+		// If CNAME doesn't resolve, check if the service is actually vulnerable
+		// (some services like Shopify, Netlify, Vercel have protections and are not takeover-able)
 		if !cnameResolvable {
-			finding.Vulnerable = true
+			finding.Vulnerable = fp.Vulnerable
 			finding.Confidence = "HIGH"
 			finding.Type = "NXDOMAIN"
 			finding.Evidence = fmt.Sprintf("CNAME %s does not resolve", cname)

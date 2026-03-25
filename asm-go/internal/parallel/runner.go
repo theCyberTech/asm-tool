@@ -2,6 +2,7 @@ package parallel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -12,12 +13,12 @@ import (
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
 	"github.com/asm-tool/asm-go/internal/scanner/dns"
 	"github.com/asm-tool/asm-go/internal/scanner/emails"
+	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 	"github.com/asm-tool/asm-go/internal/scanner/subdomains"
 	"github.com/asm-tool/asm-go/internal/scanner/takeover"
 	"github.com/asm-tool/asm-go/internal/scanner/technologies"
 	"github.com/asm-tool/asm-go/internal/scanner/urls"
-	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 )
 
 // ModuleType represents the type of scanner module
@@ -46,10 +47,13 @@ type PortResult struct {
 	Banner  string
 }
 
-// DNSRecordSet represents DNS records for a host
+// DNSRecordSet represents DNS records for a host, including SOA, CAA, and DNSSEC.
 type DNSRecordSet struct {
 	Host    string
 	Records []dns.Record
+	SOA     *dns.SOARecord
+	CAA     []dns.CAARecord
+	DNSSEC  *dns.DNSSECResult
 }
 
 // TakeoverResult represents a takeover finding
@@ -373,7 +377,146 @@ func (r *Runner) Run(ctx context.Context, domain string) (*ScanResult, error) {
 	result.EndTime = time.Now()
 	result.Duration = result.EndTime.Sub(result.StartTime)
 
+	// Persist results to database
+	if r.DB != nil {
+		if err := r.persistResults(domain, result); err != nil {
+			result.Errors[ModuleType("persist")] = err
+		}
+	}
+
 	return result, nil
+}
+
+// persistResults saves all scan results to the database
+func (r *Runner) persistResults(domain string, result *ScanResult) error {
+	// Upsert domain and get its ID
+	d, err := r.DB.Domains.Add(domain)
+	if err != nil {
+		return fmt.Errorf("saving domain: %w", err)
+	}
+
+	// Subdomains
+	for _, sub := range result.Subdomains {
+		_ = r.DB.Domains.AddSubdomain(d.ID, sub)
+	}
+
+	// Ports
+	for _, p := range result.Ports {
+		_ = r.DB.Ports.Add(&database.Port{
+			Host:    p.Host,
+			Port:    p.Port,
+			State:   p.State,
+			Service: p.Service,
+			Banner:  p.Banner,
+		})
+	}
+
+	// Certificates
+	for _, c := range result.Certificates {
+		sanJSON, _ := json.Marshal(c.SAN)
+		_ = r.DB.Certificates.Add(&database.Certificate{
+			Host:               c.Host,
+			Port:               c.Port,
+			Subject:            c.Subject,
+			Issuer:             c.Issuer,
+			SerialNumber:       c.SerialNumber,
+			NotBefore:          c.NotBefore,
+			NotAfter:           c.NotAfter,
+			DaysUntilExpiry:    c.DaysUntilExpiry,
+			Fingerprint:        c.Fingerprint,
+			SAN:                string(sanJSON),
+			SignatureAlgorithm: c.SignatureAlgorithm,
+		})
+	}
+
+	// Technologies
+	for _, t := range result.Technologies {
+		techJSON, _ := json.Marshal(t.Technologies)
+		headersJSON, _ := json.Marshal(t.Headers)
+		_ = r.DB.SaveTechnology(t.Host, t.StatusCode, t.Title, t.Server,
+			string(techJSON), string(headersJSON), t.ContentLength, t.RedirectURL)
+	}
+
+	// DNS records — store the full result (SOA, CAA, DNSSEC included) and
+	// detect changes vs. the previously stored snapshot.
+	for _, rset := range result.DNSRecords {
+		// Load previous snapshot before overwriting
+		prev, _ := r.DB.GetLatestDNSRecord(rset.Host)
+
+		// Serialize the full DNSRecordSet for rich change detection
+		fullJSON, _ := json.Marshal(rset)
+		_ = r.DB.SaveDNSRecords(rset.Host, string(fullJSON))
+
+		// Detect changes if we have a previous scan
+		if prev != nil {
+			var prevRset DNSRecordSet
+			if err := json.Unmarshal([]byte(prev.Records), &prevRset); err == nil {
+				// Build minimal dns.Result objects for comparison
+				prevResult := dnsRecordSetToResult(prevRset)
+				currResult := dnsRecordSetToResult(rset)
+				changes := dns.DetectChanges(currResult, prevResult)
+				for _, ch := range changes {
+					severity := changeSeverity(ch.RecordType)
+					_ = r.DB.SaveChangeEvent(rset.Host, ch.Type, severity, ch.Description, ch.OldValue, ch.NewValue)
+				}
+			}
+		}
+	}
+
+	// Takeovers (save all, not just vulnerable ones)
+	for _, t := range result.Takeovers {
+		if t.Vulnerable {
+			_ = r.DB.SaveTakeover(t.Host, "", t.Service, t.Confidence, t.Evidence)
+		}
+	}
+
+	// URLs
+	for _, u := range result.URLs {
+		interesting := 0
+		if u.Interesting {
+			interesting = 1
+		}
+		_ = r.DB.SaveURL(u.Domain, u.URL, u.Category, u.Source, interesting)
+	}
+
+	// APIs
+	for _, a := range result.APIs {
+		endpointsJSON, _ := json.Marshal(a.Endpoints)
+		_ = r.DB.SaveAPI(a.URL, a.Type, a.Title, a.Version, a.EndpointsCount, string(endpointsJSON))
+	}
+
+	// Emails
+	for _, e := range result.Emails {
+		_ = r.DB.SaveEmail(e.Domain, e.Address, e.Source)
+	}
+
+	// Cloud storage
+	for _, b := range result.CloudStorage {
+		_ = r.DB.SaveCloudBucket(b.Provider, b.BucketName, b.URL, b.Domain, b.AccessLevel, b.Severity, b.Evidence)
+	}
+
+	// Nuclei vulnerabilities
+	for _, v := range result.Vulnerabilities {
+		refs, _ := json.Marshal(v.Info.Reference)
+		evidence, _ := json.Marshal(v.ExtractedResults)
+		_ = r.DB.Findings.Add(&database.Finding{
+			TemplateID:  v.TemplateID,
+			Name:        v.Info.Name,
+			Severity:    v.Info.Severity,
+			Description: v.Info.Description,
+			Host:        v.Host,
+			MatchedAt:   v.Matched,
+			Evidence:    string(evidence),
+			Refs:        string(refs),
+			Tags:        v.Info.Tags,
+			Status:      "open",
+		})
+	}
+
+	// Update last_scanned timestamp
+	_ = r.DB.UpdateDomainLastScanned(domain)
+
+	return nil
 }
 
 func (r *Runner) isEnabled(module ModuleType) bool {
@@ -442,6 +585,9 @@ func (r *Runner) runDNS(ctx context.Context, hosts []string) ([]DNSRecordSet, er
 		results = append(results, DNSRecordSet{
 			Host:    host,
 			Records: records,
+			SOA:     dnsResult.SOA,
+			CAA:     dnsResult.CAA,
+			DNSSEC:  dnsResult.DNSSEC,
 		})
 	}
 	return results, nil
@@ -527,4 +673,34 @@ func (r *Runner) runNuclei(ctx context.Context, hosts []string) ([]*nuclei.Findi
 	}
 
 	return result.Findings, nil
+}
+
+// dnsRecordSetToResult converts a DNSRecordSet into a minimal dns.Result suitable
+// for change detection.
+func dnsRecordSetToResult(rset DNSRecordSet) *dns.Result {
+	r := &dns.Result{
+		Domain:  rset.Host,
+		Records: make(map[string][]dns.Record),
+		SOA:     rset.SOA,
+		CAA:     rset.CAA,
+		DNSSEC:  rset.DNSSEC,
+	}
+	for _, rec := range rset.Records {
+		r.Records[rec.Type] = append(r.Records[rec.Type], rec)
+	}
+	return r
+}
+
+// changeSeverity maps a DNS record type to a change event severity.
+func changeSeverity(recordType string) string {
+	switch recordType {
+	case "NS", "DNSSEC":
+		return "critical"
+	case "A", "AAAA", "MX", "SOA":
+		return "high"
+	case "CAA", "CNAME":
+		return "medium"
+	default:
+		return "low"
+	}
 }

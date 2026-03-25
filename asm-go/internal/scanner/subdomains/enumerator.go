@@ -51,8 +51,7 @@ func DefaultEnumerator() *Enumerator {
 		Sources: []Source{
 			&CrtShSource{client: client},
 			&HackerTargetSource{client: client},
-			&ThreatCrowdSource{client: client},
-			&URLScanSource{client: client},
+				&URLScanSource{client: client},
 		},
 		HTTPClient: client,
 		Timeout:    60 * time.Second,
@@ -143,9 +142,8 @@ func (e *Enumerator) Enumerate(ctx context.Context, domain string) *Result {
 func normalizeSubdomain(sub, domain string) string {
 	sub = strings.ToLower(strings.TrimSpace(sub))
 
-	// Remove wildcards
+	// Remove wildcards only
 	sub = strings.TrimPrefix(sub, "*.")
-	sub = strings.TrimPrefix(sub, "www.")
 
 	// Must end with the target domain
 	if !strings.HasSuffix(sub, domain) {
@@ -275,42 +273,6 @@ func (s *HackerTargetSource) Enumerate(ctx context.Context, domain string) ([]st
 	}
 
 	return subs, nil
-}
-
-// ThreatCrowdSource queries ThreatCrowd API
-type ThreatCrowdSource struct {
-	client *http.Client
-}
-
-func (s *ThreatCrowdSource) Name() string { return "threatcrowd" }
-
-func (s *ThreatCrowdSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	url := fmt.Sprintf("https://www.threatcrowd.org/searchApi/v2/domain/report/?domain=%s", domain)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "ASM-Tool/2.0")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	var data struct {
-		Subdomains []string `json:"subdomains"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-
-	return data.Subdomains, nil
 }
 
 // URLScanSource queries urlscan.io

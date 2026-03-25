@@ -20,12 +20,28 @@ var (
 
 // PageData represents the data passed to templates
 type PageData struct {
-	ActivePage   string
-	Stats        Stats
-	Findings     FindingCounts
-	Domains      []DomainStats
-	DomainDetail *DomainDetailData
-	Error        string
+	ActivePage    string
+	Stats         Stats
+	Findings      FindingCounts
+	Domains       []DomainStats
+	DomainDetail  *DomainDetailData
+	GlobalList    *GlobalListData
+	ChangeEvents  []ChangeEventView
+	Error         string
+}
+
+// GlobalListData holds data for the global asset list pages
+type GlobalListData struct {
+	Title        string
+	Subdomains   []SubdomainView
+	Ports        []PortView
+	Certificates []CertificateView
+	URLs         []URLView
+	APIs         []APIView
+	Emails       []EmailView
+	CloudStorage []CloudStorageView
+	Findings     []FindingView
+	Takeovers    []TakeoverView
 }
 
 // DomainStats represents a domain with its aggregate statistics for display
@@ -65,21 +81,33 @@ type FindingCounts struct {
 
 // DomainDetailData holds all data for the domain detail page
 type DomainDetailData struct {
-	Domain       string
-	AddedAt      time.Time
-	LastScanned  *time.Time
-	Stats        DomainDetailStats
-	Subdomains   []SubdomainView
-	Ports        []PortView
-	Certificates []CertificateView
-	Technologies []TechnologyView
-	DNSRecords   []DNSRecordView
-	Findings     []FindingView
-	URLs         []URLView
-	APIs         []APIView
-	Emails       []EmailView
-	CloudStorage []CloudStorageView
-	Takeovers    []TakeoverView
+	Domain        string
+	AddedAt       time.Time
+	LastScanned   *time.Time
+	Stats         DomainDetailStats
+	Subdomains    []SubdomainView
+	Ports         []PortView
+	Certificates  []CertificateView
+	Technologies  []TechnologyView
+	DNSRecords    []DNSRecordView
+	Findings      []FindingView
+	URLs          []URLView
+	APIs          []APIView
+	Emails        []EmailView
+	CloudStorage  []CloudStorageView
+	Takeovers     []TakeoverView
+	ChangeEvents  []ChangeEventView
+}
+
+// ChangeEventView represents a DNS change event for display
+type ChangeEventView struct {
+	Domain      string
+	ChangeType  string
+	Severity    string
+	Description string
+	OldValue    string
+	NewValue    string
+	Timestamp   time.Time
 }
 
 // DomainDetailStats holds counts for the domain detail page
@@ -163,6 +191,7 @@ type URLView struct {
 	Domain       string
 	Category     sql.NullString
 	Interesting  bool
+	Source       string
 	DiscoveredAt time.Time
 }
 

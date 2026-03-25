@@ -152,6 +152,12 @@ func NewScanner(severities []string, rateLimit int) *Scanner {
 
 // IsInstalled checks if nuclei is available
 func (s *Scanner) IsInstalled() bool {
+	// For absolute paths (from findNucleiBinary), check file existence directly.
+	// For bare names like "nuclei", fall back to PATH lookup.
+	if strings.ContainsRune(s.BinaryPath, '/') {
+		_, err := os.Stat(s.BinaryPath)
+		return err == nil
+	}
 	_, err := exec.LookPath(s.BinaryPath)
 	return err == nil
 }
@@ -238,11 +244,9 @@ func (s *Scanner) Scan(ctx context.Context, targets []string) (*Result, error) {
 
 	// Wait for command to complete
 	if err := cmd.Wait(); err != nil {
-		// Nuclei returns non-zero exit codes for various reasons
-		// Check if we got findings anyway
-		if len(result.Findings) == 0 {
-			result.Errors = append(result.Errors, err.Error())
-		}
+		// Nuclei returns non-zero exit codes for various reasons (no templates matched,
+		// rate limiting, etc.). Always record the error so callers know the scan may be incomplete.
+		result.Errors = append(result.Errors, fmt.Sprintf("nuclei exited with error: %s", err.Error()))
 	}
 
 	// Calculate stats
@@ -307,7 +311,9 @@ func (s *Scanner) ScanWithCallback(ctx context.Context, targets []string, callba
 		}
 	}
 
-	_ = cmd.Wait()
+	if err := cmd.Wait(); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("nuclei exited with error: %s", err.Error()))
+	}
 	result.Duration = time.Since(start)
 	result.Stats = s.calculateStats(result)
 

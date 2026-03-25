@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -26,10 +27,13 @@ func DNSCmd(deps *Deps) *cobra.Command {
 		Short: "Query DNS records for domains",
 		Long: `Query and monitor DNS records for domains including:
 - A, AAAA, CNAME, MX, NS, TXT records
+- SOA record (serial tracking for change detection)
+- CAA records (certificate authority restrictions)
+- DNSSEC validation status
 - SPF and DMARC analysis
-- Email security configuration
+- Change detection vs. previous scan
 
-Results are saved to the database for change tracking.`,
+Results are saved to the database and changes are logged automatically.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var domains []string
@@ -62,6 +66,20 @@ Results are saved to the database for change tracking.`,
 	return cmd
 }
 
+// dnsSeverity maps a DNS record type to a change event severity.
+func dnsSeverity(recordType string) string {
+	switch recordType {
+	case "NS", "DNSSEC":
+		return "critical"
+	case "A", "AAAA", "MX", "SOA":
+		return "high"
+	case "CAA", "CNAME":
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
 func runDNS(db *database.Database, domains []string, timeout time.Duration) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -87,6 +105,23 @@ func runDNS(db *database.Database, domains []string, timeout time.Duration) erro
 	for _, domain := range domains {
 		result := monitor.Lookup(ctx, domain)
 
+		// Persist and detect changes before printing
+		if db != nil {
+			prev, _ := db.GetLatestDNSRecord(domain)
+			if resultJSON, err := json.Marshal(result); err == nil {
+				_ = db.SaveDNSRecords(domain, string(resultJSON))
+			}
+			if prev != nil {
+				var prevResult dns.Result
+				if err := json.Unmarshal([]byte(prev.Records), &prevResult); err == nil {
+					for _, ch := range dns.DetectChanges(result, &prevResult) {
+						sev := dnsSeverity(ch.RecordType)
+						_ = db.SaveChangeEvent(domain, ch.Type, sev, ch.Description, ch.OldValue, ch.NewValue)
+					}
+				}
+			}
+		}
+
 		fmt.Printf("\n%s %s\n", titleStyle.Render("[+]"), valueStyle.Render(result.Domain))
 
 		if result.Error != "" {
@@ -104,16 +139,53 @@ func runDNS(db *database.Database, domains []string, timeout time.Duration) erro
 
 			fmt.Printf("  %s\n", labelStyle.Render(recordType+" Records:"))
 			for _, r := range records {
+				ttl := labelStyle.Render(fmt.Sprintf(" TTL=%d", r.TTL))
 				if r.Priority > 0 {
-					fmt.Printf("    %d %s\n", r.Priority, r.Value)
+					fmt.Printf("    %d %s%s\n", r.Priority, r.Value, ttl)
 				} else {
 					// Truncate long TXT records
 					val := r.Value
 					if len(val) > 70 {
 						val = val[:67] + "..."
 					}
-					fmt.Printf("    %s\n", val)
+					fmt.Printf("    %s%s\n", val, ttl)
 				}
+			}
+		}
+
+		// SOA Record
+		if result.SOA != nil {
+			fmt.Printf("  %s\n", labelStyle.Render("SOA:"))
+			fmt.Printf("    Primary NS:  %s\n", result.SOA.PrimaryNS)
+			fmt.Printf("    Admin:       %s\n", result.SOA.AdminEmail)
+			fmt.Printf("    Serial:      %d\n", result.SOA.Serial)
+			fmt.Printf("    Refresh/Retry/Expire: %ds / %ds / %ds\n",
+				result.SOA.Refresh, result.SOA.Retry, result.SOA.Expire)
+		}
+
+		// CAA Records
+		if len(result.CAA) > 0 {
+			fmt.Printf("  %s\n", labelStyle.Render("CAA Records:"))
+			for _, caa := range result.CAA {
+				fmt.Printf("    %d %s %q\n", caa.Flags, caa.Tag, caa.Value)
+			}
+		} else {
+			fmt.Printf("  %s %s\n", labelStyle.Render("CAA:"), highStyle.Render("Not configured (any CA may issue certs)"))
+		}
+
+		// DNSSEC
+		if result.DNSSEC != nil {
+			fmt.Printf("  %s\n", labelStyle.Render("DNSSEC:"))
+			if result.DNSSEC.Signed {
+				fmt.Printf("    %s Chain of trust validated by resolver\n", lowStyle.Render("[✓]"))
+			} else {
+				fmt.Printf("    %s Not signed\n", highStyle.Render("[!]"))
+			}
+			if result.DNSSEC.HasDNSKEY {
+				fmt.Printf("    DNSKEY: present\n")
+			}
+			if result.DNSSEC.HasDS {
+				fmt.Printf("    DS record: present at parent zone\n")
 			}
 		}
 

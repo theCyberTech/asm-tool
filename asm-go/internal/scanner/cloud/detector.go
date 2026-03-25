@@ -163,7 +163,11 @@ func (d *Detector) ProbeCommonBuckets(ctx context.Context, domain string) *Resul
 		wg.Add(1)
 		go func(n string) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+			}
 			defer func() { <-sem }()
 
 			bucket := Bucket{
@@ -184,7 +188,11 @@ func (d *Detector) ProbeCommonBuckets(ctx context.Context, domain string) *Resul
 		wg.Add(1)
 		go func(n string) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+			}
 			defer func() { <-sem }()
 
 			bucket := Bucket{
@@ -205,7 +213,11 @@ func (d *Detector) ProbeCommonBuckets(ctx context.Context, domain string) *Resul
 		wg.Add(1)
 		go func(n string) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+			}
 			defer func() { <-sem }()
 
 			bucket := Bucket{
@@ -243,7 +255,7 @@ func (d *Detector) checkBucketAccess(ctx context.Context, bucket Bucket) Bucket 
 	case "s3":
 		checkURL = fmt.Sprintf("https://%s.s3.amazonaws.com", bucket.BucketName)
 	case "azure":
-		checkURL = fmt.Sprintf("https://%s.blob.core.windows.net/?comp=list", bucket.BucketName)
+		checkURL = fmt.Sprintf("https://%s.blob.core.windows.net/?restype=container&comp=list", bucket.BucketName)
 	case "gcs":
 		checkURL = fmt.Sprintf("https://storage.googleapis.com/%s", bucket.BucketName)
 	default:
@@ -338,7 +350,7 @@ func (d *Detector) classifyAzureResponse(bucket Bucket, status int, body string)
 
 func (d *Detector) classifyGCSResponse(bucket Bucket, status int, body string) Bucket {
 	switch {
-	case status == 200 && (strings.Contains(body, "<ListBucketResult") || strings.Contains(body, "items")):
+	case status == 200 && (strings.Contains(body, "<ListBucketResult") || strings.Contains(body, `"kind":"storage#objects"`) || strings.Contains(body, `"kind": "storage#objects"`)):
 		bucket.AccessLevel = "listing_enabled"
 		bucket.Severity = "critical"
 		bucket.Evidence = "Bucket listing is publicly accessible"

@@ -61,7 +61,7 @@ func DefaultFingerprinter() *Fingerprinter {
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+				TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
 			},

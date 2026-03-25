@@ -20,6 +20,8 @@ func URLsCmd(deps *Deps) *cobra.Command {
 		allKnown    bool
 		showAll     bool
 		interesting bool
+		probe       bool
+		probeAll    bool
 	)
 
 	cmd := &cobra.Command{
@@ -32,7 +34,10 @@ func URLsCmd(deps *Deps) *cobra.Command {
 - AlienVault OTX
 
 URLs are categorized by type (API, JS, config, backup, etc.) and
-flagged if potentially interesting for security testing.`,
+flagged if potentially interesting for security testing.
+
+Use --probe to actively check which discovered URLs are still live.
+Use --probe-all to probe every URL (not just interesting ones).`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var domains []string
@@ -55,18 +60,20 @@ flagged if potentially interesting for security testing.`,
 				return nil
 			}
 
-			return runURLs(deps.DB, domains, showAll, interesting)
+			return runURLs(deps.DB, domains, showAll, interesting, probe, probeAll)
 		},
 	}
 
 	cmd.Flags().BoolVar(&allKnown, "all-known", false, "Enumerate URLs for all known domains")
 	cmd.Flags().BoolVar(&showAll, "all", false, "Show all URLs (not just interesting)")
 	cmd.Flags().BoolVar(&interesting, "interesting", true, "Focus on interesting URLs")
+	cmd.Flags().BoolVar(&probe, "probe", false, "Actively probe interesting URLs for liveness")
+	cmd.Flags().BoolVar(&probeAll, "probe-all", false, "Actively probe all discovered URLs for liveness")
 
 	return cmd
 }
 
-func runURLs(db *database.Database, domains []string, showAll, interesting bool) error {
+func runURLs(db *database.Database, domains []string, showAll, interesting, probe, probeAll bool) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -108,8 +115,28 @@ func runURLs(db *database.Database, domains []string, showAll, interesting bool)
 			}
 		}
 
-		// Print interesting URLs
+		// Liveness probing
 		interestingURLs := result.GetInteresting()
+
+		if probeAll || probe {
+			toProbe := interestingURLs
+			if probeAll {
+				toProbe = result.URLs
+			}
+			fmt.Printf("\n%s Probing %d URLs for liveness...\n", titleStyle.Render("[*]"), len(toProbe))
+			toProbe = enum.ProbeURLs(ctx, toProbe, 20)
+
+			if probeAll {
+				result.URLs = toProbe
+				// Rebuild interesting list from probed results
+				interestingURLs = result.GetInteresting()
+			} else {
+				// Merge probed interesting back into result
+				interestingURLs = toProbe
+			}
+		}
+
+		// Print interesting URLs
 		if len(interestingURLs) > 0 {
 			fmt.Printf("\n%s Interesting URLs (%d):\n", titleStyle.Render("[+]"), len(interestingURLs))
 
@@ -129,9 +156,22 @@ func runURLs(db *database.Database, domains []string, showAll, interesting bool)
 				case "admin":
 					catStyle = criticalStyle
 				}
-				fmt.Printf("  %s %s\n",
+
+				statusPart := ""
+				if u.Live {
+					statusPart = " " + formatStatusCode(u.StatusCode)
+				} else if probe || probeAll {
+					statusPart = " " + highStyle.Render("[dead]")
+				}
+
+				fmt.Printf("  %s%s %s\n",
 					catStyle.Render(padRight("["+u.Category+"]", 12)),
-					truncateURL(u.URL, 80))
+					statusPart,
+					truncateURL(u.URL, 70))
+
+				if u.Redirects != "" {
+					fmt.Printf("    %s %s\n", labelStyle.Render("→"), truncateURL(u.Redirects, 70))
+				}
 			}
 
 			if len(interestingURLs) > limit {
@@ -140,14 +180,40 @@ func runURLs(db *database.Database, domains []string, showAll, interesting bool)
 		}
 
 		// Print summary
-		fmt.Printf("\n%s Found %s URLs (%d interesting) in %s\n",
+		liveCount := 0
+		for _, u := range result.URLs {
+			if u.Live {
+				liveCount++
+			}
+		}
+		summary := fmt.Sprintf("%d interesting", len(interestingURLs))
+		if probe || probeAll {
+			summary += fmt.Sprintf(", %d live", liveCount)
+		}
+		fmt.Printf("\n%s Found %s URLs (%s) in %s\n",
 			titleStyle.Render("[+]"),
 			valueStyle.Render(fmt.Sprintf("%d", len(result.URLs))),
-			len(interestingURLs),
+			summary,
 			labelStyle.Render(result.Duration.Round(time.Millisecond).String()))
 	}
 
 	return nil
+}
+
+func formatStatusCode(code int) string {
+	s := fmt.Sprintf("[%d]", code)
+	switch {
+	case code >= 200 && code < 300:
+		return lowStyle.Render(s)
+	case code >= 300 && code < 400:
+		return infoStyle.Render(s)
+	case code >= 400 && code < 500:
+		return mediumStyle.Render(s)
+	case code >= 500:
+		return highStyle.Render(s)
+	default:
+		return labelStyle.Render(s)
+	}
 }
 
 func truncateURL(url string, maxLen int) string {

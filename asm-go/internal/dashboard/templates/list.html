@@ -1,0 +1,310 @@
+{{define "list-base"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.GlobalList.Title}} - ASM</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <style>{{template "styles" .}}</style>
+</head>
+<body hx-boost="true" x-data="{}">
+    {{template "nav" .}}
+    <div class="layout">
+        {{template "sidebar" .}}
+        <main class="main-content">
+            {{template "list-content" .}}
+        </main>
+    </div>
+</body>
+</html>
+{{end}}
+
+{{define "list-title"}}{{.GlobalList.Title}} - ASM{{end}}
+
+{{define "list-content"}}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">{{.GlobalList.Title}}</h1>
+    </div>
+</div>
+
+{{if eq .ActivePage "subdomains"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Subdomains</h2>
+        <span class="badge badge-blue">{{len .GlobalList.Subdomains}}</span>
+    </div>
+    <div class="card-body">
+        {{if .GlobalList.Subdomains}}
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Subdomain</th><th>Discovered</th><th>Last Seen</th></tr></thead>
+                <tbody>
+                    {{range .GlobalList.Subdomains}}
+                    <tr>
+                        <td><span class="text-mono">{{.Subdomain}}</span></td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                        <td class="text-muted">{{.LastSeen.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}<div class="empty-state"><h3>No subdomains found</h3><p>Run a discovery scan to find subdomains</p></div>{{end}}
+    </div>
+</div>
+
+{{else if eq .ActivePage "ports"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Open Ports</h2>
+        <span class="badge badge-blue">{{len .GlobalList.Ports}}</span>
+    </div>
+    <div class="card-body">
+        {{if .GlobalList.Ports}}
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Host</th><th>Port</th><th>Protocol</th><th>Service</th><th>Banner</th><th>Discovered</th></tr></thead>
+                <tbody>
+                    {{range .GlobalList.Ports}}
+                    <tr>
+                        <td><span class="text-mono">{{.Host}}</span></td>
+                        <td><span class="badge badge-blue">{{.Port}}</span></td>
+                        <td class="text-muted">{{.Protocol}}</td>
+                        <td>{{.Service}}</td>
+                        <td class="text-muted text-mono" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{.Banner}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}<div class="empty-state"><h3>No open ports found</h3><p>Run a port scan to discover open ports</p></div>{{end}}
+    </div>
+</div>
+
+{{else if eq .ActivePage "certificates"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Certificates</h2>
+        <span class="badge badge-blue">{{len .GlobalList.Certificates}}</span>
+    </div>
+    <div class="card-body">
+        {{if .GlobalList.Certificates}}
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Host</th><th>Port</th><th>Subject</th><th>Issuer</th><th>Expires</th><th>Days Left</th></tr></thead>
+                <tbody>
+                    {{range .GlobalList.Certificates}}
+                    <tr>
+                        <td><span class="text-mono">{{.Host}}</span></td>
+                        <td>{{.Port}}</td>
+                        <td>{{.Subject}}</td>
+                        <td class="text-muted">{{.Issuer}}</td>
+                        <td class="text-muted">{{.NotAfter.Format "Jan 02, 2006"}}</td>
+                        <td>
+                            {{if lt .DaysUntilExpiry 0}}<span class="severity severity-critical">EXPIRED</span>
+                            {{else if lt .DaysUntilExpiry 30}}<span class="severity severity-high">{{.DaysUntilExpiry}}d</span>
+                            {{else if lt .DaysUntilExpiry 90}}<span class="severity severity-medium">{{.DaysUntilExpiry}}d</span>
+                            {{else}}<span class="severity severity-low">{{.DaysUntilExpiry}}d</span>{{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}<div class="empty-state"><h3>No certificates found</h3><p>Run a certificate scan to discover TLS certificates</p></div>{{end}}
+    </div>
+</div>
+
+{{else if eq .ActivePage "urls"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All URLs</h2>
+        <span class="badge badge-blue">{{len .GlobalList.URLs}}</span>
+    </div>
+    <div class="card-body">
+        {{if .GlobalList.URLs}}
+        <div class="table-container">
+            <table>
+                <thead><tr><th>URL</th><th>Domain</th><th>Source</th><th>Category</th><th>Interesting</th><th>Discovered</th></tr></thead>
+                <tbody>
+                    {{range .GlobalList.URLs}}
+                    <tr>
+                        <td style="max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                            <a href="{{.URL}}" target="_blank" rel="noopener" class="text-mono">{{.URL}}</a>
+                        </td>
+                        <td class="text-muted">{{.Domain}}</td>
+                        <td class="text-muted">{{if .Source}}{{.Source}}{{else}}-{{end}}</td>
+                        <td>{{if .Category.Valid}}{{.Category.String}}{{else}}-{{end}}</td>
+                        <td>{{if .Interesting}}<span class="severity severity-medium">yes</span>{{else}}-{{end}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}<div class="empty-state"><h3>No URLs found</h3><p>Run a URL enumeration scan to discover URLs</p></div>{{end}}
+    </div>
+</div>
+
+{{else if eq .ActivePage "apis"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All API Endpoints</h2>
+        <span class="badge badge-blue">{{len .GlobalList.APIs}}</span>
+    </div>
+    <div class="card-body">
+        {{if .GlobalList.APIs}}
+        <div class="table-container">
+            <table>
+                <thead><tr><th>URL</th><th>Type</th><th>Title</th><th>Version</th><th>Discovered</th></tr></thead>
+                <tbody>
+                    {{range .GlobalList.APIs}}
+                    <tr>
+                        <td style="max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                            <span class="text-mono">{{.URL}}</span>
+                        </td>
+                        <td>{{if .Type.Valid}}{{.Type.String}}{{else}}-{{end}}</td>
+                        <td>{{if .Title.Valid}}{{.Title.String}}{{else}}-{{end}}</td>
+                        <td class="text-muted">{{if .Version.Valid}}{{.Version.String}}{{else}}-{{end}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}<div class="empty-state"><h3>No APIs found</h3><p>Run an API discovery scan to find endpoints</p></div>{{end}}
+    </div>
+</div>
+
+{{else if eq .ActivePage "emails"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Emails</h2>
+        <span class="badge badge-blue">{{len .GlobalList.Emails}}</span>
+    </div>
+    <div class="card-body">
+        {{if .GlobalList.Emails}}
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Address</th><th>Source</th><th>Discovered</th></tr></thead>
+                <tbody>
+                    {{range .GlobalList.Emails}}
+                    <tr>
+                        <td><span class="text-mono">{{.Address}}</span></td>
+                        <td class="text-muted">{{.Source}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}<div class="empty-state"><h3>No emails found</h3><p>Run an email enumeration scan</p></div>{{end}}
+    </div>
+</div>
+
+{{else if eq .ActivePage "cloud"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Cloud Storage</h2>
+        <span class="badge badge-blue">{{len .GlobalList.CloudStorage}}</span>
+    </div>
+    <div class="card-body">
+        {{if .GlobalList.CloudStorage}}
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Provider</th><th>Bucket</th><th>Access</th><th>Severity</th><th>Status</th></tr></thead>
+                <tbody>
+                    {{range .GlobalList.CloudStorage}}
+                    <tr>
+                        <td>{{.Provider}}</td>
+                        <td><span class="text-mono">{{.BucketName}}</span></td>
+                        <td>{{.AccessLevel}}</td>
+                        <td>
+                            {{if eq .Severity "critical"}}<span class="severity severity-critical">critical</span>
+                            {{else if eq .Severity "high"}}<span class="severity severity-high">high</span>
+                            {{else if eq .Severity "medium"}}<span class="severity severity-medium">medium</span>
+                            {{else}}<span class="severity severity-low">{{.Severity}}</span>{{end}}
+                        </td>
+                        <td class="text-muted">{{.Status}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}<div class="empty-state"><h3>No cloud buckets found</h3><p>Run a cloud storage scan to detect buckets</p></div>{{end}}
+    </div>
+</div>
+
+{{else if eq .ActivePage "findings"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Findings</h2>
+        <span class="badge badge-blue">{{len .GlobalList.Findings}}</span>
+    </div>
+    <div class="card-body">
+        {{if .GlobalList.Findings}}
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Name</th><th>Severity</th><th>Host</th><th>Description</th><th>Discovered</th></tr></thead>
+                <tbody>
+                    {{range .GlobalList.Findings}}
+                    <tr>
+                        <td>{{.Name}}</td>
+                        <td>
+                            {{if eq .Severity "critical"}}<span class="severity severity-critical">critical</span>
+                            {{else if eq .Severity "high"}}<span class="severity severity-high">high</span>
+                            {{else if eq .Severity "medium"}}<span class="severity severity-medium">medium</span>
+                            {{else if eq .Severity "low"}}<span class="severity severity-low">low</span>
+                            {{else}}<span class="severity severity-info">info</span>{{end}}
+                        </td>
+                        <td><span class="text-mono">{{.Host}}</span></td>
+                        <td class="text-muted" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{.Description}}</td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}<div class="empty-state"><h3>No findings</h3><p>Run a vulnerability scan with Nuclei to find issues</p></div>{{end}}
+    </div>
+</div>
+
+{{else if eq .ActivePage "takeovers"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Takeover Findings</h2>
+        {{if .GlobalList.Takeovers}}<span class="badge badge-red">{{len .GlobalList.Takeovers}} vulnerable</span>
+        {{else}}<span class="badge badge-green">0 vulnerable</span>{{end}}
+    </div>
+    <div class="card-body">
+        {{if .GlobalList.Takeovers}}
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Subdomain</th><th>CNAME</th><th>Service</th><th>Confidence</th><th>Discovered</th></tr></thead>
+                <tbody>
+                    {{range .GlobalList.Takeovers}}
+                    <tr>
+                        <td><span class="text-mono">{{.Subdomain}}</span></td>
+                        <td><span class="text-mono text-muted">{{.CNAME}}</span></td>
+                        <td>{{.Service}}</td>
+                        <td>
+                            {{if eq .Confidence "HIGH"}}<span class="severity severity-critical">HIGH</span>
+                            {{else if eq .Confidence "MEDIUM"}}<span class="severity severity-medium">MEDIUM</span>
+                            {{else}}<span class="severity severity-low">LOW</span>{{end}}
+                        </td>
+                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}<div class="empty-state"><h3>No takeover vulnerabilities</h3><p>Run subdomain takeover detection to find vulnerable subdomains</p></div>{{end}}
+    </div>
+</div>
+{{end}}
+
+{{end}}

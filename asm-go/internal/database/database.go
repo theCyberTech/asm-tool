@@ -16,6 +16,9 @@ import (
 //go:embed migrations/001_initial.sql
 var initialMigration string
 
+//go:embed migrations/002_url_source.sql
+var migration002 string
+
 // Database is the main database facade
 type Database struct {
 	db *sqlx.DB
@@ -72,14 +75,19 @@ func (d *Database) Close() error {
 
 // migrate runs database migrations
 func (d *Database) migrate() error {
-	// Check current version
 	var version int
 	err := d.db.Get(&version, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations")
 	if err != nil {
 		// Table doesn't exist, run initial migration
-		_, err = d.db.Exec(initialMigration)
-		if err != nil {
+		if _, err = d.db.Exec(initialMigration); err != nil {
 			return fmt.Errorf("running initial migration: %w", err)
+		}
+		version = 1
+	}
+
+	if version < 2 {
+		if _, err = d.db.Exec(migration002); err != nil {
+			return fmt.Errorf("running migration 002: %w", err)
 		}
 	}
 
@@ -478,6 +486,74 @@ func (d *Database) Exec(query string, args ...interface{}) (sql.Result, error) {
 	return d.db.Exec(query, args...)
 }
 
+// GetLatestDNSRecord returns the most recently stored DNS result for a domain.
+// Returns nil, nil if no record exists yet.
+func (d *Database) GetLatestDNSRecord(domain string) (*DNSRecord, error) {
+	var rec DNSRecord
+	err := d.db.Get(&rec, `SELECT * FROM dns_records WHERE domain = ?`, domain)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, nil
+		}
+		if isTableNotExistsError(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &rec, nil
+}
+
+// SaveChangeEvent records a detected change in the change_events table.
+func (d *Database) SaveChangeEvent(domain, changeType, severity, description, oldValue, newValue string) error {
+	eventID := fmt.Sprintf("%s-%s-%d", domain, changeType, time.Now().UnixNano())
+	_, err := d.db.Exec(`
+		INSERT INTO change_events (event_id, domain, change_type, severity, description, old_value, new_value)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, eventID, domain, changeType, severity, description, oldValue, newValue)
+	return err
+}
+
+// ChangeEvent represents a DNS change event
+type ChangeEvent struct {
+	ID          int64     `db:"id"`
+	EventID     string    `db:"event_id"`
+	Domain      string    `db:"domain"`
+	ChangeType  string    `db:"change_type"`
+	Severity    string    `db:"severity"`
+	Description string    `db:"description"`
+	OldValue    string    `db:"old_value"`
+	NewValue    string    `db:"new_value"`
+	Timestamp   time.Time `db:"timestamp"`
+}
+
+// GetChangeEvents returns recent change events, optionally filtered by domain.
+// Pass empty string for domain to get all events. Limit <= 0 defaults to 100.
+func (d *Database) GetChangeEvents(domain string, limit int) ([]ChangeEvent, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var (
+		rows []ChangeEvent
+		err  error
+	)
+	if domain != "" {
+		err = d.db.Select(&rows, `
+			SELECT * FROM change_events WHERE domain = ?
+			ORDER BY timestamp DESC LIMIT ?`, domain, limit)
+	} else {
+		err = d.db.Select(&rows, `
+			SELECT * FROM change_events
+			ORDER BY timestamp DESC LIMIT ?`, limit)
+	}
+	if err != nil {
+		if isTableNotExistsError(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return rows, nil
+}
+
 // Takeover represents a subdomain takeover finding
 type Takeover struct {
 	ID            int64      `db:"id"`
@@ -500,6 +576,7 @@ type URL struct {
 	Domain       string         `db:"domain"`
 	Category     sql.NullString `db:"category"`
 	Interesting  int            `db:"interesting"`
+	Source       string         `db:"source"`
 	DiscoveredAt time.Time      `db:"discovered_at"`
 }
 
@@ -785,6 +862,108 @@ type DomainDetailStats struct {
 	TakeoverCount    int
 }
 
+// UpdateDomainLastScanned updates the last_scanned timestamp for a domain
+func (d *Database) UpdateDomainLastScanned(domain string) error {
+	_, err := d.db.Exec(`
+		UPDATE domains SET last_scanned = CURRENT_TIMESTAMP WHERE domain = ?
+	`, domain)
+	return err
+}
+
+// SaveTechnology upserts a technology fingerprint result for a host
+func (d *Database) SaveTechnology(host string, statusCode int, title, server, techJSON, headersJSON string, contentLength int64, redirectURL string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO technologies (host, status_code, title, server, technologies, headers, content_length, redirect_url)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(host) DO UPDATE SET
+			status_code = excluded.status_code,
+			title = excluded.title,
+			server = excluded.server,
+			technologies = excluded.technologies,
+			headers = excluded.headers,
+			content_length = excluded.content_length,
+			redirect_url = excluded.redirect_url,
+			checked_at = CURRENT_TIMESTAMP
+	`, host, statusCode, title, server, techJSON, headersJSON, contentLength, redirectURL)
+	return err
+}
+
+// SaveDNSRecords upserts DNS records for a domain
+func (d *Database) SaveDNSRecords(domain, recordsJSON string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO dns_records (domain, records)
+		VALUES (?, ?)
+		ON CONFLICT(domain) DO UPDATE SET
+			records = excluded.records,
+			checked_at = CURRENT_TIMESTAMP
+	`, domain, recordsJSON)
+	return err
+}
+
+// SaveTakeover upserts a subdomain takeover finding
+func (d *Database) SaveTakeover(subdomain, cname, service, confidence, evidence string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO takeovers (subdomain, cname, service, confidence, evidence)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(subdomain, service) DO UPDATE SET
+			cname = excluded.cname,
+			confidence = excluded.confidence,
+			evidence = excluded.evidence
+	`, subdomain, cname, service, confidence, evidence)
+	return err
+}
+
+// SaveURL upserts a discovered URL
+func (d *Database) SaveURL(domain, url, category, source string, interesting int) error {
+	_, err := d.db.Exec(`
+		INSERT INTO urls (domain, url, category, interesting, source)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(url) DO UPDATE SET
+			category = excluded.category,
+			interesting = excluded.interesting,
+			source = excluded.source
+	`, domain, url, category, interesting, source)
+	return err
+}
+
+// SaveAPI upserts a discovered API endpoint
+func (d *Database) SaveAPI(url, apiType, title, version string, endpointsCount int, endpointsJSON string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO apis (url, api_type, title, version, endpoints_count, endpoints)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(url) DO UPDATE SET
+			api_type = excluded.api_type,
+			title = excluded.title,
+			version = excluded.version,
+			endpoints_count = excluded.endpoints_count,
+			endpoints = excluded.endpoints
+	`, url, apiType, title, version, endpointsCount, endpointsJSON)
+	return err
+}
+
+// SaveEmail upserts a discovered email address
+func (d *Database) SaveEmail(domain, email, source string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO emails (domain, email, source)
+		VALUES (?, ?, ?)
+		ON CONFLICT(email) DO NOTHING
+	`, domain, email, source)
+	return err
+}
+
+// SaveCloudBucket upserts a cloud storage bucket
+func (d *Database) SaveCloudBucket(provider, bucketName, url, domain, accessLevel, severity, evidence string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO cloud_storage (provider, bucket_name, url, domain, access_level, severity, evidence)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(url) DO UPDATE SET
+			access_level = excluded.access_level,
+			severity = excluded.severity,
+			evidence = excluded.evidence
+	`, provider, bucketName, url, domain, accessLevel, severity, evidence)
+	return err
+}
+
 // GetDomainDetailStats returns aggregate counts for a specific domain
 func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, error) {
 	stats := &DomainDetailStats{}
@@ -879,4 +1058,92 @@ func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, erro
 	}
 
 	return stats, nil
+}
+
+// ── Global (cross-domain) list queries ──────────────────────────────────────
+
+func (d *Database) GetAllSubdomains() ([]Subdomain, error) {
+	var rows []Subdomain
+	err := d.db.Select(&rows, `SELECT s.* FROM subdomains s WHERE s.active = 1 ORDER BY s.subdomain`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
+func (d *Database) GetAllPorts() ([]Port, error) {
+	var rows []Port
+	err := d.db.Select(&rows, `SELECT * FROM ports WHERE state = 'open' ORDER BY host, port`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
+func (d *Database) GetAllCertificates() ([]Certificate, error) {
+	var rows []Certificate
+	err := d.db.Select(&rows, `SELECT * FROM certificates ORDER BY days_until_expiry`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
+func (d *Database) GetAllURLs() ([]URL, error) {
+	var rows []URL
+	err := d.db.Select(&rows, `SELECT * FROM urls ORDER BY url`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
+func (d *Database) GetAllAPIs() ([]API, error) {
+	var rows []API
+	err := d.db.Select(&rows, `SELECT id, url, api_type, title, version, discovered_at FROM apis ORDER BY url`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
+func (d *Database) GetAllEmails() ([]Email, error) {
+	var rows []Email
+	err := d.db.Select(&rows, `SELECT id, email, domain, source, discovered_at FROM emails ORDER BY domain, email`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
+func (d *Database) GetAllCloudStorage() ([]CloudStorage, error) {
+	var rows []CloudStorage
+	err := d.db.Select(&rows, `SELECT * FROM cloud_storage ORDER BY severity DESC, bucket_name`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
+func (d *Database) GetAllFindings() ([]Finding, error) {
+	var rows []Finding
+	err := d.db.Select(&rows, `
+		SELECT * FROM findings WHERE status = 'open'
+		ORDER BY CASE severity
+			WHEN 'critical' THEN 1 WHEN 'high' THEN 2
+			WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5
+		END, name`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
+func (d *Database) GetAllTakeovers() ([]Takeover, error) {
+	var rows []Takeover
+	err := d.db.Select(&rows, `SELECT * FROM takeovers WHERE status = 'open' ORDER BY subdomain`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
 }

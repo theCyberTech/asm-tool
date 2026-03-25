@@ -152,6 +152,62 @@ func TestFingerprintStruct(t *testing.T) {
 	}
 }
 
+// TestDefaultFingerprints_VulnerableFlag verifies that services which handle
+// dangling CNAMEs safely are marked Vulnerable=false, and truly vulnerable
+// services are marked Vulnerable=true.
+func TestDefaultFingerprints_VulnerableFlag(t *testing.T) {
+	fps := DefaultFingerprints()
+	byService := make(map[string]Fingerprint)
+	for _, fp := range fps {
+		byService[fp.Service] = fp
+	}
+
+	shouldBeVulnerable := []string{"AWS S3", "GitHub Pages", "Heroku"}
+	for _, svc := range shouldBeVulnerable {
+		fp, ok := byService[svc]
+		if !ok {
+			t.Logf("service %q not found in fingerprints, skipping", svc)
+			continue
+		}
+		if !fp.Vulnerable {
+			t.Errorf("service %q should have Vulnerable=true", svc)
+		}
+	}
+
+	// These services do NOT allow takeover; they serve a 404 themselves.
+	shouldNotBeVulnerable := []string{"Shopify", "Netlify", "Vercel"}
+	for _, svc := range shouldNotBeVulnerable {
+		fp, ok := byService[svc]
+		if !ok {
+			t.Logf("service %q not found in fingerprints, skipping", svc)
+			continue
+		}
+		if fp.Vulnerable {
+			t.Errorf("service %q should have Vulnerable=false (handles dangling CNAMEs)", svc)
+		}
+	}
+}
+
+func TestMatchesCNAME(t *testing.T) {
+	d := DefaultDetector()
+	tests := []struct {
+		cname    string
+		patterns []string
+		want     bool
+	}{
+		{"mybucket.s3.amazonaws.com", []string{".s3.amazonaws.com"}, true},
+		{"myapp.github.io", []string{".github.io"}, true},
+		{"example.com", []string{".github.io", ".s3.amazonaws.com"}, false},
+		{"", []string{".github.io"}, false},
+	}
+	for _, tt := range tests {
+		got := d.matchesCNAME(tt.cname, tt.patterns)
+		if got != tt.want {
+			t.Errorf("matchesCNAME(%q, %v) = %v, want %v", tt.cname, tt.patterns, got, tt.want)
+		}
+	}
+}
+
 func TestResultHelperMethods(t *testing.T) {
 	result := &Result{
 		Domain: "example.com",

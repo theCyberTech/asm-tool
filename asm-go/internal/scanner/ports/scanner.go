@@ -2,7 +2,9 @@ package ports
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"sort"
 	"strings"
@@ -157,17 +159,25 @@ func (s *Scanner) ScanBatch(ctx context.Context, hosts []string, ports []int) []
 	return results
 }
 
+// isTLSPort returns true for ports that speak TLS natively.
+func isTLSPort(port int) bool {
+	switch port {
+	case 443, 8443, 465, 636, 993, 995, 5986:
+		return true
+	}
+	return false
+}
+
 // scanPort attempts to connect to a single port
 func (s *Scanner) scanPort(ctx context.Context, host string, port int) *Port {
 	address := fmt.Sprintf("%s:%d", host, port)
 
-	// Create dialer with context
 	d := net.Dialer{Timeout: s.Timeout}
-	conn, err := d.DialContext(ctx, "tcp", address)
+	rawConn, err := d.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil
 	}
-	defer conn.Close()
+	defer rawConn.Close()
 
 	p := &Port{
 		Port:     port,
@@ -176,11 +186,24 @@ func (s *Scanner) scanPort(ctx context.Context, host string, port int) *Port {
 		Service:  guessService(port),
 	}
 
+	// Upgrade to TLS if needed
+	var conn net.Conn = rawConn
+	if isTLSPort(port) {
+		tlsConn := tls.Client(rawConn, &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // banner grab only, not validating certs
+			ServerName:         host,
+		})
+		if err := tlsConn.SetDeadline(time.Now().Add(s.BannerTimeout)); err == nil {
+			if err := tlsConn.Handshake(); err == nil {
+				conn = tlsConn
+			}
+		}
+	}
+
 	// Attempt banner grab if enabled
 	if s.GrabBanner {
-		if banner := s.grabBanner(conn, port); banner != "" {
+		if banner := s.grabBanner(conn, host, port); banner != "" {
 			p.Banner = banner
-			// Try to extract version from banner
 			if version := extractVersion(banner, p.Service); version != "" {
 				p.Version = version
 			}
@@ -190,84 +213,133 @@ func (s *Scanner) scanPort(ctx context.Context, host string, port int) *Port {
 	return p
 }
 
-// grabBanner attempts to read a service banner
-func (s *Scanner) grabBanner(conn net.Conn, port int) string {
-	_ = conn.SetReadDeadline(time.Now().Add(s.BannerTimeout))
+// grabBanner attempts to read a service banner, sending a probe if needed.
+func (s *Scanner) grabBanner(conn net.Conn, host string, port int) string {
+	_ = conn.SetDeadline(time.Now().Add(s.BannerTimeout))
 
-	// Some services need a probe first
-	probe := getProbe(port)
+	probe := getProbe(host, port)
 	if probe != "" {
 		_, _ = conn.Write([]byte(probe))
 	}
 
-	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
-	if err != nil || n == 0 {
+	// Read up to 4 KB in chunks to handle slow/chunked services
+	lr := io.LimitReader(conn, 4096)
+	raw, err := io.ReadAll(lr)
+	if err != nil && len(raw) == 0 {
 		return ""
 	}
 
-	// Clean up banner
-	banner := string(buf[:n])
-	banner = strings.TrimSpace(banner)
+	banner := strings.TrimSpace(string(raw))
 	banner = strings.ReplaceAll(banner, "\r\n", " ")
 	banner = strings.ReplaceAll(banner, "\n", " ")
 
-	// Truncate if too long
-	if len(banner) > 256 {
-		banner = banner[:256]
+	// Truncate display to 512 chars
+	if len(banner) > 512 {
+		banner = banner[:512]
 	}
 
 	return banner
 }
 
-// getProbe returns an optional probe string for a port
-func getProbe(port int) string {
+// getProbe returns an optional probe for a port.
+func getProbe(host string, port int) string {
 	switch port {
-	case 80, 8080, 8000, 8443:
-		return "HEAD / HTTP/1.0\r\n\r\n"
-	case 443:
-		return "" // TLS needs special handling
+	case 80, 8080, 8000:
+		return fmt.Sprintf("HEAD / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", host)
+	case 443, 8443:
+		return fmt.Sprintf("HEAD / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", host)
+	case 21:
+		return "" // FTP sends banner immediately
+	case 25, 587:
+		return "EHLO asm-tool\r\n"
+	case 110:
+		return "" // POP3 sends banner immediately
+	case 143:
+		return "" // IMAP sends banner immediately
 	default:
 		return ""
 	}
 }
 
-// extractVersion attempts to extract version information from a banner
+// extractVersion attempts to extract version information from a banner.
 func extractVersion(banner, service string) string {
-	banner = strings.ToLower(banner)
+	lower := strings.ToLower(banner)
 
 	switch service {
 	case "ssh":
-		// SSH-2.0-OpenSSH_8.9p1
-		if idx := strings.Index(banner, "ssh-"); idx >= 0 {
+		// SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6
+		if idx := strings.Index(lower, "ssh-"); idx >= 0 {
 			end := strings.IndexAny(banner[idx:], " \r\n")
 			if end > 0 {
 				return banner[idx : idx+end]
 			}
 			return banner[idx:]
 		}
-	case "http", "http-proxy":
-		// Server: nginx/1.18.0
-		if idx := strings.Index(banner, "server:"); idx >= 0 {
-			line := banner[idx+7:]
-			end := strings.IndexAny(line, "\r\n")
+
+	case "http", "http-proxy", "https", "https-alt", "http-alt":
+		// Server: nginx/1.18.0 or Apache/2.4.54
+		if idx := strings.Index(lower, "server: "); idx >= 0 {
+			rest := banner[idx+8:]
+			end := strings.IndexAny(rest, "\r\n ")
 			if end > 0 {
-				return strings.TrimSpace(line[:end])
+				return strings.TrimSpace(rest[:end])
+			}
+			if len(rest) > 0 {
+				return strings.TrimSpace(rest)
 			}
 		}
+
 	case "ftp":
 		// 220 vsFTPd 3.0.3
-		if strings.HasPrefix(banner, "220") {
-			return strings.TrimPrefix(banner, "220 ")
+		if strings.HasPrefix(lower, "220 ") {
+			line := banner[4:]
+			if end := strings.IndexAny(line, "\r\n"); end > 0 {
+				return strings.TrimSpace(line[:end])
+			}
+			return strings.TrimSpace(line)
 		}
-	case "smtp":
-		// 220 mail.example.com ESMTP Postfix
-		if strings.HasPrefix(banner, "220") {
-			return strings.TrimPrefix(banner, "220 ")
+
+	case "smtp", "submission":
+		// 220 mail.example.com ESMTP Postfix (Ubuntu)
+		if strings.HasPrefix(lower, "220 ") {
+			line := banner[4:]
+			if end := strings.IndexAny(line, "\r\n"); end > 0 {
+				return strings.TrimSpace(line[:end])
+			}
+			return strings.TrimSpace(line)
+		}
+
+	case "pop3", "pop3s":
+		// +OK Dovecot ready.
+		if strings.HasPrefix(lower, "+ok ") {
+			return strings.TrimSpace(banner[4:])
+		}
+
+	case "imap", "imaps":
+		// * OK [CAPABILITY ...] Dovecot ready.
+		if strings.HasPrefix(lower, "* ok ") {
+			return strings.TrimSpace(banner[5:])
+		}
+
+	case "redis":
+		// -ERR ... or +PONG
+		return strings.TrimSpace(banner)
+
+	case "mongodb":
+		// Raw binary but may contain version string
+		if idx := strings.Index(banner, "version"); idx >= 0 {
+			return banner[idx : min(idx+30, len(banner))]
 		}
 	}
 
 	return ""
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // guessService returns the common service name for a port

@@ -46,11 +46,27 @@ func runDashboard(deps *Deps, host string, port int) error {
 
 	// Register routes
 	mux.HandleFunc("/", makeIndexHandler(deps))
+	mux.HandleFunc("/domains", makeIndexHandler(deps))
 	mux.HandleFunc("/domains/", makeDomainDetailHandler(deps))
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/stats", makeStatsHandler(deps))
 	mux.HandleFunc("/partials/stats", makeStatsPartialHandler(deps))
 	mux.HandleFunc("/partials/domains", makeDomainsPartialHandler(deps))
+
+	// Asset list pages
+	for _, route := range []struct{ path, page, title string }{
+		{"/subdomains", "subdomains", "Subdomains"},
+		{"/ports", "ports", "Open Ports"},
+		{"/certificates", "certificates", "Certificates"},
+		{"/urls", "urls", "URLs"},
+		{"/apis", "apis", "API Endpoints"},
+		{"/emails", "emails", "Email Addresses"},
+		{"/cloud", "cloud", "Cloud Storage"},
+		{"/findings", "findings", "Findings"},
+		{"/takeovers", "takeovers", "Takeovers"},
+	} {
+		mux.HandleFunc(route.path, makeListHandler(deps, route.page, route.title))
+	}
 
 	// Create server
 	server := &http.Server{
@@ -164,6 +180,23 @@ func getPageData(deps *Deps, activePage string) dashboard.PageData {
 		}
 	}
 
+	// Recent change events across all domains
+	changes, err := deps.DB.GetChangeEvents("", 50)
+	if err == nil {
+		data.ChangeEvents = make([]dashboard.ChangeEventView, len(changes))
+		for i, c := range changes {
+			data.ChangeEvents[i] = dashboard.ChangeEventView{
+				Domain:      c.Domain,
+				ChangeType:  c.ChangeType,
+				Severity:    c.Severity,
+				Description: c.Description,
+				OldValue:    c.OldValue,
+				NewValue:    c.NewValue,
+				Timestamp:   c.Timestamp,
+			}
+		}
+	}
+
 	return data
 }
 
@@ -263,6 +296,131 @@ func makeDomainsPartialHandler(deps *Deps) http.HandlerFunc {
 		if err := dashboard.RenderPartial(w, "domains-table-rows", data); err != nil {
 			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+	}
+}
+
+func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		data := getPageData(deps, activePage)
+		list := &dashboard.GlobalListData{Title: title}
+
+		switch activePage {
+		case "subdomains":
+			rows, _ := deps.DB.GetAllSubdomains()
+			for _, s := range rows {
+				list.Subdomains = append(list.Subdomains, dashboard.SubdomainView{
+					Subdomain:    s.Subdomain,
+					DiscoveredAt: s.DiscoveredAt,
+					LastSeen:     s.LastSeen,
+				})
+			}
+		case "ports":
+			rows, _ := deps.DB.GetAllPorts()
+			for _, p := range rows {
+				list.Ports = append(list.Ports, dashboard.PortView{
+					Host:         p.Host,
+					Port:         p.Port,
+					Protocol:     p.Protocol,
+					Service:      p.Service,
+					Version:      p.Version,
+					Banner:       p.Banner,
+					State:        p.State,
+					DiscoveredAt: p.DiscoveredAt,
+				})
+			}
+		case "certificates":
+			rows, _ := deps.DB.GetAllCertificates()
+			for _, c := range rows {
+				list.Certificates = append(list.Certificates, dashboard.CertificateView{
+					Host:            c.Host,
+					Port:            c.Port,
+					Subject:         c.Subject,
+					Issuer:          c.Issuer,
+					NotAfter:        c.NotAfter,
+					DaysUntilExpiry: c.DaysUntilExpiry,
+					SAN:             c.SAN,
+				})
+			}
+		case "urls":
+			rows, _ := deps.DB.GetAllURLs()
+			for _, u := range rows {
+				list.URLs = append(list.URLs, dashboard.URLView{
+					URL:          u.URL,
+					Domain:       u.Domain,
+					Category:     u.Category,
+					Interesting:  u.Interesting > 0,
+					Source:       u.Source,
+					DiscoveredAt: u.DiscoveredAt,
+				})
+			}
+		case "apis":
+			rows, _ := deps.DB.GetAllAPIs()
+			for _, a := range rows {
+				list.APIs = append(list.APIs, dashboard.APIView{
+					URL:          a.URL,
+					Type:         a.Type,
+					Title:        a.Title,
+					Version:      a.Version,
+					DiscoveredAt: a.DiscoveredAt,
+				})
+			}
+		case "emails":
+			rows, _ := deps.DB.GetAllEmails()
+			for _, e := range rows {
+				list.Emails = append(list.Emails, dashboard.EmailView{
+					Address:      e.Address,
+					Source:       e.Source,
+					DiscoveredAt: e.DiscoveredAt,
+				})
+			}
+		case "cloud":
+			rows, _ := deps.DB.GetAllCloudStorage()
+			for _, c := range rows {
+				list.CloudStorage = append(list.CloudStorage, dashboard.CloudStorageView{
+					Provider:    c.Provider,
+					BucketName:  c.BucketName,
+					URL:         c.URL,
+					AccessLevel: c.AccessLevel,
+					Severity:    c.Severity,
+					Evidence:    c.Evidence,
+					Status:      c.Status,
+				})
+			}
+		case "findings":
+			rows, _ := deps.DB.GetAllFindings()
+			for _, f := range rows {
+				list.Findings = append(list.Findings, dashboard.FindingView{
+					ID:           f.ID,
+					Name:         f.Name,
+					Severity:     f.Severity,
+					Description:  f.Description,
+					Host:         f.Host,
+					MatchedAt:    f.MatchedAt,
+					Tags:         f.Tags,
+					DiscoveredAt: f.DiscoveredAt,
+				})
+			}
+		case "takeovers":
+			rows, _ := deps.DB.GetAllTakeovers()
+			for _, t := range rows {
+				list.Takeovers = append(list.Takeovers, dashboard.TakeoverView{
+					Subdomain:    t.Subdomain,
+					CNAME:        t.CNAME,
+					Service:      t.Service,
+					TakeoverType: t.TakeoverType,
+					Confidence:   t.Confidence,
+					Evidence:     t.Evidence,
+					DiscoveredAt: t.DiscoveredAt,
+				})
+			}
+		}
+
+		data.GlobalList = list
+		if err := dashboard.RenderPage(w, "list-base", data); err != nil {
+			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 		}
 	}
 }
@@ -488,6 +646,7 @@ func getDomainDetailPageData(deps *Deps, domainName string) dashboard.PageData {
 			Domain:       u.Domain,
 			Category:     u.Category,
 			Interesting:  u.Interesting > 0,
+			Source:       u.Source,
 			DiscoveredAt: u.DiscoveredAt,
 		}
 	}
@@ -543,6 +702,21 @@ func getDomainDetailPageData(deps *Deps, domainName string) dashboard.PageData {
 			Confidence:   t.Confidence,
 			Evidence:     t.Evidence,
 			DiscoveredAt: t.DiscoveredAt,
+		}
+	}
+
+	// Get change events for this domain
+	changes, _ := deps.DB.GetChangeEvents(domainName, 100)
+	detail.ChangeEvents = make([]dashboard.ChangeEventView, len(changes))
+	for i, c := range changes {
+		detail.ChangeEvents[i] = dashboard.ChangeEventView{
+			Domain:      c.Domain,
+			ChangeType:  c.ChangeType,
+			Severity:    c.Severity,
+			Description: c.Description,
+			OldValue:    c.OldValue,
+			NewValue:    c.NewValue,
+			Timestamp:   c.Timestamp,
 		}
 	}
 

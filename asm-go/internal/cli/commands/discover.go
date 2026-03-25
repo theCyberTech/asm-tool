@@ -24,7 +24,6 @@ func DiscoverCmd(deps *Deps) *cobra.Command {
 		Long: `Enumerate subdomains using multiple passive sources including:
 - Certificate Transparency logs (crt.sh)
 - HackerTarget API
-- ThreatCrowd
 - URLScan.io
 
 Results are saved to the database for future reference.`,

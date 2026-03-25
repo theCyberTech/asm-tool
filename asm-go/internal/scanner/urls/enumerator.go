@@ -24,6 +24,12 @@ type URL struct {
 	Category    string // js, api, config, backup, interesting, etc.
 	Source      string
 	Interesting bool
+
+	// Liveness probe results (populated by ProbeURLs)
+	StatusCode  int
+	ContentType string
+	Redirects   string // final URL after redirects (if different)
+	Live        bool   // true if we got any HTTP response
 }
 
 // Result represents URL enumeration results
@@ -170,6 +176,105 @@ func (r *Result) GetByCategory(category string) []URL {
 		}
 	}
 	return urls
+}
+
+// ProbeURLs performs liveness checks against the given URLs concurrently.
+// It issues a HEAD request (falling back to GET on failure) and records
+// the status code, content-type, and final URL after redirects.
+// concurrency controls the number of simultaneous requests.
+func (e *Enumerator) ProbeURLs(ctx context.Context, urlList []URL, concurrency int) []URL {
+	if concurrency <= 0 {
+		concurrency = 20
+	}
+
+	// Probe client: short timeout, follow redirects, record final URL.
+	probeClient := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	sem := make(chan struct{}, concurrency)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	result := make([]URL, len(urlList))
+	copy(result, urlList)
+
+	for i := range result {
+		select {
+		case <-ctx.Done():
+			return result
+		case sem <- struct{}{}:
+		}
+
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			u := &result[idx]
+			probed := probeURL(ctx, probeClient, u.URL)
+
+			mu.Lock()
+			u.StatusCode = probed.StatusCode
+			u.ContentType = probed.ContentType
+			u.Redirects = probed.Redirects
+			u.Live = probed.Live
+			mu.Unlock()
+		}(i)
+	}
+
+	wg.Wait()
+	return result
+}
+
+type probeResult struct {
+	StatusCode  int
+	ContentType string
+	Redirects   string
+	Live        bool
+}
+
+func probeURL(ctx context.Context, client *http.Client, rawURL string) probeResult {
+	do := func(method string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ASM-Tool/2.0)")
+		return client.Do(req)
+	}
+
+	resp, err := do("HEAD")
+	if err != nil || resp.StatusCode == http.StatusMethodNotAllowed {
+		// Fall back to GET
+		if resp != nil {
+			resp.Body.Close()
+		}
+		resp, err = do("GET")
+	}
+	if err != nil {
+		return probeResult{}
+	}
+	defer resp.Body.Close()
+
+	pr := probeResult{
+		StatusCode:  resp.StatusCode,
+		ContentType: resp.Header.Get("Content-Type"),
+		Live:        true,
+	}
+
+	// Record final URL if redirected
+	if resp.Request != nil && resp.Request.URL.String() != rawURL {
+		pr.Redirects = resp.Request.URL.String()
+	}
+
+	return pr
 }
 
 func normalizeURL(rawURL string) string {
@@ -388,9 +493,35 @@ type CommonCrawlSource struct {
 
 func (s *CommonCrawlSource) Name() string { return "commoncrawl" }
 
+// getLatestCommonCrawlIndex fetches the most recent CommonCrawl index ID.
+// Falls back to a recent hardcoded value if the collinfo API is unreachable.
+func (s *CommonCrawlSource) getLatestIndex(ctx context.Context) string {
+	const fallback = "CC-MAIN-2025-13"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://index.commoncrawl.org/collinfo.json", nil)
+	if err != nil {
+		return fallback
+	}
+	req.Header.Set("User-Agent", "ASM-Tool/2.0")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fallback
+	}
+	defer resp.Body.Close()
+
+	var indexes []struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&indexes); err != nil || len(indexes) == 0 {
+		return fallback
+	}
+	return indexes[0].ID
+}
+
 func (s *CommonCrawlSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	// Use the latest CC index
-	apiURL := fmt.Sprintf("https://index.commoncrawl.org/CC-MAIN-2024-10-index?url=*.%s&output=json", domain)
+	index := s.getLatestIndex(ctx)
+	apiURL := fmt.Sprintf("https://index.commoncrawl.org/%s-index?url=*.%s&output=json", index, domain)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
