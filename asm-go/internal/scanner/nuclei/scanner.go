@@ -150,20 +150,57 @@ func NewScanner(severities []string, rateLimit int) *Scanner {
 	return s
 }
 
+// validateBinaryPath checks that BinaryPath is safe to execute.
+//
+// Rules:
+//   - Bare names (no '/') must resolve via PATH.
+//   - Path-like values must be absolute and canonical — relative paths and
+//     paths containing ".." components are rejected to prevent a compromised
+//     config file from redirecting execution to an unintended binary.
+//   - The resolved file must exist and be executable.
+func validateBinaryPath(path string) error {
+	if !strings.ContainsRune(path, '/') {
+		// Bare name — let the OS resolve it via PATH.
+		if _, err := exec.LookPath(path); err != nil {
+			return fmt.Errorf("nuclei binary %q not found in PATH: %w", path, err)
+		}
+		return nil
+	}
+
+	// Path-like: must be absolute.
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("nuclei binary path must be absolute, got relative path: %q", path)
+	}
+
+	// Must be canonical — filepath.Clean resolves ".." and "." components.
+	// If the cleaned form differs from the input, the path is non-canonical.
+	if cleaned := filepath.Clean(path); cleaned != path {
+		return fmt.Errorf("nuclei binary path contains non-canonical components: %q (resolves to %q)", path, cleaned)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("nuclei binary not accessible at %q: %w", path, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("nuclei binary path %q is a directory", path)
+	}
+	if info.Mode()&0111 == 0 {
+		return fmt.Errorf("nuclei binary %q is not executable", path)
+	}
+	return nil
+}
+
 // IsInstalled checks if nuclei is available
 func (s *Scanner) IsInstalled() bool {
-	// For absolute paths (from findNucleiBinary), check file existence directly.
-	// For bare names like "nuclei", fall back to PATH lookup.
-	if strings.ContainsRune(s.BinaryPath, '/') {
-		_, err := os.Stat(s.BinaryPath)
-		return err == nil
-	}
-	_, err := exec.LookPath(s.BinaryPath)
-	return err == nil
+	return validateBinaryPath(s.BinaryPath) == nil
 }
 
 // GetVersion returns the nuclei version
 func (s *Scanner) GetVersion() (string, error) {
+	if err := validateBinaryPath(s.BinaryPath); err != nil {
+		return "", err
+	}
 	cmd := exec.Command(s.BinaryPath, "-version")
 	output, err := cmd.Output()
 	if err != nil {
@@ -174,6 +211,9 @@ func (s *Scanner) GetVersion() (string, error) {
 
 // UpdateTemplates updates nuclei templates
 func (s *Scanner) UpdateTemplates(ctx context.Context) error {
+	if err := validateBinaryPath(s.BinaryPath); err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, s.BinaryPath, "-update-templates")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -182,8 +222,8 @@ func (s *Scanner) UpdateTemplates(ctx context.Context) error {
 
 // Scan runs nuclei against targets
 func (s *Scanner) Scan(ctx context.Context, targets []string) (*Result, error) {
-	if !s.IsInstalled() {
-		return nil, fmt.Errorf("nuclei not found in PATH - install with: go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest")
+	if err := validateBinaryPath(s.BinaryPath); err != nil {
+		return nil, fmt.Errorf("nuclei binary validation failed: %w", err)
 	}
 
 	start := time.Now()
@@ -192,28 +232,25 @@ func (s *Scanner) Scan(ctx context.Context, targets []string) (*Result, error) {
 	}
 
 	// Create temp file for targets
-	targetFile, err := os.CreateTemp("", "nuclei-targets-*.txt")
+	targetPath, err := writeTargetFile(targets)
 	if err != nil {
-		return nil, fmt.Errorf("creating target file: %w", err)
+		return nil, err
 	}
-	defer os.Remove(targetFile.Name())
-
-	for _, t := range targets {
-		_, _ = targetFile.WriteString(t + "\n")
-	}
-	targetFile.Close()
+	defer os.Remove(targetPath)
 
 	// Build command arguments
-	args := s.buildArgs(targetFile.Name())
+	args := s.buildArgs(targetPath)
 
 	// Create command
 	cmd := exec.CommandContext(ctx, s.BinaryPath, args...)
 
-	// Capture stdout for JSON output
+	// Capture stdout for JSON output; forward stderr so nuclei's own
+	// diagnostics (templates loaded, progress, resolution errors) surface.
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("creating stdout pipe: %w", err)
 	}
+	cmd.Stderr = os.Stderr
 
 	// Start command
 	if err := cmd.Start(); err != nil {
@@ -258,8 +295,8 @@ func (s *Scanner) Scan(ctx context.Context, targets []string) (*Result, error) {
 
 // ScanWithCallback runs nuclei and calls callback for each finding
 func (s *Scanner) ScanWithCallback(ctx context.Context, targets []string, callback func(*Finding)) (*Result, error) {
-	if !s.IsInstalled() {
-		return nil, fmt.Errorf("nuclei not found in PATH")
+	if err := validateBinaryPath(s.BinaryPath); err != nil {
+		return nil, fmt.Errorf("nuclei binary validation failed: %w", err)
 	}
 
 	start := time.Now()
@@ -268,24 +305,20 @@ func (s *Scanner) ScanWithCallback(ctx context.Context, targets []string, callba
 	}
 
 	// Create temp file for targets
-	targetFile, err := os.CreateTemp("", "nuclei-targets-*.txt")
+	targetPath, err := writeTargetFile(targets)
 	if err != nil {
-		return nil, fmt.Errorf("creating target file: %w", err)
+		return nil, err
 	}
-	defer os.Remove(targetFile.Name())
+	defer os.Remove(targetPath)
 
-	for _, t := range targets {
-		_, _ = targetFile.WriteString(t + "\n")
-	}
-	targetFile.Close()
-
-	args := s.buildArgs(targetFile.Name())
+	args := s.buildArgs(targetPath)
 	cmd := exec.CommandContext(ctx, s.BinaryPath, args...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("creating stdout pipe: %w", err)
 	}
+	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting nuclei: %w", err)
@@ -320,11 +353,36 @@ func (s *Scanner) ScanWithCallback(ctx context.Context, targets []string, callba
 	return result, nil
 }
 
+// writeTargetFile writes targets to a temp file and returns its path.
+// The caller is responsible for removing the file via defer os.Remove(path).
+func writeTargetFile(targets []string) (string, error) {
+	f, err := os.CreateTemp("", "nuclei-targets-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("creating target file: %w", err)
+	}
+
+	for _, t := range targets {
+		if _, err := f.WriteString(t + "\n"); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			return "", fmt.Errorf("writing target %q to temp file: %w", t, err)
+		}
+	}
+
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("closing target file: %w", err)
+	}
+
+	return f.Name(), nil
+}
+
 func (s *Scanner) buildArgs(targetFile string) []string {
 	args := []string{
 		"-l", targetFile,
-		"-json",
+		"-jsonl",
 		"-silent",
+		"-stats",
 		"-rate-limit", fmt.Sprintf("%d", s.RateLimit),
 		"-bulk-size", fmt.Sprintf("%d", s.BulkSize),
 		"-concurrency", fmt.Sprintf("%d", s.Concurrency),

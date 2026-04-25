@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/spf13/cobra"
 )
@@ -78,7 +79,7 @@ Examples:
 				return nil
 			}
 
-			return runNuclei(targets, nucleiOptions{
+			return runNuclei(deps.DB, targets, nucleiOptions{
 				severities:  severities,
 				tags:        tags,
 				excludeTags: excludeTags,
@@ -132,7 +133,7 @@ func runNucleiUpdate() error {
 	return nil
 }
 
-func runNuclei(targets []string, opts nucleiOptions) error {
+func runNuclei(db *database.Database, targets []string, opts nucleiOptions) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -184,10 +185,15 @@ func runNuclei(targets []string, opts nucleiOptions) error {
 	// Track findings by severity for live output
 	findingCount := 0
 
-	// Run scan with callback for live output
+	// Run scan with callback for live output and DB persistence
 	result, err := scanner.ScanWithCallback(ctx, targets, func(f *nuclei.Finding) {
 		findingCount++
 		printFinding(f, findingCount)
+		if db != nil {
+			if err := persistFinding(db, f); err != nil {
+				fmt.Printf("    %s %v\n", highStyle.Render("DB save failed:"), err)
+			}
+		}
 	})
 
 	if err != nil {
@@ -309,4 +315,31 @@ func printNucleiSummary(result *nuclei.Result) {
 			fmt.Printf("    - %s\n", e)
 		}
 	}
+}
+
+// persistFinding converts a nuclei.Finding to a database.Finding and stores it.
+// The DB schema enforces severity ∈ {critical,high,medium,low,info}; anything
+// else (e.g. nuclei's "unknown") is coerced to "info".
+func persistFinding(db *database.Database, f *nuclei.Finding) error {
+	severity := strings.ToLower(strings.TrimSpace(f.Info.Severity))
+	switch severity {
+	case "critical", "high", "medium", "low", "info":
+	default:
+		severity = "info"
+	}
+
+	return db.Findings.Add(&database.Finding{
+		TemplateID:  f.TemplateID,
+		Name:        f.Info.Name,
+		Severity:    severity,
+		Description: f.Info.Description,
+		Host:        f.Host,
+		MatchedAt:   f.Matched,
+		MatcherName: f.MatcherName,
+		Evidence:    strings.Join(f.ExtractedResults, ", "),
+		Refs:        strings.Join(f.Info.Reference, "\n"),
+		Tags:        f.Info.Tags,
+		Type:        f.Type,
+		Status:      "open",
+	})
 }
