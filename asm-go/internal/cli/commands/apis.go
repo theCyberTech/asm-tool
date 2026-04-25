@@ -62,7 +62,8 @@ reveal internal endpoints and data structures.`,
 				return nil
 			}
 
-			return runAPIs(deps.DB, hosts, workers, time.Duration(timeout)*time.Second)
+			insecure := deps.Cfg != nil && deps.Cfg.Scanning.InsecureSkipVerify
+			return runAPIs(deps.DB, hosts, workers, time.Duration(timeout)*time.Second, insecure)
 		},
 	}
 
@@ -73,7 +74,7 @@ reveal internal endpoints and data structures.`,
 	return cmd
 }
 
-func runAPIs(db *database.Database, hosts []string, workers int, timeout time.Duration) error {
+func runAPIs(db *database.Database, hosts []string, workers int, timeout time.Duration, insecureSkipVerify bool) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -85,7 +86,7 @@ func runAPIs(db *database.Database, hosts []string, workers int, timeout time.Du
 		cancel()
 	}()
 
-	discovery := apis.DefaultDiscovery()
+	discovery := apis.NewDiscovery(insecureSkipVerify)
 	discovery.Workers = workers
 	discovery.Timeout = timeout
 

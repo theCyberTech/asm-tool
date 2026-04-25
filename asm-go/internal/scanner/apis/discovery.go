@@ -49,13 +49,18 @@ type Discovery struct {
 	Paths      []string
 }
 
-// DefaultDiscovery returns a discovery with built-in paths
+// DefaultDiscovery returns a discovery with built-in paths and TLS verification enabled.
 func DefaultDiscovery() *Discovery {
+	return NewDiscovery(false)
+}
+
+// NewDiscovery returns a discovery with configurable TLS verification.
+func NewDiscovery(insecureSkipVerify bool) *Discovery {
 	return &Discovery{
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
 				MaxIdleConns:    100,
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {

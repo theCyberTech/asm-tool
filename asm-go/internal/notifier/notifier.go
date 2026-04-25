@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"net/smtp"
@@ -376,7 +377,7 @@ th { background: #f5f5f5; }
 <p>Scan Time: %s | Duration: %s</p>
 </div>
 <div class="content">
-`, result.Domain, result.StartTime.Format("2006-01-02 15:04:05"), result.Duration.Round(time.Millisecond)))
+`, html.EscapeString(result.Domain), result.StartTime.Format("2006-01-02 15:04:05"), result.Duration.Round(time.Millisecond)))
 
 	// Stats
 	sb.WriteString(`<h2>Summary</h2>`)
@@ -414,7 +415,7 @@ th { background: #f5f5f5; }
 		for _, t := range result.Takeovers {
 			if t.Vulnerable {
 				sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
-					t.Host, t.Service, t.Confidence))
+					html.EscapeString(t.Host), html.EscapeString(t.Service), html.EscapeString(t.Confidence)))
 			}
 		}
 		sb.WriteString(`</table>`)
@@ -427,7 +428,7 @@ th { background: #f5f5f5; }
 		for _, b := range result.CloudStorage {
 			if b.AccessLevel == "listing_enabled" || b.AccessLevel == "public_read" {
 				sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
-					strings.ToUpper(b.Provider), b.BucketName, b.AccessLevel))
+					html.EscapeString(strings.ToUpper(b.Provider)), html.EscapeString(b.BucketName), html.EscapeString(b.AccessLevel)))
 			}
 		}
 		sb.WriteString(`</table>`)
@@ -437,7 +438,7 @@ th { background: #f5f5f5; }
 	if len(result.Errors) > 0 {
 		sb.WriteString(`<div class="warning"><strong>Scan Errors:</strong><ul>`)
 		for module, err := range result.Errors {
-			sb.WriteString(fmt.Sprintf(`<li>%s: %s</li>`, module, err))
+			sb.WriteString(fmt.Sprintf(`<li>%s: %s</li>`, html.EscapeString(string(module)), html.EscapeString(err.Error())))
 		}
 		sb.WriteString(`</ul></div>`)
 	}

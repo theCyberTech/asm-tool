@@ -76,8 +76,11 @@ func NewDetector(insecureSkipVerify bool) *Detector {
 	}
 }
 
-// Check checks a single subdomain for takeover vulnerability
-func (d *Detector) Check(ctx context.Context, subdomain string) *Finding {
+// Check checks a single subdomain for takeover vulnerability.
+// Returns (nil, nil) when the subdomain has no CNAME or is not vulnerable.
+// Returns a non-nil error only for unexpected failures (DNS server errors,
+// timeouts, etc.) — NXDOMAIN on the CNAME lookup is treated as "not applicable".
+func (d *Detector) Check(ctx context.Context, subdomain string) (*Finding, error) {
 	finding := &Finding{
 		Subdomain: subdomain,
 	}
@@ -85,12 +88,20 @@ func (d *Detector) Check(ctx context.Context, subdomain string) *Finding {
 	// Resolve CNAME
 	cname, err := net.DefaultResolver.LookupCNAME(ctx, subdomain)
 	if err != nil {
-		return nil
+		// NXDOMAIN means no CNAME record — not an error, just not applicable.
+		// Context cancellation is also not worth reporting per-subdomain.
+		if dnsErr, ok := err.(*net.DNSError); ok && dnsErr.IsNotFound {
+			return nil, nil
+		}
+		if ctx.Err() != nil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("CNAME lookup for %s: %w", subdomain, err)
 	}
 
 	cname = strings.TrimSuffix(cname, ".")
 	if cname == "" || cname == subdomain {
-		return nil
+		return nil, nil
 	}
 
 	finding.CNAME = cname
@@ -115,7 +126,7 @@ func (d *Detector) Check(ctx context.Context, subdomain string) *Finding {
 			finding.Confidence = "HIGH"
 			finding.Type = "NXDOMAIN"
 			finding.Evidence = fmt.Sprintf("CNAME %s does not resolve", cname)
-			return finding
+			return finding, nil
 		}
 
 		// Check HTTP response for fingerprints
@@ -125,7 +136,7 @@ func (d *Detector) Check(ctx context.Context, subdomain string) *Finding {
 				finding.Confidence = "MEDIUM"
 				finding.Type = "FINGERPRINT"
 				finding.Evidence = evidence
-				return finding
+				return finding, nil
 			}
 		}
 
@@ -136,12 +147,12 @@ func (d *Detector) Check(ctx context.Context, subdomain string) *Finding {
 				finding.Confidence = "LOW"
 				finding.Type = "HTTP_STATUS"
 				finding.Evidence = fmt.Sprintf("HTTP status %d", status)
-				return finding
+				return finding, nil
 			}
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // CheckBatch checks multiple subdomains for takeover vulnerabilities
@@ -169,7 +180,10 @@ func (d *Detector) CheckBatch(ctx context.Context, subdomains []string) *Result 
 			}
 			defer func() { <-sem }()
 
-			finding := d.Check(ctx, subdomain)
+			finding, err := d.Check(ctx, subdomain)
+			if err != nil {
+				errors <- err.Error()
+			}
 			if finding != nil && finding.Vulnerable {
 				findings <- finding
 			}
