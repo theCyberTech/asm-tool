@@ -129,6 +129,8 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	runner := parallel.DefaultRunner(db)
 	runner.PortWorkers = opts.portWorkers
 	runner.APIWorkers = opts.apiWorkers
+	runner.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
+	runner.RateLimit = cfg.Scanning.RateLimit
 
 	// Enable nuclei if requested
 	if opts.enableNuclei {

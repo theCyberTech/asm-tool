@@ -50,7 +50,11 @@ Results are saved to the database for future reference.`,
 				return nil
 			}
 
-			return runDiscover(deps.DB, domains)
+			rateLimit := 0
+			if deps.Cfg != nil {
+				rateLimit = deps.Cfg.Scanning.RateLimit
+			}
+			return runDiscover(deps.DB, domains, rateLimit)
 		},
 	}
 
@@ -59,7 +63,7 @@ Results are saved to the database for future reference.`,
 	return cmd
 }
 
-func runDiscover(db *database.Database, domains []string) error {
+func runDiscover(db *database.Database, domains []string, rateLimit int) error {
 	// Set up signal handling for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -72,7 +76,7 @@ func runDiscover(db *database.Database, domains []string) error {
 		cancel()
 	}()
 
-	enum := subdomains.DefaultEnumerator()
+	enum := subdomains.NewEnumeratorWithRateLimit(rateLimit)
 
 	for _, domain := range domains {
 		fmt.Printf("\n%s Discovering subdomains for %s\n", titleStyle.Render("[*]"), valueStyle.Render(domain))

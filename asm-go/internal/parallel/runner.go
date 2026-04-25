@@ -114,16 +114,18 @@ type ProgressCallback func(module ModuleType, duration time.Duration, err error)
 
 // Runner orchestrates parallel execution of scanner modules
 type Runner struct {
-	DB               *database.Database
-	EnabledModules   map[ModuleType]bool
-	PortWorkers      int
-	APIWorkers       int
-	TakeoverWorkers  int
-	CloudWorkers     int
-	HTTPTimeout      time.Duration
-	NucleiSeverities []string
-	NucleiRateLimit  int
-	OnProgress       ProgressCallback
+	DB                 *database.Database
+	EnabledModules     map[ModuleType]bool
+	PortWorkers        int
+	APIWorkers         int
+	TakeoverWorkers    int
+	CloudWorkers       int
+	HTTPTimeout        time.Duration
+	NucleiSeverities   []string
+	NucleiRateLimit    int
+	RateLimit          int // max requests/sec for passive HTTP sources (0 = unlimited)
+	InsecureSkipVerify bool
+	OnProgress         ProgressCallback
 }
 
 // DefaultRunner creates a runner with default settings
@@ -530,7 +532,7 @@ func (r *Runner) reportProgress(module ModuleType, duration time.Duration, err e
 }
 
 func (r *Runner) runSubdomains(ctx context.Context, domain string) ([]string, error) {
-	enum := subdomains.DefaultEnumerator()
+	enum := subdomains.NewEnumeratorWithRateLimit(r.RateLimit)
 	result := enum.Enumerate(ctx, domain)
 	if len(result.Errors) > 0 {
 		return result.Subdomains, fmt.Errorf("subdomain errors: %v", result.Errors)
@@ -619,13 +621,13 @@ func (r *Runner) runTechnologies(ctx context.Context, hosts []string) ([]*TechRe
 }
 
 func (r *Runner) runURLs(ctx context.Context, domain string) ([]urls.URL, error) {
-	enum := urls.DefaultEnumerator()
+	enum := urls.NewEnumeratorWithRateLimit(r.RateLimit)
 	result := enum.Enumerate(ctx, domain)
 	return result.URLs, nil
 }
 
 func (r *Runner) runAPIs(ctx context.Context, hosts []string) ([]apis.API, error) {
-	discovery := apis.DefaultDiscovery()
+	discovery := apis.NewDiscovery(r.InsecureSkipVerify)
 	discovery.Workers = r.APIWorkers
 	discovery.Timeout = r.HTTPTimeout
 

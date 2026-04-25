@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/asm-tool/asm-go/internal/ratelimit"
 )
 
 // Result represents subdomain enumeration results
@@ -36,22 +38,31 @@ type Enumerator struct {
 	Timeout    time.Duration
 }
 
-// DefaultEnumerator returns an enumerator with all built-in sources
+// DefaultEnumerator returns an enumerator with all built-in sources and no rate limiting.
 func DefaultEnumerator() *Enumerator {
+	return NewEnumeratorWithRateLimit(0)
+}
+
+// NewEnumeratorWithRateLimit returns an enumerator that caps outbound HTTP
+// requests to rps requests per second across all sources. rps <= 0 means unlimited.
+func NewEnumeratorWithRateLimit(rps int) *Enumerator {
+	var transport http.RoundTripper = &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	}
+	transport = ratelimit.NewTransport(transport, rps)
+
 	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-		},
+		Timeout:   30 * time.Second,
+		Transport: transport,
 	}
 
 	return &Enumerator{
 		Sources: []Source{
 			&CrtShSource{client: client},
 			&HackerTargetSource{client: client},
-				&URLScanSource{client: client},
+			&URLScanSource{client: client},
 		},
 		HTTPClient: client,
 		Timeout:    60 * time.Second,

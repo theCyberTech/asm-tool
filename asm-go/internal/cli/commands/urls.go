@@ -60,7 +60,11 @@ Use --probe-all to probe every URL (not just interesting ones).`,
 				return nil
 			}
 
-			return runURLs(deps.DB, domains, showAll, interesting, probe, probeAll)
+			rateLimit := 0
+			if deps.Cfg != nil {
+				rateLimit = deps.Cfg.Scanning.RateLimit
+			}
+			return runURLs(deps.DB, domains, showAll, interesting, probe, probeAll, rateLimit)
 		},
 	}
 
@@ -73,7 +77,7 @@ Use --probe-all to probe every URL (not just interesting ones).`,
 	return cmd
 }
 
-func runURLs(db *database.Database, domains []string, showAll, interesting, probe, probeAll bool) error {
+func runURLs(db *database.Database, domains []string, showAll, interesting, probe, probeAll bool, rateLimit int) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -85,7 +89,7 @@ func runURLs(db *database.Database, domains []string, showAll, interesting, prob
 		cancel()
 	}()
 
-	enum := urls.DefaultEnumerator()
+	enum := urls.NewEnumeratorWithRateLimit(rateLimit)
 
 	for _, domain := range domains {
 		fmt.Printf("\n%s Enumerating URLs for %s\n", titleStyle.Render("[*]"), valueStyle.Render(domain))

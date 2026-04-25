@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/asm-tool/asm-go/internal/ratelimit"
 )
 
 // URL represents a discovered URL with metadata
@@ -55,14 +57,23 @@ type Enumerator struct {
 	Timeout    time.Duration
 }
 
-// DefaultEnumerator returns an enumerator with built-in sources
+// DefaultEnumerator returns an enumerator with built-in sources and no rate limiting.
 func DefaultEnumerator() *Enumerator {
+	return NewEnumeratorWithRateLimit(0)
+}
+
+// NewEnumeratorWithRateLimit returns an enumerator that caps outbound HTTP
+// requests to rps requests per second across all sources. rps <= 0 means unlimited.
+func NewEnumeratorWithRateLimit(rps int) *Enumerator {
+	var transport http.RoundTripper = &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+	}
+	transport = ratelimit.NewTransport(transport, rps)
+
 	client := &http.Client{
-		Timeout: 60 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-		},
+		Timeout:   60 * time.Second,
+		Transport: transport,
 	}
 
 	return &Enumerator{
