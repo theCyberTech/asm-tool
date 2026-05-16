@@ -15,33 +15,33 @@ import (
 
 // Finding represents a vulnerability finding from Nuclei
 type Finding struct {
-	Template      string            `json:"template"`
-	TemplateID    string            `json:"template-id"`
-	TemplatePath  string            `json:"template-path"`
-	Info          TemplateInfo      `json:"info"`
-	Type          string            `json:"type"`
-	Host          string            `json:"host"`
-	Matched       string            `json:"matched-at"`
-	ExtractedResults []string       `json:"extracted-results,omitempty"`
-	IP            string            `json:"ip,omitempty"`
-	Timestamp     time.Time         `json:"timestamp"`
-	CURLCommand   string            `json:"curl-command,omitempty"`
-	MatcherName   string            `json:"matcher-name,omitempty"`
-	MatcherStatus bool              `json:"matcher-status,omitempty"`
-	Request       string            `json:"request,omitempty"`
-	Response      string            `json:"response,omitempty"`
-	Metadata      map[string]interface{} `json:"meta,omitempty"`
+	Template         string                 `json:"template"`
+	TemplateID       string                 `json:"template-id"`
+	TemplatePath     string                 `json:"template-path"`
+	Info             TemplateInfo           `json:"info"`
+	Type             string                 `json:"type"`
+	Host             string                 `json:"host"`
+	Matched          string                 `json:"matched-at"`
+	ExtractedResults []string               `json:"extracted-results,omitempty"`
+	IP               string                 `json:"ip,omitempty"`
+	Timestamp        time.Time              `json:"timestamp"`
+	CURLCommand      string                 `json:"curl-command,omitempty"`
+	MatcherName      string                 `json:"matcher-name,omitempty"`
+	MatcherStatus    bool                   `json:"matcher-status,omitempty"`
+	Request          string                 `json:"request,omitempty"`
+	Response         string                 `json:"response,omitempty"`
+	Metadata         map[string]interface{} `json:"meta,omitempty"`
 }
 
 // TemplateInfo contains template metadata
 type TemplateInfo struct {
-	Name           string            `json:"name"`
-	Author         string            `json:"author"`
-	Tags           string            `json:"tags"`
-	Description    string            `json:"description"`
-	Reference      []string          `json:"reference,omitempty"`
-	Severity       string            `json:"severity"`
-	Classification Classification    `json:"classification,omitempty"`
+	Name           string                 `json:"name"`
+	Author         string                 `json:"author"`
+	Tags           string                 `json:"tags"`
+	Description    string                 `json:"description"`
+	Reference      []string               `json:"reference,omitempty"`
+	Severity       string                 `json:"severity"`
+	Classification Classification         `json:"classification,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -55,11 +55,11 @@ type Classification struct {
 
 // Result represents the scan result
 type Result struct {
-	Targets   []string
-	Findings  []*Finding
-	Stats     ScanStats
-	Duration  time.Duration
-	Errors    []string
+	Targets  []string
+	Findings []*Finding
+	Stats    ScanStats
+	Duration time.Duration
+	Errors   []string
 }
 
 // ScanStats contains scan statistics
@@ -76,21 +76,21 @@ type ScanStats struct {
 
 // Scanner wraps nuclei for vulnerability scanning
 type Scanner struct {
-	BinaryPath      string
-	TemplatesPath   string
-	Timeout         time.Duration
-	RateLimit       int
-	BulkSize        int
-	Concurrency     int
-	Retries         int
-	Severities      []string // critical, high, medium, low, info
-	Tags            []string // specific tags to include
-	ExcludeTags     []string // tags to exclude
-	Templates       []string // specific template IDs
+	BinaryPath       string
+	TemplatesPath    string
+	Timeout          time.Duration
+	RateLimit        int
+	BulkSize         int
+	Concurrency      int
+	Retries          int
+	Severities       []string // critical, high, medium, low, info
+	Tags             []string // specific tags to include
+	ExcludeTags      []string // tags to exclude
+	Templates        []string // specific template IDs
 	ExcludeTemplates []string
-	Headers         map[string]string
-	OutputDir       string
-	Silent          bool
+	Headers          map[string]string
+	OutputDir        string
+	Silent           bool
 }
 
 // DefaultScanner creates a scanner with sensible defaults
@@ -225,6 +225,11 @@ func (s *Scanner) Scan(ctx context.Context, targets []string) (*Result, error) {
 	if err := validateBinaryPath(s.BinaryPath); err != nil {
 		return nil, fmt.Errorf("nuclei binary validation failed: %w", err)
 	}
+	if s.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.Timeout)
+		defer cancel()
+	}
 
 	start := time.Now()
 	result := &Result{
@@ -297,6 +302,11 @@ func (s *Scanner) Scan(ctx context.Context, targets []string) (*Result, error) {
 func (s *Scanner) ScanWithCallback(ctx context.Context, targets []string, callback func(*Finding)) (*Result, error) {
 	if err := validateBinaryPath(s.BinaryPath); err != nil {
 		return nil, fmt.Errorf("nuclei binary validation failed: %w", err)
+	}
+	if s.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.Timeout)
+		defer cancel()
 	}
 
 	start := time.Now()

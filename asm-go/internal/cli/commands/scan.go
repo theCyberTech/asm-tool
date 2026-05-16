@@ -56,17 +56,20 @@ Results can be output to JSON, Markdown, or HTML reports.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			domain := args[0]
 			return runFullScan(deps.DB, deps.Cfg, domain, scanOptions{
-				skipModules:      skipModules,
-				onlyModules:      onlyModules,
-				outputFormat:     outputFormat,
-				outputDir:        outputDir,
-				slackWebhook:     slackWebhook,
-				emailRecipient:   emailRecipient,
-				portWorkers:      portWorkers,
-				apiWorkers:       apiWorkers,
-				verbose:          verbose,
-				enableNuclei:     enableNuclei,
-				nucleiSeverities: nucleiSeverities,
+				skipModules:       skipModules,
+				onlyModules:       onlyModules,
+				outputFormat:      outputFormat,
+				outputDir:         outputDir,
+				slackWebhook:      slackWebhook,
+				slackWebhookSet:   cmd.Flags().Changed("slack"),
+				emailRecipient:    emailRecipient,
+				emailRecipientSet: cmd.Flags().Changed("email"),
+				portWorkers:       portWorkers,
+				apiWorkers:        apiWorkers,
+				verbose:           verbose,
+				enableNuclei:      enableNuclei,
+				nucleiSeverities:  nucleiSeverities,
+				nucleiSeveritySet: cmd.Flags().Changed("nuclei-severity"),
 			})
 		},
 	}
@@ -87,17 +90,20 @@ Results can be output to JSON, Markdown, or HTML reports.`,
 }
 
 type scanOptions struct {
-	skipModules      []string
-	onlyModules      []string
-	outputFormat     string
-	outputDir        string
-	slackWebhook     string
-	emailRecipient   string
-	portWorkers      int
-	apiWorkers       int
-	verbose          bool
-	enableNuclei     bool
-	nucleiSeverities []string
+	skipModules       []string
+	onlyModules       []string
+	outputFormat      string
+	outputDir         string
+	slackWebhook      string
+	slackWebhookSet   bool
+	emailRecipient    string
+	emailRecipientSet bool
+	portWorkers       int
+	apiWorkers        int
+	verbose           bool
+	enableNuclei      bool
+	nucleiSeverities  []string
+	nucleiSeveritySet bool
 }
 
 func runFullScan(db *database.Database, cfg *config.Config, domain string, opts scanOptions) error {
@@ -106,6 +112,9 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 		return err
 	}
 	domain = normalizedDomain
+	if cfg == nil {
+		cfg = config.Default()
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -134,37 +143,7 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 
 	// Create runner
 	runner := parallel.DefaultRunner(db)
-	runner.PortWorkers = opts.portWorkers
-	runner.Ports = cfg.ParsePorts()
-	runner.APIWorkers = opts.apiWorkers
-	runner.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
-	runner.RateLimit = cfg.Scanning.RateLimit
-
-	// Enable nuclei if requested
-	if opts.enableNuclei {
-		runner.EnabledModules[parallel.ModuleNuclei] = true
-		runner.NucleiSeverities = opts.nucleiSeverities
-	}
-
-	// Configure modules
-	if len(opts.onlyModules) > 0 {
-		// Disable all, then enable only specified
-		for k := range runner.EnabledModules {
-			runner.EnabledModules[k] = false
-		}
-		for _, m := range opts.onlyModules {
-			if mod, ok := parseModule(m); ok {
-				runner.EnabledModules[mod] = true
-			}
-		}
-	} else if len(opts.skipModules) > 0 {
-		// Disable specified modules
-		for _, m := range opts.skipModules {
-			if mod, ok := parseModule(m); ok {
-				runner.EnabledModules[mod] = false
-			}
-		}
-	}
+	configureScanRunner(runner, cfg, opts)
 
 	// Print enabled modules
 	var enabled []string
@@ -175,6 +154,9 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	}
 	fmt.Printf("%s Modules: %s\n", labelStyle.Render("   "), strings.Join(enabled, ", "))
 	fmt.Printf("%s Workers: ports=%d, api=%d\n", labelStyle.Render("   "), opts.portWorkers, opts.apiWorkers)
+	if cfg.Scanning.PassiveOnly {
+		fmt.Printf("%s Passive mode: active modules disabled\n", labelStyle.Render("   "))
+	}
 	fmt.Println(strings.Repeat("-", 60))
 
 	// Progress callback
@@ -245,13 +227,19 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	}
 
 	// Send notifications
-	if opts.slackWebhook != "" {
-		n := notifier.DefaultNotifier()
-		n.SlackWebhook = opts.slackWebhook
+	n := scanNotifier(cfg, opts)
+	if n.SlackWebhook != "" {
 		if err := n.NotifySlack(result); err != nil {
 			fmt.Printf("%s Slack notification failed: %v\n", highStyle.Render("[!]"), err)
 		} else {
 			fmt.Printf("%s Slack notification sent\n", lowStyle.Render("[+]"))
+		}
+	}
+	if len(n.EmailTo) > 0 {
+		if err := n.NotifyEmail(result); err != nil {
+			fmt.Printf("%s Email notification failed: %v\n", highStyle.Render("[!]"), err)
+		} else {
+			fmt.Printf("%s Email notification sent\n", lowStyle.Render("[+]"))
 		}
 	}
 
@@ -260,6 +248,141 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 		valueStyle.Render(time.Since(startTime).Round(time.Millisecond).String()))
 
 	return nil
+}
+
+func configureScanRunner(runner *parallel.Runner, cfg *config.Config, opts scanOptions) {
+	if cfg == nil {
+		cfg = config.Default()
+	}
+
+	if opts.portWorkers > 0 {
+		runner.PortWorkers = opts.portWorkers
+	}
+	runner.Ports = cfg.ParsePorts()
+	if opts.apiWorkers > 0 {
+		runner.APIWorkers = opts.apiWorkers
+	}
+	runner.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
+	runner.RateLimit = cfg.Scanning.RateLimit
+	runner.NucleiRateLimit = cfg.Scanning.RateLimit
+	runner.HunterAPIKey = cfg.Hunter.APIKey
+
+	if cfg.Timeouts.Subfinder > 0 {
+		runner.SubdomainTimeout = cfg.Timeouts.Subfinder
+	}
+	if cfg.Timeouts.Nmap > 0 {
+		runner.PortTimeout = cfg.Timeouts.Nmap
+	}
+	if cfg.Timeouts.HTTP > 0 {
+		runner.HTTPTimeout = cfg.Timeouts.HTTP
+	}
+	if cfg.Timeouts.DNS > 0 {
+		runner.DNSTimeout = cfg.Timeouts.DNS
+	}
+	if cfg.Timeouts.Gau > 0 {
+		runner.URLTimeout = cfg.Timeouts.Gau
+	}
+	if cfg.Timeouts.Nuclei > 0 {
+		runner.NucleiTimeout = cfg.Timeouts.Nuclei
+	}
+
+	if cfg.Nuclei.BatchSize > 0 {
+		runner.NucleiBulkSize = cfg.Nuclei.BatchSize
+	}
+	if cfg.Nuclei.Concurrency > 0 {
+		runner.NucleiConcurrency = cfg.Nuclei.Concurrency
+	}
+	runner.NucleiRetries = cfg.Nuclei.Retries
+	runner.NucleiExcludeTags = splitCSV(cfg.Nuclei.ExcludeTags)
+
+	if opts.nucleiSeveritySet {
+		runner.NucleiSeverities = opts.nucleiSeverities
+	} else if severities := splitCSV(cfg.Scanning.NucleiSeverity); len(severities) > 0 {
+		runner.NucleiSeverities = severities
+	}
+
+	if opts.enableNuclei {
+		runner.EnabledModules[parallel.ModuleNuclei] = true
+	}
+	applyModuleSelection(runner, opts)
+	if cfg.Scanning.PassiveOnly {
+		applyPassiveMode(runner)
+	}
+}
+
+func applyModuleSelection(runner *parallel.Runner, opts scanOptions) {
+	if len(opts.onlyModules) > 0 {
+		for k := range runner.EnabledModules {
+			runner.EnabledModules[k] = false
+		}
+		for _, m := range opts.onlyModules {
+			if mod, ok := parseModule(m); ok {
+				runner.EnabledModules[mod] = true
+			}
+		}
+		return
+	}
+
+	for _, m := range opts.skipModules {
+		if mod, ok := parseModule(m); ok {
+			runner.EnabledModules[mod] = false
+		}
+	}
+}
+
+func applyPassiveMode(runner *parallel.Runner) {
+	for _, mod := range []parallel.ModuleType{
+		parallel.ModulePorts,
+		parallel.ModuleCertificates,
+		parallel.ModuleTakeover,
+		parallel.ModuleTechnologies,
+		parallel.ModuleAPIs,
+		parallel.ModuleCloudStorage,
+		parallel.ModuleNuclei,
+	} {
+		runner.EnabledModules[mod] = false
+	}
+}
+
+func scanNotifier(cfg *config.Config, opts scanOptions) *notifier.Notifier {
+	if cfg == nil {
+		cfg = config.Default()
+	}
+
+	n := notifier.DefaultNotifier()
+	n.SMTPHost = cfg.Notifications.Email.SMTPHost
+	n.SMTPPort = cfg.Notifications.Email.SMTPPort
+	n.EmailFrom = cfg.Notifications.Email.FromAddr
+	if cfg.Timeouts.HTTP > 0 && n.HTTPClient != nil {
+		n.HTTPClient.Timeout = cfg.Timeouts.HTTP
+	}
+
+	if opts.slackWebhookSet || opts.slackWebhook != "" {
+		n.SlackWebhook = opts.slackWebhook
+	} else if cfg.Notifications.Slack.Enabled {
+		n.SlackWebhook = cfg.Notifications.Slack.WebhookURL
+	}
+
+	emailRecipient := ""
+	if opts.emailRecipientSet || opts.emailRecipient != "" {
+		emailRecipient = opts.emailRecipient
+	} else if cfg.Notifications.Email.Enabled {
+		emailRecipient = cfg.Notifications.Email.ToAddr
+	}
+	n.EmailTo = splitCSV(emailRecipient)
+
+	return n
+}
+
+func splitCSV(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func parseModule(name string) (parallel.ModuleType, bool) {

@@ -7,7 +7,7 @@ A high-performance attack surface management tool for security practitioners. Wr
 
 ## Features
 
-- **Subdomain Enumeration** - Multiple sources: crt.sh, HackerTarget, VirusTotal, SecurityTrails
+- **Subdomain Enumeration** - Multiple sources: crt.sh, HackerTarget, urlscan.io, AlienVault OTX
 - **Port Scanning** - Native TCP scanning with service detection (10-20x faster than nmap)
 - **Certificate Monitoring** - SSL/TLS cert tracking, expiry alerts
 - **Technology Fingerprinting** - Identify web technologies, frameworks, CDNs
@@ -91,19 +91,28 @@ notifications:
   slack:
     enabled: true
     webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+  email:
+    enabled: false
+    smtp_host: "smtp.example.com"
+    smtp_port: 587
+    from_addr: "alerts@example.com"
+    to_addr: "security@example.com"
 
 # Scanning configuration
 scanning:
   ports: "21,22,23,25,53,80,110,143,443,445,993,995,3306,3389,5432,8080,8443"
+  nuclei_severity: "medium,high,critical"
+  passive_only: false
   rate_limit: 100
 
+# Nuclei configuration
+nuclei:
+  concurrency: 25
+  batch_size: 25
+  exclude_tags: "dos,fuzz,brute"
+  retries: 1
+
 # External API integrations (optional)
-virustotal:
-  api_key: "your-virustotal-api-key"
-
-securitytrails:
-  api_key: "your-securitytrails-api-key"
-
 hunter:
   api_key: "your-hunter-api-key"
 ```
