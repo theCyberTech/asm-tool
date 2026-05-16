@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -438,47 +439,34 @@ func makeStatsHandler(deps *Deps) http.HandlerFunc {
 		stats, err := deps.DB.GetStats()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, `{"error":"%s"}`, err.Error())
+			w.Write([]byte(`{"status":"error","message":"failed to load stats"}`))
 			return
 		}
 
 		findings, _ := deps.DB.GetFindingSeverityCounts()
 
+		resp := map[string]interface{}{
+			"domains":       stats.Domains,
+			"subdomains":    stats.Subdomains,
+			"ports":         stats.Ports,
+			"certificates":  stats.Certificates,
+			"urls":          stats.URLs,
+			"apis":          stats.APIs,
+			"emails":        stats.Emails,
+			"cloud_buckets": stats.CloudBuckets,
+			"findings": map[string]int{
+				"total":    findings.Critical + findings.High + findings.Medium + findings.Low + findings.Info,
+				"critical": findings.Critical,
+				"high":     findings.High,
+				"medium":   findings.Medium,
+				"low":      findings.Low,
+				"info":     findings.Info,
+			},
+			"takeovers": stats.Takeovers,
+		}
+
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{
-  "domains": %d,
-  "subdomains": %d,
-  "ports": %d,
-  "certificates": %d,
-  "urls": %d,
-  "apis": %d,
-  "emails": %d,
-  "cloud_buckets": %d,
-  "findings": {
-    "total": %d,
-    "critical": %d,
-    "high": %d,
-    "medium": %d,
-    "low": %d,
-    "info": %d
-  },
-  "takeovers": %d
-}`,
-			stats.Domains,
-			stats.Subdomains,
-			stats.Ports,
-			stats.Certificates,
-			stats.URLs,
-			stats.APIs,
-			stats.Emails,
-			stats.CloudBuckets,
-			findings.Critical+findings.High+findings.Medium+findings.Low+findings.Info,
-			findings.Critical,
-			findings.High,
-			findings.Medium,
-			findings.Low,
-			findings.Info,
-			stats.Takeovers)
+		json.NewEncoder(w).Encode(resp)
 	}
 }
 

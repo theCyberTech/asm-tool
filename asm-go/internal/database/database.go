@@ -1,7 +1,10 @@
 package database
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
+	"errors"
 	_ "embed"
 	"fmt"
 	"os"
@@ -18,6 +21,9 @@ var initialMigration string
 
 //go:embed migrations/002_url_source.sql
 var migration002 string
+
+//go:embed migrations/003_findings_dedup.sql
+var migration003 string
 
 // Database is the main database facade
 type Database struct {
@@ -47,8 +53,10 @@ func New(dbPath string) (*Database, error) {
 	}
 
 	// Set connection pool settings
-	db.SetMaxOpenConns(1) // SQLite only supports one writer
-	db.SetMaxIdleConns(1)
+	// SQLite in WAL mode supports concurrent readers; allow a few connections
+	// so dashboard reads don't block behind a long-running scan persist.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(2)
 	db.SetConnMaxLifetime(time.Hour)
 
 	d := &Database{db: db}
@@ -88,6 +96,13 @@ func (d *Database) migrate() error {
 	if version < 2 {
 		if _, err = d.db.Exec(migration002); err != nil {
 			return fmt.Errorf("running migration 002: %w", err)
+		}
+		version = 2
+	}
+
+	if version < 3 {
+		if _, err = d.db.Exec(migration003); err != nil {
+			return fmt.Errorf("running migration 003: %w", err)
 		}
 	}
 
@@ -444,12 +459,25 @@ type FindingRepository struct {
 	db *sqlx.DB
 }
 
-// Add adds a new finding
+// Add adds a new finding or updates an existing one for the same template+host
 func (r *FindingRepository) Add(f *Finding) error {
 	_, err := r.db.Exec(`
 		INSERT INTO findings (template_id, name, severity, description, host, matched_at,
 			matcher_name, evidence, refs, tags, type, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(template_id, host) DO UPDATE SET
+			name = excluded.name,
+			severity = excluded.severity,
+			description = excluded.description,
+			matched_at = excluded.matched_at,
+			matcher_name = excluded.matcher_name,
+			evidence = excluded.evidence,
+			refs = excluded.refs,
+			tags = excluded.tags,
+			type = excluded.type,
+			status = 'open',
+			discovered_at = CURRENT_TIMESTAMP,
+			resolved_at = NULL
 	`, f.TemplateID, f.Name, f.Severity, f.Description, f.Host, f.MatchedAt,
 		f.MatcherName, f.Evidence, f.Refs, f.Tags, f.Type, f.Status)
 	return err
@@ -492,7 +520,7 @@ func (d *Database) GetLatestDNSRecord(domain string) (*DNSRecord, error) {
 	var rec DNSRecord
 	err := d.db.Get(&rec, `SELECT * FROM dns_records WHERE domain = ?`, domain)
 	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		if isTableNotExistsError(err) {
@@ -505,7 +533,10 @@ func (d *Database) GetLatestDNSRecord(domain string) (*DNSRecord, error) {
 
 // SaveChangeEvent records a detected change in the change_events table.
 func (d *Database) SaveChangeEvent(domain, changeType, severity, description, oldValue, newValue string) error {
-	eventID := fmt.Sprintf("%s-%s-%d", domain, changeType, time.Now().UnixNano())
+	// Build a collision-resistant event ID: domain-type-random(8 bytes)-nanos
+	var rnd [8]byte
+	_, _ = rand.Read(rnd[:])
+	eventID := fmt.Sprintf("%s-%s-%s-%d", domain, changeType, hex.EncodeToString(rnd[:]), time.Now().UnixNano())
 	_, err := d.db.Exec(`
 		INSERT INTO change_events (event_id, domain, change_type, severity, description, old_value, new_value)
 		VALUES (?, ?, ?, ?, ?, ?, ?)

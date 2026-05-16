@@ -117,6 +117,7 @@ type Runner struct {
 	DB                 *database.Database
 	EnabledModules     map[ModuleType]bool
 	PortWorkers        int
+	Ports              []int // ports to scan (nil = use common defaults)
 	APIWorkers         int
 	TakeoverWorkers    int
 	CloudWorkers       int
@@ -508,9 +509,11 @@ func (r *Runner) persistResults(domain string, result *ScanResult) error {
 			Description: v.Info.Description,
 			Host:        v.Host,
 			MatchedAt:   v.Matched,
+			MatcherName: v.MatcherName,
 			Evidence:    string(evidence),
 			Refs:        string(refs),
 			Tags:        v.Info.Tags,
+			Type:        v.Type,
 			Status:      "open",
 		})
 	}
@@ -544,15 +547,18 @@ func (r *Runner) runPorts(ctx context.Context, hosts []string) ([]PortResult, er
 	scanner := ports.DefaultScanner()
 	scanner.Workers = r.PortWorkers
 
-	// Scan common ports
-	commonPorts := []int{21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 8080, 8443}
+	// Use configured ports or common defaults
+	portsToScan := r.Ports
+	if len(portsToScan) == 0 {
+		portsToScan = []int{21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 8080, 8443}
+	}
 
 	var results []PortResult
 	for _, host := range hosts {
 		if ctx.Err() != nil {
 			return results, ctx.Err()
 		}
-		scanResult := scanner.Scan(ctx, host, commonPorts)
+		scanResult := scanner.Scan(ctx, host, portsToScan)
 		for _, p := range scanResult.OpenPorts {
 			results = append(results, PortResult{
 				Host:    host,
@@ -568,6 +574,7 @@ func (r *Runner) runPorts(ctx context.Context, hosts []string) ([]PortResult, er
 
 func (r *Runner) runCertificates(ctx context.Context, hosts []string) ([]*Certificate, error) {
 	monitor := certificates.DefaultMonitor()
+	monitor.InsecureSkipVerify = r.InsecureSkipVerify
 	batch := monitor.CheckBatch(ctx, hosts, 443)
 	return batch.Certificates, nil
 }
@@ -614,7 +621,7 @@ func (r *Runner) runTakeover(ctx context.Context, hosts []string) ([]TakeoverRes
 }
 
 func (r *Runner) runTechnologies(ctx context.Context, hosts []string) ([]*TechResult, error) {
-	fp := technologies.DefaultFingerprinter()
+	fp := technologies.NewFingerprinter(r.InsecureSkipVerify)
 	fp.Timeout = r.HTTPTimeout
 	results := fp.FingerprintBatch(ctx, hosts)
 	return results, nil

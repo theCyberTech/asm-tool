@@ -197,9 +197,16 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("schedule.full_scan", cfg.Schedule.FullScan)
 	v.SetDefault("schedule.cert_check", cfg.Schedule.CertCheck)
 
+	// Save defaults before unmarshal may zero them (time.Duration fields don't
+	// map naturally from YAML ints).
+	defaultTimeouts := cfg.Timeouts
+
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, err
 	}
+
+	// Restore timeout defaults; manual YAML values override them below.
+	cfg.Timeouts = defaultTimeouts
 
 	// Handle timeout conversions from seconds (YAML) to time.Duration
 	if timeouts := v.Sub("timeouts"); timeouts != nil {
