@@ -3,6 +3,7 @@ package parallel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -384,6 +385,7 @@ func (r *Runner) Run(ctx context.Context, domain string) (*ScanResult, error) {
 	if r.DB != nil {
 		if err := r.persistResults(domain, result); err != nil {
 			result.Errors[ModuleType("persist")] = err
+			return result, err
 		}
 	}
 
@@ -392,32 +394,46 @@ func (r *Runner) Run(ctx context.Context, domain string) (*ScanResult, error) {
 
 // persistResults saves all scan results to the database
 func (r *Runner) persistResults(domain string, result *ScanResult) error {
+	return r.DB.WithTransaction(func(tx *database.Transaction) error {
+		return persistResultsInTransaction(tx, domain, result)
+	})
+}
+
+func persistResultsInTransaction(tx *database.Transaction, domain string, result *ScanResult) error {
+	var errs []error
+
 	// Upsert domain and get its ID
-	d, err := r.DB.Domains.Add(domain)
-	if err != nil {
-		return fmt.Errorf("saving domain: %w", err)
-	}
+	d, err := tx.Domains.Add(domain)
+	collectPersistError(&errs, err, "saving domain %q", domain)
 
 	// Subdomains
-	for _, sub := range result.Subdomains {
-		_ = r.DB.Domains.AddSubdomain(d.ID, sub)
+	if d != nil {
+		for _, sub := range result.Subdomains {
+			err := tx.Domains.AddSubdomain(d.ID, sub)
+			collectPersistError(&errs, err, "saving subdomain %q", sub)
+		}
 	}
 
 	// Ports
 	for _, p := range result.Ports {
-		_ = r.DB.Ports.Add(&database.Port{
+		err := tx.Ports.Add(&database.Port{
 			Host:    p.Host,
 			Port:    p.Port,
 			State:   p.State,
 			Service: p.Service,
 			Banner:  p.Banner,
 		})
+		collectPersistError(&errs, err, "saving port %s:%d", p.Host, p.Port)
 	}
 
 	// Certificates
 	for _, c := range result.Certificates {
-		sanJSON, _ := json.Marshal(c.SAN)
-		_ = r.DB.Certificates.Add(&database.Certificate{
+		sanJSON, err := json.Marshal(c.SAN)
+		if err != nil {
+			collectPersistError(&errs, err, "encoding certificate SAN for %s:%d", c.Host, c.Port)
+			continue
+		}
+		err = tx.Certificates.Add(&database.Certificate{
 			Host:               c.Host,
 			Port:               c.Port,
 			Subject:            c.Subject,
@@ -430,25 +446,41 @@ func (r *Runner) persistResults(domain string, result *ScanResult) error {
 			SAN:                string(sanJSON),
 			SignatureAlgorithm: c.SignatureAlgorithm,
 		})
+		collectPersistError(&errs, err, "saving certificate %s:%d", c.Host, c.Port)
 	}
 
 	// Technologies
 	for _, t := range result.Technologies {
-		techJSON, _ := json.Marshal(t.Technologies)
-		headersJSON, _ := json.Marshal(t.Headers)
-		_ = r.DB.SaveTechnology(t.Host, t.StatusCode, t.Title, t.Server,
+		techJSON, err := json.Marshal(t.Technologies)
+		if err != nil {
+			collectPersistError(&errs, err, "encoding technologies for %q", t.Host)
+			continue
+		}
+		headersJSON, err := json.Marshal(t.Headers)
+		if err != nil {
+			collectPersistError(&errs, err, "encoding technology headers for %q", t.Host)
+			continue
+		}
+		err = tx.SaveTechnology(t.Host, t.StatusCode, t.Title, t.Server,
 			string(techJSON), string(headersJSON), t.ContentLength, t.RedirectURL)
+		collectPersistError(&errs, err, "saving technology %q", t.Host)
 	}
 
 	// DNS records — store the full result (SOA, CAA, DNSSEC included) and
 	// detect changes vs. the previously stored snapshot.
 	for _, rset := range result.DNSRecords {
 		// Load previous snapshot before overwriting
-		prev, _ := r.DB.GetLatestDNSRecord(rset.Host)
+		prev, err := tx.GetLatestDNSRecord(rset.Host)
+		collectPersistError(&errs, err, "loading latest DNS record %q", rset.Host)
 
 		// Serialize the full DNSRecordSet for rich change detection
-		fullJSON, _ := json.Marshal(rset)
-		_ = r.DB.SaveDNSRecords(rset.Host, string(fullJSON))
+		fullJSON, err := json.Marshal(rset)
+		if err != nil {
+			collectPersistError(&errs, err, "encoding DNS record set %q", rset.Host)
+			continue
+		}
+		err = tx.SaveDNSRecords(rset.Host, string(fullJSON))
+		collectPersistError(&errs, err, "saving DNS records %q", rset.Host)
 
 		// Detect changes if we have a previous scan
 		if prev != nil {
@@ -460,7 +492,8 @@ func (r *Runner) persistResults(domain string, result *ScanResult) error {
 				changes := dns.DetectChanges(currResult, prevResult)
 				for _, ch := range changes {
 					severity := changeSeverity(ch.RecordType)
-					_ = r.DB.SaveChangeEvent(rset.Host, ch.Type, severity, ch.Description, ch.OldValue, ch.NewValue)
+					err := tx.SaveChangeEvent(rset.Host, ch.Type, severity, ch.Description, ch.OldValue, ch.NewValue)
+					collectPersistError(&errs, err, "saving DNS change event %q", rset.Host)
 				}
 			}
 		}
@@ -469,7 +502,8 @@ func (r *Runner) persistResults(domain string, result *ScanResult) error {
 	// Takeovers (save all, not just vulnerable ones)
 	for _, t := range result.Takeovers {
 		if t.Vulnerable {
-			_ = r.DB.SaveTakeover(t.Host, "", t.Service, t.Confidence, t.Evidence)
+			err := tx.SaveTakeover(t.Host, "", t.Service, t.Confidence, t.Evidence)
+			collectPersistError(&errs, err, "saving takeover %q", t.Host)
 		}
 	}
 
@@ -479,30 +513,46 @@ func (r *Runner) persistResults(domain string, result *ScanResult) error {
 		if u.Interesting {
 			interesting = 1
 		}
-		_ = r.DB.SaveURL(u.Domain, u.URL, u.Category, u.Source, interesting)
+		err := tx.SaveURL(u.Domain, u.URL, u.Category, u.Source, interesting)
+		collectPersistError(&errs, err, "saving URL %q", u.URL)
 	}
 
 	// APIs
 	for _, a := range result.APIs {
-		endpointsJSON, _ := json.Marshal(a.Endpoints)
-		_ = r.DB.SaveAPI(a.URL, a.Type, a.Title, a.Version, a.EndpointsCount, string(endpointsJSON))
+		endpointsJSON, err := json.Marshal(a.Endpoints)
+		if err != nil {
+			collectPersistError(&errs, err, "encoding API endpoints for %q", a.URL)
+			continue
+		}
+		err = tx.SaveAPI(a.URL, a.Type, a.Title, a.Version, a.EndpointsCount, string(endpointsJSON))
+		collectPersistError(&errs, err, "saving API %q", a.URL)
 	}
 
 	// Emails
 	for _, e := range result.Emails {
-		_ = r.DB.SaveEmail(e.Domain, e.Address, e.Source)
+		err := tx.SaveEmail(e.Domain, e.Address, e.Source)
+		collectPersistError(&errs, err, "saving email %q", e.Address)
 	}
 
 	// Cloud storage
 	for _, b := range result.CloudStorage {
-		_ = r.DB.SaveCloudBucket(b.Provider, b.BucketName, b.URL, b.Domain, b.AccessLevel, b.Severity, b.Evidence)
+		err := tx.SaveCloudBucket(b.Provider, b.BucketName, b.URL, b.Domain, b.AccessLevel, b.Severity, b.Evidence)
+		collectPersistError(&errs, err, "saving cloud bucket %q", b.URL)
 	}
 
 	// Nuclei vulnerabilities
 	for _, v := range result.Vulnerabilities {
-		refs, _ := json.Marshal(v.Info.Reference)
-		evidence, _ := json.Marshal(v.ExtractedResults)
-		_ = r.DB.Findings.Add(&database.Finding{
+		refs, err := json.Marshal(v.Info.Reference)
+		if err != nil {
+			collectPersistError(&errs, err, "encoding finding references for %q", v.TemplateID)
+			continue
+		}
+		evidence, err := json.Marshal(v.ExtractedResults)
+		if err != nil {
+			collectPersistError(&errs, err, "encoding finding evidence for %q", v.TemplateID)
+			continue
+		}
+		err = tx.Findings.Add(&database.Finding{
 			TemplateID:  v.TemplateID,
 			Name:        v.Info.Name,
 			Severity:    v.Info.Severity,
@@ -516,12 +566,25 @@ func (r *Runner) persistResults(domain string, result *ScanResult) error {
 			Type:        v.Type,
 			Status:      "open",
 		})
+		collectPersistError(&errs, err, "saving finding %q for %q", v.TemplateID, v.Host)
 	}
 
 	// Update last_scanned timestamp
-	_ = r.DB.UpdateDomainLastScanned(domain)
+	err = tx.UpdateDomainLastScanned(domain)
+	collectPersistError(&errs, err, "updating last scanned for %q", domain)
+
+	if len(errs) > 0 {
+		return fmt.Errorf("persisting scan results: %w", errors.Join(errs...))
+	}
 
 	return nil
+}
+
+func collectPersistError(errs *[]error, err error, format string, args ...interface{}) {
+	if err == nil {
+		return
+	}
+	*errs = append(*errs, fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err))
 }
 
 func (r *Runner) isEnabled(module ModuleType) bool {
