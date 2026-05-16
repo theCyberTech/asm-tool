@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/takeover"
 	"github.com/spf13/cobra"
 )
@@ -143,6 +144,23 @@ func runTakeover(db *database.Database, subdomains []string, workers int, timeou
 			return "0"
 		}())
 	fmt.Printf("  %s %s\n", labelStyle.Render(padRight("Duration:", 16)), result.Duration.Round(time.Millisecond))
+
+	toSave := make([]persistence.TakeoverFinding, 0, len(result.Findings))
+	for _, finding := range result.Findings {
+		toSave = append(toSave, persistence.TakeoverFinding{
+			Subdomain:  finding.Subdomain,
+			CNAME:      finding.CNAME,
+			Service:    finding.Service,
+			Confidence: finding.Confidence,
+			Evidence:   finding.Evidence,
+			Vulnerable: finding.Vulnerable,
+		})
+	}
+	saved, err := persistence.SaveTakeovers(db, toSave)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s Saved %d takeover findings to database\n", lowStyle.Render("[+]"), saved)
 
 	return nil
 }

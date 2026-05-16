@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/urls"
 	"github.com/spf13/cobra"
 )
@@ -199,6 +200,15 @@ func runURLs(db *database.Database, domains []string, showAll, interesting, prob
 			valueStyle.Render(fmt.Sprintf("%d", len(result.URLs))),
 			summary,
 			labelStyle.Render(result.Duration.Round(time.Millisecond).String()))
+
+		saved, err := persistence.SaveURLs(db, result.URLs)
+		if err != nil {
+			return err
+		}
+		if err := persistence.MarkDomainScanned(db, domain); err != nil {
+			return err
+		}
+		fmt.Printf("%s Saved %d URLs to database\n", lowStyle.Render("[+]"), saved)
 	}
 
 	return nil

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/spf13/cobra"
 )
@@ -140,6 +141,15 @@ func runEmails(db *database.Database, domains []string) error {
 				len(roleEmails),
 				len(genericEmails))
 		}
+
+		saved, err := persistence.SaveEmails(db, result.Emails)
+		if err != nil {
+			return err
+		}
+		if err := persistence.MarkDomainScanned(db, domain); err != nil {
+			return err
+		}
+		fmt.Printf("%s Saved %d emails to database\n", lowStyle.Render("[+]"), saved)
 	}
 
 	return nil

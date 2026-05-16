@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/subdomains"
 	"github.com/spf13/cobra"
 )
@@ -106,22 +107,15 @@ func runDiscover(db *database.Database, domains []string, rateLimit int) error {
 
 		// Save to database
 		if len(result.Subdomains) > 0 {
-			// Ensure domain exists
-			domainRecord, err := db.Domains.Add(domain)
+			saved, err := persistence.SaveSubdomains(db, domain, result.Subdomains)
 			if err != nil {
-				return fmt.Errorf("adding domain: %w", err)
+				return err
 			}
-
-			// Add subdomains
-			saved := 0
-			for _, sub := range result.Subdomains {
-				if err := db.Domains.AddSubdomain(domainRecord.ID, sub); err == nil {
-					saved++
-				}
-			}
-
 			fmt.Printf("%s Saved %d subdomains to database\n",
 				lowStyle.Render("[+]"), saved)
+		}
+		if err := persistence.MarkDomainScanned(db, domain); err != nil {
+			return err
 		}
 
 		// Print sample of subdomains
