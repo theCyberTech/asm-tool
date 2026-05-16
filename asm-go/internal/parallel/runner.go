@@ -122,11 +122,22 @@ type Runner struct {
 	APIWorkers         int
 	TakeoverWorkers    int
 	CloudWorkers       int
+	SubdomainTimeout   time.Duration
+	PortTimeout        time.Duration
 	HTTPTimeout        time.Duration
+	DNSTimeout         time.Duration
+	URLTimeout         time.Duration
+	EmailTimeout       time.Duration
+	NucleiTimeout      time.Duration
 	NucleiSeverities   []string
 	NucleiRateLimit    int
+	NucleiBulkSize     int
+	NucleiConcurrency  int
+	NucleiRetries      int
+	NucleiExcludeTags  []string
 	RateLimit          int // max requests/sec for passive HTTP sources (0 = unlimited)
 	InsecureSkipVerify bool
+	HunterAPIKey       string
 	OnProgress         ProgressCallback
 }
 
@@ -147,13 +158,22 @@ func DefaultRunner(db *database.Database) *Runner {
 			ModuleCloudStorage: true,
 			ModuleNuclei:       false, // Disabled by default (requires nuclei installed)
 		},
-		PortWorkers:      100,
-		APIWorkers:       30,
-		TakeoverWorkers:  50,
-		CloudWorkers:     20,
-		HTTPTimeout:      10 * time.Second,
-		NucleiSeverities: []string{"critical", "high"},
-		NucleiRateLimit:  150,
+		PortWorkers:       100,
+		APIWorkers:        30,
+		TakeoverWorkers:   50,
+		CloudWorkers:      20,
+		SubdomainTimeout:  60 * time.Second,
+		PortTimeout:       2 * time.Second,
+		HTTPTimeout:       10 * time.Second,
+		DNSTimeout:        5 * time.Second,
+		URLTimeout:        2 * time.Minute,
+		EmailTimeout:      60 * time.Second,
+		NucleiTimeout:     30 * time.Minute,
+		NucleiSeverities:  []string{"critical", "high"},
+		NucleiRateLimit:   150,
+		NucleiBulkSize:    25,
+		NucleiConcurrency: 25,
+		NucleiRetries:     1,
 	}
 }
 
@@ -509,6 +529,9 @@ func (r *Runner) reportProgress(module ModuleType, duration time.Duration, err e
 
 func (r *Runner) runSubdomains(ctx context.Context, domain string) ([]string, error) {
 	enum := subdomains.NewEnumeratorWithRateLimit(r.RateLimit)
+	if r.SubdomainTimeout > 0 {
+		enum.Timeout = r.SubdomainTimeout
+	}
 	result := enum.Enumerate(ctx, domain)
 	if len(result.Errors) > 0 {
 		return result.Subdomains, fmt.Errorf("subdomain errors: %v", result.Errors)
@@ -519,6 +542,9 @@ func (r *Runner) runSubdomains(ctx context.Context, domain string) ([]string, er
 func (r *Runner) runPorts(ctx context.Context, hosts []string) ([]PortResult, error) {
 	scanner := ports.DefaultScanner()
 	scanner.Workers = r.PortWorkers
+	if r.PortTimeout > 0 {
+		scanner.Timeout = r.PortTimeout
+	}
 
 	// Use configured ports or common defaults
 	portsToScan := r.Ports
@@ -548,12 +574,18 @@ func (r *Runner) runPorts(ctx context.Context, hosts []string) ([]PortResult, er
 func (r *Runner) runCertificates(ctx context.Context, hosts []string) ([]*Certificate, error) {
 	monitor := certificates.DefaultMonitor()
 	monitor.InsecureSkipVerify = r.InsecureSkipVerify
+	if r.HTTPTimeout > 0 {
+		monitor.Timeout = r.HTTPTimeout
+	}
 	batch := monitor.CheckBatch(ctx, hosts, 443)
 	return batch.Certificates, nil
 }
 
 func (r *Runner) runDNS(ctx context.Context, hosts []string) ([]DNSRecordSet, error) {
 	monitor := dns.DefaultMonitor()
+	if r.DNSTimeout > 0 {
+		monitor.Timeout = r.DNSTimeout
+	}
 	var results []DNSRecordSet
 	for _, host := range hosts {
 		if ctx.Err() != nil {
@@ -576,8 +608,12 @@ func (r *Runner) runDNS(ctx context.Context, hosts []string) ([]DNSRecordSet, er
 }
 
 func (r *Runner) runTakeover(ctx context.Context, hosts []string) ([]TakeoverResult, error) {
-	detector := takeover.DefaultDetector()
+	detector := takeover.NewDetector(r.InsecureSkipVerify)
 	detector.Workers = r.TakeoverWorkers
+	if r.HTTPTimeout > 0 {
+		detector.Timeout = r.HTTPTimeout
+		detector.HTTPClient.Timeout = r.HTTPTimeout
+	}
 	batch := detector.CheckBatch(ctx, hosts)
 
 	var results []TakeoverResult
@@ -595,13 +631,19 @@ func (r *Runner) runTakeover(ctx context.Context, hosts []string) ([]TakeoverRes
 
 func (r *Runner) runTechnologies(ctx context.Context, hosts []string) ([]*TechResult, error) {
 	fp := technologies.NewFingerprinter(r.InsecureSkipVerify)
-	fp.Timeout = r.HTTPTimeout
+	if r.HTTPTimeout > 0 {
+		fp.Timeout = r.HTTPTimeout
+		fp.HTTPClient.Timeout = r.HTTPTimeout
+	}
 	results := fp.FingerprintBatch(ctx, hosts)
 	return results, nil
 }
 
 func (r *Runner) runURLs(ctx context.Context, domain string) ([]urls.URL, error) {
 	enum := urls.NewEnumeratorWithRateLimit(r.RateLimit)
+	if r.URLTimeout > 0 {
+		enum.Timeout = r.URLTimeout
+	}
 	result := enum.Enumerate(ctx, domain)
 	return result.URLs, nil
 }
@@ -609,7 +651,10 @@ func (r *Runner) runURLs(ctx context.Context, domain string) ([]urls.URL, error)
 func (r *Runner) runAPIs(ctx context.Context, hosts []string) ([]apis.API, error) {
 	discovery := apis.NewDiscovery(r.InsecureSkipVerify)
 	discovery.Workers = r.APIWorkers
-	discovery.Timeout = r.HTTPTimeout
+	if r.HTTPTimeout > 0 {
+		discovery.Timeout = r.HTTPTimeout
+		discovery.HTTPClient.Timeout = r.HTTPTimeout
+	}
 
 	var results []apis.API
 	batch := discovery.DiscoverBatch(ctx, hosts)
@@ -620,7 +665,13 @@ func (r *Runner) runAPIs(ctx context.Context, hosts []string) ([]apis.API, error
 }
 
 func (r *Runner) runEmails(ctx context.Context, domain string) ([]emails.Email, error) {
-	enum := emails.DefaultEnumerator()
+	enum := emails.DefaultEnumeratorWithHunterAPIKey(r.HunterAPIKey)
+	if r.EmailTimeout > 0 {
+		enum.Timeout = r.EmailTimeout
+	}
+	if r.HTTPTimeout > 0 {
+		enum.HTTPClient.Timeout = r.HTTPTimeout
+	}
 	result := enum.Enumerate(ctx, domain)
 	return result.Emails, nil
 }
@@ -636,6 +687,11 @@ func (r *Runner) runNuclei(ctx context.Context, hosts []string) ([]*nuclei.Findi
 	scanner := nuclei.DefaultScanner()
 	scanner.Severities = r.NucleiSeverities
 	scanner.RateLimit = r.NucleiRateLimit
+	scanner.Timeout = r.NucleiTimeout
+	scanner.BulkSize = r.NucleiBulkSize
+	scanner.Concurrency = r.NucleiConcurrency
+	scanner.Retries = r.NucleiRetries
+	scanner.ExcludeTags = r.NucleiExcludeTags
 
 	// Check if nuclei is installed
 	if !scanner.IsInstalled() {

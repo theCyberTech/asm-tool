@@ -32,16 +32,15 @@ scanning:
   # Rate limit for scans (requests per second)
   rate_limit: 100
 
+# Nuclei configuration
+nuclei:
+  concurrency: 25
+  batch_size: 25
+  exclude_tags: "dos,fuzz,brute"
+  retries: 1
+
 # External API integrations (optional)
-shodan:
-  enabled: false
-  api_key: ""
-
-censys:
-  api_id: ""
-  api_secret: ""
-
-virustotal:
+hunter:
   api_key: ""
 
 # Scheduling (cron expressions)

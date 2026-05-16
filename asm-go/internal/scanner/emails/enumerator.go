@@ -67,6 +67,23 @@ func DefaultEnumerator() *Enumerator {
 	}
 }
 
+// DefaultEnumeratorWithHunterAPIKey returns the default enumerator with Hunter configured.
+func DefaultEnumeratorWithHunterAPIKey(apiKey string) *Enumerator {
+	e := DefaultEnumerator()
+	e.SetHunterAPIKey(apiKey)
+	return e
+}
+
+// SetHunterAPIKey wires a configured Hunter.io API key into the Hunter source.
+func (e *Enumerator) SetHunterAPIKey(apiKey string) {
+	apiKey = strings.TrimSpace(apiKey)
+	for _, src := range e.Sources {
+		if hunter, ok := src.(*HunterSource); ok {
+			hunter.APIKey = apiKey
+		}
+	}
+}
+
 // Enumerate discovers emails from all sources
 func (e *Enumerator) Enumerate(ctx context.Context, domain string) *Result {
 	start := time.Now()

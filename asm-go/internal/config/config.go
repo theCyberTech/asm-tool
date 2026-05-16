@@ -24,10 +24,7 @@ type Config struct {
 	Timeouts TimeoutConfig `mapstructure:"timeouts"`
 
 	// External APIs
-	Shodan     ShodanConfig     `mapstructure:"shodan"`
-	Censys     CensysConfig     `mapstructure:"censys"`
-	VirusTotal VirusTotalConfig `mapstructure:"virustotal"`
-	Hunter     HunterConfig     `mapstructure:"hunter"`
+	Hunter HunterConfig `mapstructure:"hunter"`
 
 	// Screenshot settings
 	Screenshots ScreenshotConfig `mapstructure:"screenshots"`
@@ -84,20 +81,6 @@ type TimeoutConfig struct {
 	DNS       time.Duration `mapstructure:"dns"`
 }
 
-type ShodanConfig struct {
-	Enabled bool   `mapstructure:"enabled"`
-	APIKey  string `mapstructure:"api_key"`
-}
-
-type CensysConfig struct {
-	APIID     string `mapstructure:"api_id"`
-	APISecret string `mapstructure:"api_secret"`
-}
-
-type VirusTotalConfig struct {
-	APIKey string `mapstructure:"api_key"`
-}
-
 type HunterConfig struct {
 	APIKey string `mapstructure:"api_key"`
 }
@@ -141,7 +124,7 @@ func Default() *Config {
 		},
 		Timeouts: TimeoutConfig{
 			Subfinder: 5 * time.Minute,
-			Nmap:      2 * time.Minute,
+			Nmap:      2 * time.Second,
 			Nuclei:    30 * time.Minute,
 			Gau:       10 * time.Minute,
 			HTTP:      10 * time.Second,
