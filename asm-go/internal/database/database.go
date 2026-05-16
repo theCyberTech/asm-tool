@@ -3,9 +3,9 @@ package database
 import (
 	"crypto/rand"
 	"database/sql"
+	_ "embed"
 	"encoding/hex"
 	"errors"
-	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +30,23 @@ type Database struct {
 	db *sqlx.DB
 
 	// Repositories
+	Domains      *DomainRepository
+	Ports        *PortRepository
+	Certificates *CertificateRepository
+	Findings     *FindingRepository
+}
+
+type queryExecutor interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	Get(dest interface{}, query string, args ...interface{}) error
+	Select(dest interface{}, query string, args ...interface{}) error
+}
+
+// Transaction exposes the database repositories and helper methods inside a
+// single SQL transaction.
+type Transaction struct {
+	db queryExecutor
+
 	Domains      *DomainRepository
 	Ports        *PortRepository
 	Certificates *CertificateRepository
@@ -79,6 +96,49 @@ func New(dbPath string) (*Database, error) {
 // Close closes the database connection
 func (d *Database) Close() error {
 	return d.db.Close()
+}
+
+// WithTransaction runs fn in a transaction and rolls back if fn returns an
+// error. The callback receives transaction-bound repositories and helpers.
+func (d *Database) WithTransaction(fn func(*Transaction) error) (err error) {
+	tx, err := d.db.Beginx()
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+
+	completed := false
+	defer func() {
+		if completed {
+			return
+		}
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			rollbackErr = fmt.Errorf("rolling back transaction: %w", rollbackErr)
+			if err != nil {
+				err = errors.Join(err, rollbackErr)
+			} else {
+				err = rollbackErr
+			}
+		}
+	}()
+
+	if err = fn(newTransaction(tx)); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+	completed = true
+	return nil
+}
+
+func newTransaction(tx *sqlx.Tx) *Transaction {
+	return &Transaction{
+		db:           tx,
+		Domains:      &DomainRepository{db: tx},
+		Ports:        &PortRepository{db: tx},
+		Certificates: &CertificateRepository{db: tx},
+		Findings:     &FindingRepository{db: tx},
+	}
 }
 
 // migrate runs database migrations
@@ -302,7 +362,7 @@ type Finding struct {
 
 // DomainRepository handles domain persistence
 type DomainRepository struct {
-	db *sqlx.DB
+	db queryExecutor
 }
 
 // Add adds a new domain
@@ -378,7 +438,7 @@ func (r *DomainRepository) GetSubdomainsByDomainName(domain string) ([]string, e
 
 // PortRepository handles port persistence
 type PortRepository struct {
-	db *sqlx.DB
+	db queryExecutor
 }
 
 // Add adds or updates a port
@@ -408,7 +468,7 @@ func (r *PortRepository) GetByHost(host string) ([]Port, error) {
 
 // CertificateRepository handles certificate persistence
 type CertificateRepository struct {
-	db *sqlx.DB
+	db queryExecutor
 }
 
 // Add adds or updates a certificate
@@ -456,7 +516,7 @@ func (r *CertificateRepository) GetExpiring(days int) ([]Certificate, error) {
 
 // FindingRepository handles finding persistence
 type FindingRepository struct {
-	db *sqlx.DB
+	db queryExecutor
 }
 
 // Add adds a new finding or updates an existing one for the same template+host
@@ -517,8 +577,17 @@ func (d *Database) Exec(query string, args ...interface{}) (sql.Result, error) {
 // GetLatestDNSRecord returns the most recently stored DNS result for a domain.
 // Returns nil, nil if no record exists yet.
 func (d *Database) GetLatestDNSRecord(domain string) (*DNSRecord, error) {
+	return getLatestDNSRecord(d.db, domain)
+}
+
+// GetLatestDNSRecord returns the most recently stored DNS result in this transaction.
+func (tx *Transaction) GetLatestDNSRecord(domain string) (*DNSRecord, error) {
+	return getLatestDNSRecord(tx.db, domain)
+}
+
+func getLatestDNSRecord(db queryExecutor, domain string) (*DNSRecord, error) {
 	var rec DNSRecord
-	err := d.db.Get(&rec, `SELECT * FROM dns_records WHERE domain = ?`, domain)
+	err := db.Get(&rec, `SELECT * FROM dns_records WHERE domain = ?`, domain)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -533,11 +602,20 @@ func (d *Database) GetLatestDNSRecord(domain string) (*DNSRecord, error) {
 
 // SaveChangeEvent records a detected change in the change_events table.
 func (d *Database) SaveChangeEvent(domain, changeType, severity, description, oldValue, newValue string) error {
+	return saveChangeEvent(d.db, domain, changeType, severity, description, oldValue, newValue)
+}
+
+// SaveChangeEvent records a detected change in this transaction.
+func (tx *Transaction) SaveChangeEvent(domain, changeType, severity, description, oldValue, newValue string) error {
+	return saveChangeEvent(tx.db, domain, changeType, severity, description, oldValue, newValue)
+}
+
+func saveChangeEvent(db queryExecutor, domain, changeType, severity, description, oldValue, newValue string) error {
 	// Build a collision-resistant event ID: domain-type-random(8 bytes)-nanos
 	var rnd [8]byte
 	_, _ = rand.Read(rnd[:])
 	eventID := fmt.Sprintf("%s-%s-%s-%d", domain, changeType, hex.EncodeToString(rnd[:]), time.Now().UnixNano())
-	_, err := d.db.Exec(`
+	_, err := db.Exec(`
 		INSERT INTO change_events (event_id, domain, change_type, severity, description, old_value, new_value)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, eventID, domain, changeType, severity, description, oldValue, newValue)
@@ -895,7 +973,16 @@ type DomainDetailStats struct {
 
 // UpdateDomainLastScanned updates the last_scanned timestamp for a domain
 func (d *Database) UpdateDomainLastScanned(domain string) error {
-	_, err := d.db.Exec(`
+	return updateDomainLastScanned(d.db, domain)
+}
+
+// UpdateDomainLastScanned updates last_scanned in this transaction.
+func (tx *Transaction) UpdateDomainLastScanned(domain string) error {
+	return updateDomainLastScanned(tx.db, domain)
+}
+
+func updateDomainLastScanned(db queryExecutor, domain string) error {
+	_, err := db.Exec(`
 		UPDATE domains SET last_scanned = CURRENT_TIMESTAMP WHERE domain = ?
 	`, domain)
 	return err
@@ -903,7 +990,16 @@ func (d *Database) UpdateDomainLastScanned(domain string) error {
 
 // SaveTechnology upserts a technology fingerprint result for a host
 func (d *Database) SaveTechnology(host string, statusCode int, title, server, techJSON, headersJSON string, contentLength int64, redirectURL string) error {
-	_, err := d.db.Exec(`
+	return saveTechnology(d.db, host, statusCode, title, server, techJSON, headersJSON, contentLength, redirectURL)
+}
+
+// SaveTechnology upserts a technology fingerprint result in this transaction.
+func (tx *Transaction) SaveTechnology(host string, statusCode int, title, server, techJSON, headersJSON string, contentLength int64, redirectURL string) error {
+	return saveTechnology(tx.db, host, statusCode, title, server, techJSON, headersJSON, contentLength, redirectURL)
+}
+
+func saveTechnology(db queryExecutor, host string, statusCode int, title, server, techJSON, headersJSON string, contentLength int64, redirectURL string) error {
+	_, err := db.Exec(`
 		INSERT INTO technologies (host, status_code, title, server, technologies, headers, content_length, redirect_url)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(host) DO UPDATE SET
@@ -921,7 +1017,16 @@ func (d *Database) SaveTechnology(host string, statusCode int, title, server, te
 
 // SaveDNSRecords upserts DNS records for a domain
 func (d *Database) SaveDNSRecords(domain, recordsJSON string) error {
-	_, err := d.db.Exec(`
+	return saveDNSRecords(d.db, domain, recordsJSON)
+}
+
+// SaveDNSRecords upserts DNS records in this transaction.
+func (tx *Transaction) SaveDNSRecords(domain, recordsJSON string) error {
+	return saveDNSRecords(tx.db, domain, recordsJSON)
+}
+
+func saveDNSRecords(db queryExecutor, domain, recordsJSON string) error {
+	_, err := db.Exec(`
 		INSERT INTO dns_records (domain, records)
 		VALUES (?, ?)
 		ON CONFLICT(domain) DO UPDATE SET
@@ -933,7 +1038,16 @@ func (d *Database) SaveDNSRecords(domain, recordsJSON string) error {
 
 // SaveTakeover upserts a subdomain takeover finding
 func (d *Database) SaveTakeover(subdomain, cname, service, confidence, evidence string) error {
-	_, err := d.db.Exec(`
+	return saveTakeover(d.db, subdomain, cname, service, confidence, evidence)
+}
+
+// SaveTakeover upserts a subdomain takeover finding in this transaction.
+func (tx *Transaction) SaveTakeover(subdomain, cname, service, confidence, evidence string) error {
+	return saveTakeover(tx.db, subdomain, cname, service, confidence, evidence)
+}
+
+func saveTakeover(db queryExecutor, subdomain, cname, service, confidence, evidence string) error {
+	_, err := db.Exec(`
 		INSERT INTO takeovers (subdomain, cname, service, confidence, evidence)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(subdomain, service) DO UPDATE SET
@@ -946,7 +1060,16 @@ func (d *Database) SaveTakeover(subdomain, cname, service, confidence, evidence 
 
 // SaveURL upserts a discovered URL
 func (d *Database) SaveURL(domain, url, category, source string, interesting int) error {
-	_, err := d.db.Exec(`
+	return saveURL(d.db, domain, url, category, source, interesting)
+}
+
+// SaveURL upserts a discovered URL in this transaction.
+func (tx *Transaction) SaveURL(domain, url, category, source string, interesting int) error {
+	return saveURL(tx.db, domain, url, category, source, interesting)
+}
+
+func saveURL(db queryExecutor, domain, url, category, source string, interesting int) error {
+	_, err := db.Exec(`
 		INSERT INTO urls (domain, url, category, interesting, source)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(url) DO UPDATE SET
@@ -959,7 +1082,16 @@ func (d *Database) SaveURL(domain, url, category, source string, interesting int
 
 // SaveAPI upserts a discovered API endpoint
 func (d *Database) SaveAPI(url, apiType, title, version string, endpointsCount int, endpointsJSON string) error {
-	_, err := d.db.Exec(`
+	return saveAPI(d.db, url, apiType, title, version, endpointsCount, endpointsJSON)
+}
+
+// SaveAPI upserts a discovered API endpoint in this transaction.
+func (tx *Transaction) SaveAPI(url, apiType, title, version string, endpointsCount int, endpointsJSON string) error {
+	return saveAPI(tx.db, url, apiType, title, version, endpointsCount, endpointsJSON)
+}
+
+func saveAPI(db queryExecutor, url, apiType, title, version string, endpointsCount int, endpointsJSON string) error {
+	_, err := db.Exec(`
 		INSERT INTO apis (url, api_type, title, version, endpoints_count, endpoints)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(url) DO UPDATE SET
@@ -974,7 +1106,16 @@ func (d *Database) SaveAPI(url, apiType, title, version string, endpointsCount i
 
 // SaveEmail upserts a discovered email address
 func (d *Database) SaveEmail(domain, email, source string) error {
-	_, err := d.db.Exec(`
+	return saveEmail(d.db, domain, email, source)
+}
+
+// SaveEmail upserts a discovered email address in this transaction.
+func (tx *Transaction) SaveEmail(domain, email, source string) error {
+	return saveEmail(tx.db, domain, email, source)
+}
+
+func saveEmail(db queryExecutor, domain, email, source string) error {
+	_, err := db.Exec(`
 		INSERT INTO emails (domain, email, source)
 		VALUES (?, ?, ?)
 		ON CONFLICT(email) DO NOTHING
@@ -984,7 +1125,16 @@ func (d *Database) SaveEmail(domain, email, source string) error {
 
 // SaveCloudBucket upserts a cloud storage bucket
 func (d *Database) SaveCloudBucket(provider, bucketName, url, domain, accessLevel, severity, evidence string) error {
-	_, err := d.db.Exec(`
+	return saveCloudBucket(d.db, provider, bucketName, url, domain, accessLevel, severity, evidence)
+}
+
+// SaveCloudBucket upserts a cloud storage bucket in this transaction.
+func (tx *Transaction) SaveCloudBucket(provider, bucketName, url, domain, accessLevel, severity, evidence string) error {
+	return saveCloudBucket(tx.db, provider, bucketName, url, domain, accessLevel, severity, evidence)
+}
+
+func saveCloudBucket(db queryExecutor, provider, bucketName, url, domain, accessLevel, severity, evidence string) error {
+	_, err := db.Exec(`
 		INSERT INTO cloud_storage (provider, bucket_name, url, domain, access_level, severity, evidence)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(url) DO UPDATE SET
