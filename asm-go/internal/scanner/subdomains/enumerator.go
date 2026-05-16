@@ -64,6 +64,7 @@ func NewEnumeratorWithRateLimit(rps int) *Enumerator {
 			&CrtShSource{client: client},
 			&HackerTargetSource{client: client},
 			&URLScanSource{client: client},
+			&AlienVaultSource{client: client},
 		},
 		HTTPClient: client,
 		Timeout:    60 * time.Second,

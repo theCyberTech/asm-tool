@@ -37,10 +37,11 @@ type Technology struct {
 
 // Fingerprinter detects technologies on web servers
 type Fingerprinter struct {
-	HTTPClient *http.Client
-	Timeout    time.Duration
-	Workers    int
-	Signatures []Signature
+	HTTPClient         *http.Client
+	Timeout            time.Duration
+	Workers            int
+	Signatures         []Signature
+	InsecureSkipVerify bool
 }
 
 // Signature represents a technology detection signature
@@ -55,13 +56,18 @@ type Signature struct {
 	Implies    []string
 }
 
-// DefaultFingerprinter returns a fingerprinter with built-in signatures
+// DefaultFingerprinter returns a fingerprinter with built-in signatures and TLS verification enabled.
 func DefaultFingerprinter() *Fingerprinter {
+	return NewFingerprinter(false)
+}
+
+// NewFingerprinter returns a fingerprinter with configurable TLS verification.
+func NewFingerprinter(insecureSkipVerify bool) *Fingerprinter {
 	return &Fingerprinter{
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
+				TLSClientConfig:     &tls.Config{InsecureSkipVerify: insecureSkipVerify},
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
 			},
@@ -72,9 +78,10 @@ func DefaultFingerprinter() *Fingerprinter {
 				return nil
 			},
 		},
-		Timeout:    10 * time.Second,
-		Workers:    30,
-		Signatures: DefaultSignatures(),
+		Timeout:            10 * time.Second,
+		Workers:            30,
+		Signatures:         DefaultSignatures(),
+		InsecureSkipVerify: insecureSkipVerify,
 	}
 }
 

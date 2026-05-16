@@ -135,6 +135,7 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	// Create runner
 	runner := parallel.DefaultRunner(db)
 	runner.PortWorkers = opts.portWorkers
+	runner.Ports = cfg.ParsePorts()
 	runner.APIWorkers = opts.apiWorkers
 	runner.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
 	runner.RateLimit = cfg.Scanning.RateLimit
