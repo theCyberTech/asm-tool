@@ -11,6 +11,7 @@ import (
 
 	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 	"github.com/spf13/cobra"
 )
@@ -124,50 +125,30 @@ func runPortscan(db *database.Database, hosts []string, scanPorts []int, workers
 
 	start := time.Now()
 	totalOpen := 0
+	var scanResults []*ports.Result
 
 	// For single host, scan directly
 	if len(hosts) == 1 {
 		result := scanner.Scan(ctx, hosts[0], scanPorts)
+		scanResults = []*ports.Result{result}
 		printPortResult(result)
 		totalOpen = len(result.OpenPorts)
-
-		// Save to database
-		for _, p := range result.OpenPorts {
-			dbPort := &database.Port{
-				Host:     result.Host,
-				Port:     p.Port,
-				Protocol: p.Protocol,
-				Service:  p.Service,
-				Version:  p.Version,
-				State:    p.State,
-				Banner:   p.Banner,
-			}
-			_ = db.Ports.Add(dbPort)
-		}
 	} else {
 		// Batch scan
 		results := scanner.ScanBatch(ctx, hosts, scanPorts)
+		scanResults = results
 
 		for _, result := range results {
 			if len(result.OpenPorts) > 0 {
 				printPortResult(result)
 				totalOpen += len(result.OpenPorts)
-
-				// Save to database
-				for _, p := range result.OpenPorts {
-					dbPort := &database.Port{
-						Host:     result.Host,
-						Port:     p.Port,
-						Protocol: p.Protocol,
-						Service:  p.Service,
-						Version:  p.Version,
-						State:    p.State,
-						Banner:   p.Banner,
-					}
-					_ = db.Ports.Add(dbPort)
-				}
 			}
 		}
+	}
+
+	saved, err := persistence.SavePortScanResults(db, scanResults)
+	if err != nil {
+		return err
 	}
 
 	duration := time.Since(start)
@@ -181,6 +162,7 @@ func runPortscan(db *database.Database, hosts []string, scanPorts []int, workers
 		labelStyle.Render("   "),
 		duration.Round(time.Millisecond),
 		portsPerSec)
+	fmt.Printf("%s Saved %d open ports to database\n", lowStyle.Render("[+]"), saved)
 
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/spf13/cobra"
 )
@@ -190,7 +191,7 @@ func runNuclei(db *database.Database, targets []string, opts nucleiOptions) erro
 		findingCount++
 		printFinding(f, findingCount)
 		if db != nil {
-			if err := persistFinding(db, f); err != nil {
+			if _, err := persistence.SaveNucleiFindings(db, []*nuclei.Finding{f}); err != nil {
 				fmt.Printf("    %s %v\n", highStyle.Render("DB save failed:"), err)
 			}
 		}
@@ -315,31 +316,4 @@ func printNucleiSummary(result *nuclei.Result) {
 			fmt.Printf("    - %s\n", e)
 		}
 	}
-}
-
-// persistFinding converts a nuclei.Finding to a database.Finding and stores it.
-// The DB schema enforces severity ∈ {critical,high,medium,low,info}; anything
-// else (e.g. nuclei's "unknown") is coerced to "info".
-func persistFinding(db *database.Database, f *nuclei.Finding) error {
-	severity := strings.ToLower(strings.TrimSpace(f.Info.Severity))
-	switch severity {
-	case "critical", "high", "medium", "low", "info":
-	default:
-		severity = "info"
-	}
-
-	return db.Findings.Add(&database.Finding{
-		TemplateID:  f.TemplateID,
-		Name:        f.Info.Name,
-		Severity:    severity,
-		Description: f.Info.Description,
-		Host:        f.Host,
-		MatchedAt:   f.Matched,
-		MatcherName: f.MatcherName,
-		Evidence:    strings.Join(f.ExtractedResults, ", "),
-		Refs:        strings.Join(f.Info.Reference, "\n"),
-		Tags:        f.Info.Tags,
-		Type:        f.Type,
-		Status:      "open",
-	})
 }

@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/dns"
 	"github.com/spf13/cobra"
 )
@@ -66,20 +66,6 @@ Results are saved to the database and changes are logged automatically.`,
 	return cmd
 }
 
-// dnsSeverity maps a DNS record type to a change event severity.
-func dnsSeverity(recordType string) string {
-	switch recordType {
-	case "NS", "DNSSEC":
-		return "critical"
-	case "A", "AAAA", "MX", "SOA":
-		return "high"
-	case "CAA", "CNAME":
-		return "medium"
-	default:
-		return "low"
-	}
-}
-
 func runDNS(db *database.Database, domains []string, timeout time.Duration) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -107,18 +93,11 @@ func runDNS(db *database.Database, domains []string, timeout time.Duration) erro
 
 		// Persist and detect changes before printing
 		if db != nil {
-			prev, _ := db.GetLatestDNSRecord(domain)
-			if resultJSON, err := json.Marshal(result); err == nil {
-				_ = db.SaveDNSRecords(domain, string(resultJSON))
+			if err := persistence.SaveDNSResult(db, result); err != nil {
+				return err
 			}
-			if prev != nil {
-				var prevResult dns.Result
-				if err := json.Unmarshal([]byte(prev.Records), &prevResult); err == nil {
-					for _, ch := range dns.DetectChanges(result, &prevResult) {
-						sev := dnsSeverity(ch.RecordType)
-						_ = db.SaveChangeEvent(domain, ch.Type, sev, ch.Description, ch.OldValue, ch.NewValue)
-					}
-				}
+			if err := persistence.MarkDomainScanned(db, domain); err != nil {
+				return err
 			}
 		}
 

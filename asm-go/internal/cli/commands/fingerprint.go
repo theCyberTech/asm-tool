@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/technologies"
 	"github.com/spf13/cobra"
 )
@@ -202,6 +203,12 @@ func runFingerprint(db *database.Database, hosts []string, workers int, timeout 
 	}
 
 	fmt.Printf("\n  %s %s\n", labelStyle.Render(padRight("Duration:", 16)), time.Since(start).Round(time.Millisecond))
+
+	saved, err := persistence.SaveTechnologies(db, results)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s Saved %d technology fingerprints to database\n", lowStyle.Render("[+]"), saved)
 
 	return nil
 }

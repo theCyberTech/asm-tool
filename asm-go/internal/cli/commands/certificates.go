@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/spf13/cobra"
 )
@@ -17,12 +18,12 @@ import (
 // CertificatesCmd creates the certificates command
 func CertificatesCmd(deps *Deps) *cobra.Command {
 	var (
-		allKnown  bool
-		port      int
-		workers   int
-		timeout   int
-		warnDays  int
-		insecure  bool
+		allKnown bool
+		port     int
+		workers  int
+		timeout  int
+		warnDays int
+		insecure bool
 	)
 
 	cmd := &cobra.Command{
@@ -169,27 +170,9 @@ func runCertificates(db *database.Database, hosts []string, port, workers int, t
 	}
 	fmt.Printf("  %s %s\n", labelStyle.Render(padRight("Duration:", 16)), result.Duration.Round(time.Millisecond))
 
-	// Save to database
-	saved := 0
-	for _, cert := range result.Certificates {
-		if cert.Error == "" {
-			dbCert := &database.Certificate{
-				Host:               cert.Host,
-				Port:               cert.Port,
-				Subject:            cert.Subject,
-				Issuer:             cert.Issuer,
-				SerialNumber:       cert.SerialNumber,
-				NotBefore:          cert.NotBefore,
-				NotAfter:           cert.NotAfter,
-				DaysUntilExpiry:    cert.DaysUntilExpiry,
-				Fingerprint:        cert.Fingerprint,
-				SAN:                cert.SANString(),
-				SignatureAlgorithm: cert.SignatureAlgorithm,
-			}
-			if err := db.Certificates.Add(dbCert); err == nil {
-				saved++
-			}
-		}
+	saved, err := persistence.SaveCertificates(db, result.Certificates)
+	if err != nil {
+		return err
 	}
 	fmt.Printf("\n%s Saved %d certificates to database\n", lowStyle.Render("[+]"), saved)
 

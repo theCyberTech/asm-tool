@@ -17,6 +17,26 @@ func TestPersistResultsCommitsSuccessfulScan(t *testing.T) {
 		Ports: []PortResult{
 			{Host: "www.example.com", Port: 443, State: "open", Service: "https"},
 		},
+		URLs: []URLResult{
+			{Domain: "example.com", URL: "https://www.example.com/api/users", Category: "api", Source: "wayback", Interesting: true},
+		},
+		APIs: []APIResult{
+			{URL: "https://www.example.com/openapi.json", Type: "openapi", Title: "Example API", Version: "3.0.0", EndpointsCount: 1, Endpoints: []string{"/users"}},
+		},
+		Emails: []EmailResult{
+			{Domain: "example.com", Address: "security@example.com", Source: "crtsh", Type: "role"},
+		},
+		CloudStorage: []CloudBucket{
+			{
+				URL:         "https://example-assets.s3.amazonaws.com",
+				Provider:    "s3",
+				BucketName:  "example-assets",
+				Domain:      "example.com",
+				AccessLevel: "public_read",
+				Severity:    "high",
+				Evidence:    "public read",
+			},
+		},
 	}
 
 	if err := r.persistResults("example.com", result); err != nil {
@@ -35,6 +55,18 @@ func TestPersistResultsCommitsSuccessfulScan(t *testing.T) {
 	}
 	if stats.Ports != 1 {
 		t.Fatalf("ports count = %d, want 1", stats.Ports)
+	}
+	if stats.URLs != 1 {
+		t.Fatalf("urls count = %d, want 1", stats.URLs)
+	}
+	if stats.APIs != 1 {
+		t.Fatalf("apis count = %d, want 1", stats.APIs)
+	}
+	if stats.Emails != 1 {
+		t.Fatalf("emails count = %d, want 1", stats.Emails)
+	}
+	if stats.CloudBuckets != 1 {
+		t.Fatalf("cloud bucket count = %d, want 1", stats.CloudBuckets)
 	}
 
 	domain, err := db.Domains.GetByName("example.com")

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/apis"
 	"github.com/spf13/cobra"
 )
@@ -63,7 +64,13 @@ reveal internal endpoints and data structures.`,
 			}
 
 			insecure := deps.Cfg != nil && deps.Cfg.Scanning.InsecureSkipVerify
-			return runAPIs(deps.DB, hosts, workers, time.Duration(timeout)*time.Second, insecure)
+			if err := runAPIs(deps.DB, hosts, workers, time.Duration(timeout)*time.Second, insecure); err != nil {
+				return err
+			}
+			if len(args) > 0 {
+				return persistence.MarkDomainScanned(deps.DB, args[0])
+			}
+			return nil
 		},
 	}
 
@@ -103,6 +110,7 @@ func runAPIs(db *database.Database, hosts []string, workers int, timeout time.Du
 
 	// Print discovered APIs
 	totalAPIs := 0
+	var allAPIs []apis.API
 	for _, result := range batch.Results {
 		if len(result.APIs) == 0 {
 			continue
@@ -112,6 +120,7 @@ func runAPIs(db *database.Database, hosts []string, workers int, timeout time.Du
 
 		for _, api := range result.APIs {
 			totalAPIs++
+			allAPIs = append(allAPIs, api)
 
 			typeStyle := infoStyle
 			if api.Type == "graphql" && api.IntrospectionEnabled {
@@ -168,6 +177,12 @@ func runAPIs(db *database.Database, hosts []string, workers int, timeout time.Du
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Hosts with APIs:", 18)), batch.Found)
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Total APIs Found:", 18)), totalAPIs)
 	fmt.Printf("  %s %s\n", labelStyle.Render(padRight("Duration:", 18)), batch.Duration.Round(time.Millisecond))
+
+	saved, err := persistence.SaveAPIs(db, allAPIs)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\n%s Saved %d APIs to database\n", lowStyle.Render("[+]"), saved)
 
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
 	"github.com/spf13/cobra"
 )
@@ -189,6 +190,15 @@ func runCloudStorage(db *database.Database, domains []string, probe bool, worker
 			}
 			fmt.Printf("%s\n", strings.Join(parts, ", "))
 		}
+
+		saved, err := persistence.SaveCloudBuckets(db, allBuckets)
+		if err != nil {
+			return err
+		}
+		if err := persistence.MarkDomainScanned(db, domain); err != nil {
+			return err
+		}
+		fmt.Printf("%s Saved %d cloud storage buckets to database\n", lowStyle.Render("[+]"), saved)
 	}
 
 	return nil
