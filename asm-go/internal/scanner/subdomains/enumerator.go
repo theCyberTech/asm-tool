@@ -7,13 +7,14 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"regexp"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/ratelimit"
+	"github.com/asm-tool/asm-go/internal/target"
 )
 
 // Result represents subdomain enumeration results
@@ -84,10 +85,18 @@ func NewEnumerator(sources []Source, timeout time.Duration) *Enumerator {
 // Enumerate discovers subdomains from all sources concurrently
 func (e *Enumerator) Enumerate(ctx context.Context, domain string) *Result {
 	start := time.Now()
+	normalizedDomain, err := target.NormalizeTarget(domain)
 	result := &Result{
-		Domain:  domain,
+		Domain:  normalizedDomain,
 		Sources: make(map[string]int),
 	}
+	if err != nil {
+		result.Domain = strings.TrimSpace(domain)
+		result.Errors = append(result.Errors, err.Error())
+		result.Duration = time.Since(start)
+		return result
+	}
+	domain = normalizedDomain
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, e.Timeout)
@@ -151,22 +160,7 @@ func (e *Enumerator) Enumerate(ctx context.Context, domain string) *Result {
 
 // normalizeSubdomain cleans and validates a subdomain
 func normalizeSubdomain(sub, domain string) string {
-	sub = strings.ToLower(strings.TrimSpace(sub))
-
-	// Remove wildcards only
-	sub = strings.TrimPrefix(sub, "*.")
-
-	// Must end with the target domain
-	if !strings.HasSuffix(sub, domain) {
-		return ""
-	}
-
-	// Validate characters
-	if !isValidSubdomain(sub) {
-		return ""
-	}
-
-	return sub
+	return target.NormalizeSubdomain(sub, domain)
 }
 
 // isValidSubdomain checks if a subdomain contains only valid characters
@@ -190,9 +184,9 @@ type CrtShSource struct {
 func (s *CrtShSource) Name() string { return "crt.sh" }
 
 func (s *CrtShSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	url := fmt.Sprintf("https://crt.sh/?q=%%.%s&output=json", domain)
+	apiURL := fmt.Sprintf("https://crt.sh/?q=%s&output=json", url.QueryEscape("%."+domain))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -243,9 +237,9 @@ type HackerTargetSource struct {
 func (s *HackerTargetSource) Name() string { return "hackertarget" }
 
 func (s *HackerTargetSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	url := fmt.Sprintf("https://api.hackertarget.com/hostsearch/?q=%s", domain)
+	apiURL := fmt.Sprintf("https://api.hackertarget.com/hostsearch/?q=%s", url.QueryEscape(domain))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -294,9 +288,9 @@ type URLScanSource struct {
 func (s *URLScanSource) Name() string { return "urlscan" }
 
 func (s *URLScanSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	url := fmt.Sprintf("https://urlscan.io/api/v1/search/?q=domain:%s", domain)
+	apiURL := fmt.Sprintf("https://urlscan.io/api/v1/search/?q=%s", url.QueryEscape("domain:"+domain))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -344,9 +338,9 @@ type AlienVaultSource struct {
 func (s *AlienVaultSource) Name() string { return "alienvault" }
 
 func (s *AlienVaultSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	url := fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/domain/%s/passive_dns", domain)
+	apiURL := fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/domain/%s/passive_dns", url.PathEscape(domain))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -450,12 +444,7 @@ func DefaultWordlist() []string {
 	}
 }
 
-var domainRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
-
 // ValidateDomain checks if a domain name is valid
 func ValidateDomain(domain string) bool {
-	if len(domain) > 253 {
-		return false
-	}
-	return domainRegex.MatchString(domain)
+	return target.ValidateDomain(domain)
 }

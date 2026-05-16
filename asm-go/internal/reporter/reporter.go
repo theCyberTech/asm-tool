@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/parallel"
+	"github.com/asm-tool/asm-go/internal/target"
 )
 
 // Format represents the report output format
@@ -41,19 +42,20 @@ func (r *Reporter) Generate(result *parallel.ScanResult, format Format) (string,
 	}
 
 	timestamp := time.Now().Format("20060102-150405")
+	filenameDomain := target.SafeFilenamePart(result.Domain)
 	var filename string
 	var content string
 	var err error
 
 	switch format {
 	case FormatJSON:
-		filename = fmt.Sprintf("%s-%s.json", result.Domain, timestamp)
+		filename = fmt.Sprintf("%s-%s.json", filenameDomain, timestamp)
 		content, err = r.generateJSON(result)
 	case FormatMarkdown:
-		filename = fmt.Sprintf("%s-%s.md", result.Domain, timestamp)
+		filename = fmt.Sprintf("%s-%s.md", filenameDomain, timestamp)
 		content, err = r.generateMarkdown(result)
 	case FormatHTML:
-		filename = fmt.Sprintf("%s-%s.html", result.Domain, timestamp)
+		filename = fmt.Sprintf("%s-%s.html", filenameDomain, timestamp)
 		content, err = r.generateHTML(result)
 	default:
 		return "", fmt.Errorf("unsupported format: %s", format)

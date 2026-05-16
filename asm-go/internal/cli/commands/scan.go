@@ -14,6 +14,7 @@ import (
 	"github.com/asm-tool/asm-go/internal/notifier"
 	"github.com/asm-tool/asm-go/internal/parallel"
 	"github.com/asm-tool/asm-go/internal/reporter"
+	"github.com/asm-tool/asm-go/internal/target"
 	"github.com/spf13/cobra"
 )
 
@@ -100,6 +101,12 @@ type scanOptions struct {
 }
 
 func runFullScan(db *database.Database, cfg *config.Config, domain string, opts scanOptions) error {
+	normalizedDomain, err := target.NormalizeTarget(domain)
+	if err != nil {
+		return err
+	}
+	domain = normalizedDomain
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/asm-tool/asm-go/internal/target"
 )
 
 // Email represents a discovered email address
@@ -67,10 +70,18 @@ func DefaultEnumerator() *Enumerator {
 // Enumerate discovers emails from all sources
 func (e *Enumerator) Enumerate(ctx context.Context, domain string) *Result {
 	start := time.Now()
+	normalizedDomain, err := target.NormalizeTarget(domain)
 	result := &Result{
-		Domain:  domain,
+		Domain:  normalizedDomain,
 		Sources: make(map[string]int),
 	}
+	if err != nil {
+		result.Domain = strings.TrimSpace(domain)
+		result.Errors = append(result.Errors, err.Error())
+		result.Duration = time.Since(start)
+		return result
+	}
+	domain = normalizedDomain
 
 	ctx, cancel := context.WithTimeout(ctx, e.Timeout)
 	defer cancel()
@@ -169,8 +180,7 @@ func emailBelongsToDomain(email, domain string) bool {
 		return false
 	}
 	emailDomain := strings.ToLower(parts[1])
-	domain = strings.ToLower(domain)
-	return emailDomain == domain || strings.HasSuffix(emailDomain, "."+domain)
+	return target.IsSubdomainOf(emailDomain, domain)
 }
 
 func classifyEmail(email string) string {
@@ -220,7 +230,7 @@ func (s *HunterSource) Enumerate(ctx context.Context, domain string) ([]string, 
 		return nil, fmt.Errorf("no API key configured")
 	}
 
-	apiURL := fmt.Sprintf("https://api.hunter.io/v2/domain-search?domain=%s&api_key=%s", domain, s.APIKey)
+	apiURL := fmt.Sprintf("https://api.hunter.io/v2/domain-search?domain=%s&api_key=%s", url.QueryEscape(domain), url.QueryEscape(s.APIKey))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
@@ -267,7 +277,7 @@ type SkymemSource struct {
 func (s *SkymemSource) Name() string { return "skymem" }
 
 func (s *SkymemSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	apiURL := fmt.Sprintf("https://www.skymem.info/srch?q=%s", domain)
+	apiURL := fmt.Sprintf("https://www.skymem.info/srch?q=%s", url.QueryEscape(domain))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
@@ -302,7 +312,7 @@ type CrtShEmailSource struct {
 func (s *CrtShEmailSource) Name() string { return "crtsh" }
 
 func (s *CrtShEmailSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	apiURL := fmt.Sprintf("https://crt.sh/?q=%%.%s&output=json", domain)
+	apiURL := fmt.Sprintf("https://crt.sh/?q=%s&output=json", url.QueryEscape("%."+domain))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
