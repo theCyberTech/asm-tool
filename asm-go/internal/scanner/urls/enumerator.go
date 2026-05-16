@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/ratelimit"
+	"github.com/asm-tool/asm-go/internal/target"
 )
 
 // URL represents a discovered URL with metadata
@@ -36,12 +37,12 @@ type URL struct {
 
 // Result represents URL enumeration results
 type Result struct {
-	Domain      string
-	URLs        []URL
-	Sources     map[string]int
-	Categories  map[string]int
-	Duration    time.Duration
-	Errors      []string
+	Domain     string
+	URLs       []URL
+	Sources    map[string]int
+	Categories map[string]int
+	Duration   time.Duration
+	Errors     []string
 }
 
 // Source represents a URL enumeration source
@@ -91,11 +92,19 @@ func NewEnumeratorWithRateLimit(rps int) *Enumerator {
 // Enumerate discovers URLs from all sources
 func (e *Enumerator) Enumerate(ctx context.Context, domain string) *Result {
 	start := time.Now()
+	normalizedDomain, err := target.NormalizeTarget(domain)
 	result := &Result{
-		Domain:     domain,
+		Domain:     normalizedDomain,
 		Sources:    make(map[string]int),
 		Categories: make(map[string]int),
 	}
+	if err != nil {
+		result.Domain = strings.TrimSpace(domain)
+		result.Errors = append(result.Errors, err.Error())
+		result.Duration = time.Since(start)
+		return result
+	}
+	domain = normalizedDomain
 
 	ctx, cancel := context.WithTimeout(ctx, e.Timeout)
 	defer cancel()
@@ -318,9 +327,7 @@ func urlBelongsToDomain(rawURL, domain string) bool {
 	}
 
 	host := strings.ToLower(parsed.Hostname())
-	domain = strings.ToLower(domain)
-
-	return host == domain || strings.HasSuffix(host, "."+domain)
+	return target.IsSubdomainOf(host, domain)
 }
 
 func categorizeURL(rawURL, domain, source string) URL {
@@ -467,7 +474,7 @@ type WaybackSource struct {
 func (s *WaybackSource) Name() string { return "wayback" }
 
 func (s *WaybackSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	apiURL := fmt.Sprintf("https://web.archive.org/cdx/search/cdx?url=*.%s/*&output=txt&fl=original&collapse=urlkey", domain)
+	apiURL := fmt.Sprintf("https://web.archive.org/cdx/search/cdx?url=%s&output=txt&fl=original&collapse=urlkey", url.QueryEscape("*."+domain+"/*"))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
@@ -532,7 +539,7 @@ func (s *CommonCrawlSource) getLatestIndex(ctx context.Context) string {
 
 func (s *CommonCrawlSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
 	index := s.getLatestIndex(ctx)
-	apiURL := fmt.Sprintf("https://index.commoncrawl.org/%s-index?url=*.%s&output=json", index, domain)
+	apiURL := fmt.Sprintf("https://index.commoncrawl.org/%s-index?url=%s&output=json", url.PathEscape(index), url.QueryEscape("*."+domain))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
@@ -572,7 +579,7 @@ type URLScanSource struct {
 func (s *URLScanSource) Name() string { return "urlscan" }
 
 func (s *URLScanSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	apiURL := fmt.Sprintf("https://urlscan.io/api/v1/search/?q=domain:%s&size=1000", domain)
+	apiURL := fmt.Sprintf("https://urlscan.io/api/v1/search/?q=%s&size=1000", url.QueryEscape("domain:"+domain))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
@@ -620,7 +627,7 @@ type AlienVaultSource struct {
 func (s *AlienVaultSource) Name() string { return "alienvault" }
 
 func (s *AlienVaultSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	apiURL := fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/domain/%s/url_list?limit=500", domain)
+	apiURL := fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/domain/%s/url_list?limit=500", url.PathEscape(domain))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
