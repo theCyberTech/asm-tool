@@ -1,15 +1,7 @@
 {{define "title"}}Dashboard - ASM{{end}}
 
 {{define "scripts"}}
-<script>
-function clearFilters() {
-    document.getElementById('domain-search').value = '';
-    document.getElementById('date-from').value = '';
-    document.getElementById('date-to').value = '';
-    // Trigger htmx request to reload unfiltered results
-    htmx.trigger('#domain-search', 'search');
-}
-</script>
+{{template "domain-filter-scripts" .}}
 {{end}}
 
 {{define "content"}}
@@ -39,166 +31,41 @@ function clearFilters() {
 {{define "stats-content"}}
 <!-- Asset Statistics -->
 <div class="stats-grid">
-    <div class="stat-card">
+    <a class="stat-card stat-card-link" href="/domains" aria-label="View domains">
         <div class="stat-label">Domains</div>
         <div class="stat-value">{{.Stats.Domains}}</div>
-    </div>
-    <div class="stat-card">
+    </a>
+    <a class="stat-card stat-card-link" href="/subdomains" aria-label="View subdomains">
         <div class="stat-label">Subdomains</div>
         <div class="stat-value">{{.Stats.Subdomains}}</div>
-    </div>
-    <div class="stat-card">
+    </a>
+    <a class="stat-card stat-card-link" href="/ports" aria-label="View open ports">
         <div class="stat-label">Open Ports</div>
         <div class="stat-value">{{.Stats.Ports}}</div>
-    </div>
-    <div class="stat-card">
+    </a>
+    <a class="stat-card stat-card-link" href="/certificates" aria-label="View certificates">
         <div class="stat-label">Certificates</div>
         <div class="stat-value">{{.Stats.Certificates}}</div>
-    </div>
-    <div class="stat-card">
+    </a>
+    <a class="stat-card stat-card-link" href="/urls" aria-label="View URLs">
         <div class="stat-label">URLs</div>
         <div class="stat-value">{{.Stats.URLs}}</div>
-    </div>
-    <div class="stat-card">
+    </a>
+    <a class="stat-card stat-card-link" href="/apis" aria-label="View API endpoints">
         <div class="stat-label">APIs</div>
         <div class="stat-value">{{.Stats.APIs}}</div>
-    </div>
-    <div class="stat-card">
+    </a>
+    <a class="stat-card stat-card-link" href="/emails" aria-label="View email addresses">
         <div class="stat-label">Emails</div>
         <div class="stat-value">{{.Stats.Emails}}</div>
-    </div>
-    <div class="stat-card">
+    </a>
+    <a class="stat-card stat-card-link" href="/cloud" aria-label="View cloud buckets">
         <div class="stat-label">Cloud Buckets</div>
         <div class="stat-value">{{.Stats.CloudBuckets}}</div>
-    </div>
+    </a>
 </div>
 
-<!-- Monitored Domains -->
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">Monitored Domains</h2>
-        <span class="badge badge-blue" id="domain-count">{{len .Domains}} domains</span>
-    </div>
-    <div class="card-body">
-        <!-- Search and Filter Controls -->
-        <div class="search-filter-bar">
-            <div class="search-input-container">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"/>
-                    <path d="M21 21l-4.35-4.35"/>
-                </svg>
-                <input type="text"
-                       id="domain-search"
-                       class="search-input"
-                       placeholder="Search domains..."
-                       hx-get="/partials/domains"
-                       hx-trigger="keyup changed delay:300ms, search"
-                       hx-target="#domains-table-body"
-                       hx-include="#date-from, #date-to"
-                       name="q">
-            </div>
-            <div class="filter-group">
-                <label class="filter-label">Scanned after:</label>
-                <input type="date"
-                       id="date-from"
-                       class="date-input"
-                       hx-get="/partials/domains"
-                       hx-trigger="change"
-                       hx-target="#domains-table-body"
-                       hx-include="#domain-search, #date-to"
-                       name="from">
-            </div>
-            <div class="filter-group">
-                <label class="filter-label">Scanned before:</label>
-                <input type="date"
-                       id="date-to"
-                       class="date-input"
-                       hx-get="/partials/domains"
-                       hx-trigger="change"
-                       hx-target="#domains-table-body"
-                       hx-include="#domain-search, #date-from"
-                       name="to">
-            </div>
-            <button type="button"
-                    class="btn btn-secondary btn-sm clear-filters-btn"
-                    onclick="clearFilters()">
-                Clear Filters
-            </button>
-        </div>
-
-        {{if .Domains}}
-        <div class="table-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Domain</th>
-                        <th class="text-center">Subdomains</th>
-                        <th class="text-center">Open Ports</th>
-                        <th class="text-center">Vulnerabilities</th>
-                        <th>Last Scanned</th>
-                    </tr>
-                </thead>
-                <tbody id="domains-table-body">
-                    {{range .Domains}}
-                    <tr class="domain-row" style="cursor: pointer;" onclick="window.location='/domains/{{.Domain}}'">
-                        <td>
-                            <a href="/domains/{{.Domain}}" class="domain-link">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px; color: var(--accent-blue);">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <line x1="2" y1="12" x2="22" y2="12"/>
-                                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                                </svg>
-                                <span class="text-mono">{{.Domain}}</span>
-                            </a>
-                        </td>
-                        <td class="text-center">
-                            <span class="badge badge-blue">{{.SubdomainCount}}</span>
-                        </td>
-                        <td class="text-center">
-                            {{if .PortCount}}
-                            <span class="badge badge-yellow">{{.PortCount}}</span>
-                            {{else}}
-                            <span class="text-muted">-</span>
-                            {{end}}
-                        </td>
-                        <td class="text-center">
-                            <div class="flex gap-sm justify-center">
-                                {{if .CriticalCount}}
-                                <span class="severity severity-critical">{{.CriticalCount}}</span>
-                                {{end}}
-                                {{if .HighCount}}
-                                <span class="severity severity-high">{{.HighCount}}</span>
-                                {{end}}
-                                {{if and (not .CriticalCount) (not .HighCount)}}
-                                <span class="text-muted">-</span>
-                                {{end}}
-                            </div>
-                        </td>
-                        <td>
-                            {{if .LastScanned}}
-                            <span class="text-muted">{{.LastScanned.Format "Jan 02, 2006 15:04"}}</span>
-                            {{else}}
-                            <span class="text-muted">Never</span>
-                            {{end}}
-                        </td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-        </div>
-        {{else}}
-        <div class="empty-state">
-            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="2" y1="12" x2="22" y2="12"/>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-            </svg>
-            <h3>No domains monitored</h3>
-            <p>Add domains using the CLI: <code>asm scan example.com</code></p>
-        </div>
-        {{end}}
-    </div>
-</div>
+{{template "domains-card" .}}
 
 <!-- Security Findings -->
 <div class="card">
@@ -307,6 +174,92 @@ function clearFilters() {
     </div>
 </div>
 {{end}}
+{{end}}
+
+{{define "domains-card"}}
+<!-- Domains -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{if eq .ActivePage "domains"}}All Domains{{else}}Monitored Domains{{end}}</h2>
+        <span class="badge badge-blue" id="domain-count">{{len .Domains}} domains</span>
+    </div>
+    <div class="card-body">
+        <!-- Search and Filter Controls -->
+        <div class="search-filter-bar">
+            <div class="search-input-container">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input type="text"
+                       id="domain-search"
+                       class="search-input"
+                       placeholder="Search domains..."
+                       hx-get="/partials/domains"
+                       hx-trigger="keyup changed delay:300ms, search"
+                       hx-target="#domains-table-body"
+                       hx-include="#date-from, #date-to"
+                       name="q">
+            </div>
+            <div class="filter-group">
+                <label class="filter-label">Scanned after:</label>
+                <input type="date"
+                       id="date-from"
+                       class="date-input"
+                       hx-get="/partials/domains"
+                       hx-trigger="change"
+                       hx-target="#domains-table-body"
+                       hx-include="#domain-search, #date-to"
+                       name="from">
+            </div>
+            <div class="filter-group">
+                <label class="filter-label">Scanned before:</label>
+                <input type="date"
+                       id="date-to"
+                       class="date-input"
+                       hx-get="/partials/domains"
+                       hx-trigger="change"
+                       hx-target="#domains-table-body"
+                       hx-include="#domain-search, #date-from"
+                       name="to">
+            </div>
+            <button type="button"
+                    class="btn btn-secondary btn-sm clear-filters-btn"
+                    onclick="clearFilters()">
+                Clear Filters
+            </button>
+        </div>
+
+        {{if .Domains}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th class="text-center">Subdomains</th>
+                        <th class="text-center">Open Ports</th>
+                        <th class="text-center">Vulnerabilities</th>
+                        <th>Last Scanned</th>
+                    </tr>
+                </thead>
+                <tbody id="domains-table-body">
+                    {{template "domains-table-rows" .}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="2" y1="12" x2="22" y2="12"/>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            <h3>No domains monitored</h3>
+            <p>Add domains using the CLI: <code>asm scan example.com</code></p>
+        </div>
+        {{end}}
+    </div>
+</div>
 {{end}}
 
 {{define "domains-table-rows"}}

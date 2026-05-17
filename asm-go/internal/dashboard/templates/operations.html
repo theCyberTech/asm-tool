@@ -1,0 +1,240 @@
+{{define "operations-base"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operations - ASM Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <style>{{template "styles" .}}</style>
+</head>
+<body hx-boost="true" x-data="toastManager()">
+    {{template "nav" .}}
+    <div class="layout">
+        {{template "sidebar" .}}
+        <main class="main-content">
+            {{template "operations-content" .}}
+        </main>
+    </div>
+    <div class="toast-container" id="toast-container">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="toast" :class="'toast-' + toast.type" x-show="toast.visible">
+                <span class="toast-message" x-text="toast.message"></span>
+                <button class="toast-close" @click="removeToast(toast.id)">x</button>
+            </div>
+        </template>
+    </div>
+    <script>
+    function toastManager() {
+        return {
+            toasts: [],
+            toastCounter: 0,
+            addToast(message, type = 'info', duration = 5000) {
+                const id = ++this.toastCounter;
+                const toast = { id, message, type, visible: true };
+                this.toasts.push(toast);
+                if (duration > 0) setTimeout(() => this.removeToast(id), duration);
+            },
+            removeToast(id) {
+                const toast = this.toasts.find(t => t.id === id);
+                if (toast) {
+                    toast.visible = false;
+                    setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 300);
+                }
+            },
+            showError(message) { this.addToast(message, 'error', 8000); },
+            showSuccess(message) { this.addToast(message, 'success'); }
+        };
+    }
+    document.body.addEventListener('htmx:responseError', function(evt) {
+        const root = document.body;
+        if (root.__x) root.__x.$data.showError(evt.detail.xhr.responseText || 'Command request failed');
+    });
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        const request = evt.detail.requestConfig;
+        if (evt.detail.target && evt.detail.target.id === 'runs-panel' && request && request.verb === 'post') {
+            const root = document.body;
+            if (root.__x) root.__x.$data.showSuccess('Run started');
+        }
+    });
+    </script>
+</body>
+</html>
+{{end}}
+
+{{define "operations-content"}}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Operations</h1>
+        <p class="page-description">Build, test, run, and monitor ASM workflows</p>
+    </div>
+    <div class="flex gap-sm">
+        <button class="btn btn-secondary" hx-get="/partials/runs" hx-target="#runs-panel" hx-swap="outerHTML">
+            Refresh
+            {{template "loading-indicator" .}}
+        </button>
+    </div>
+</div>
+
+{{with .Operations}}
+<div class="stats-grid ops-stats">
+    <div class="stat-card">
+        <div class="stat-label">Running</div>
+        <div class="stat-value">{{.RunningCount}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Run History</div>
+        <div class="stat-value">{{len .Runs}}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Database</div>
+        <div class="stat-value stat-value-path">{{if .DatabasePath}}{{.DatabasePath}}{{else}}default{{end}}</div>
+    </div>
+</div>
+
+<div class="ops-grid">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Run Command</h2>
+            <span class="badge badge-blue">Local</span>
+        </div>
+        <div class="card-body">
+            <form hx-post="/api/runs/start" hx-target="#runs-panel" hx-swap="outerHTML" hx-disabled-elt="button[type='submit']">
+                <div class="form-group">
+                    <label class="form-label" for="operation-action">Action</label>
+                    <select class="form-input" id="operation-action" name="action" required>
+                        {{range .Actions}}
+                        <option value="{{.ID}}">{{.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="operation-target">Target domain</label>
+                    <input class="form-input" id="operation-target" name="target" placeholder="example.com" autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-row">
+                        <input type="checkbox" name="all_known">
+                        <span>All known targets</span>
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="operation-ports">Ports</label>
+                    <input class="form-input" id="operation-ports" name="ports" placeholder="80,443,8080">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="operation-output">Report output</label>
+                    <select class="form-input" id="operation-output" name="output_format">
+                        <option value="">None</option>
+                        <option value="html">HTML</option>
+                        <option value="markdown">Markdown</option>
+                        <option value="json">JSON</option>
+                    </select>
+                </div>
+
+                <div class="form-group checkbox-stack">
+                    <label class="checkbox-row">
+                        <input type="checkbox" name="nuclei">
+                        <span>Nuclei</span>
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox" name="verbose">
+                        <span>Verbose output</span>
+                    </label>
+                </div>
+
+                <button class="btn btn-primary" type="submit">
+                    Start
+                    {{template "loading-indicator" .}}
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Integration</h2>
+                <span class="badge badge-green">Ready</span>
+            </div>
+            <div class="card-body">
+                <dl class="ops-kv">
+                    <dt>Binary</dt>
+                    <dd class="text-mono">{{.BinaryPath}}</dd>
+                    <dt>Config</dt>
+                    <dd class="text-mono">{{if .ConfigPath}}{{.ConfigPath}}{{else}}default config{{end}}</dd>
+                    <dt>Database</dt>
+                    <dd class="text-mono">{{if .DatabasePath}}{{.DatabasePath}}{{else}}default database{{end}}</dd>
+                    <dt>Run log</dt>
+                    <dd class="text-mono">{{.LogPath}}</dd>
+                </dl>
+            </div>
+        </div>
+
+        {{template "runs-panel" $}}
+    </div>
+</div>
+{{end}}
+{{end}}
+
+{{define "runs-panel"}}
+<div id="runs-panel" class="card" hx-get="/partials/runs" hx-trigger="every 2s" hx-swap="outerHTML">
+    <div class="card-header">
+        <h2 class="card-title">Recent Runs</h2>
+        {{if .Operations}}<span class="badge badge-blue">{{len .Operations.Runs}}</span>{{end}}
+    </div>
+    <div class="card-body">
+        {{if and .Operations .Operations.Runs}}
+        <div class="run-list">
+            {{range .Operations.Runs}}
+            <article class="run-card run-{{.Status}}">
+                <div class="run-header">
+                    <div>
+                        <div class="run-title">
+                            <span class="status-pill status-{{.Status}}">{{.Status}}</span>
+                            <strong>{{.Label}}</strong>
+                            <span class="text-muted">#{{.ID}}</span>
+                        </div>
+                        <div class="run-meta">
+                            <span>{{.StartedAt.Format "Jan 02 15:04:05"}}</span>
+                            {{if .Duration}}<span>{{.Duration}}</span>{{end}}
+                            {{if ge .ExitCode 0}}<span>exit {{.ExitCode}}</span>{{end}}
+                        </div>
+                    </div>
+                </div>
+                <pre class="command-line">{{.Command}}</pre>
+                {{if .Error}}
+                <div class="alert alert-danger">{{.Error}}</div>
+                {{end}}
+                {{if .Stdout}}
+                <details class="output-block" open>
+                    <summary>stdout</summary>
+                    <pre>{{.Stdout}}</pre>
+                </details>
+                {{end}}
+                {{if .Stderr}}
+                <details class="output-block" open>
+                    <summary>stderr</summary>
+                    <pre>{{.Stderr}}</pre>
+                </details>
+                {{end}}
+                {{if .Truncated}}
+                <div class="alert alert-warning">Output truncated</div>
+                {{end}}
+            </article>
+            {{end}}
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <h3>No runs yet</h3>
+            <p>Start a command to populate run history.</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

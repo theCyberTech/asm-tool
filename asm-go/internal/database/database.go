@@ -710,16 +710,17 @@ type Email struct {
 
 // CloudStorage represents a cloud storage bucket
 type CloudStorage struct {
-	ID          int64     `db:"id"`
-	Provider    string    `db:"provider"`
-	BucketName  string    `db:"bucket_name"`
-	URL         string    `db:"url"`
-	Domain      string    `db:"domain"`
-	AccessLevel string    `db:"access_level"`
-	Severity    string    `db:"severity"`
-	Evidence    string    `db:"evidence"`
-	Status      string    `db:"status"`
-	CheckedAt   time.Time `db:"checked_at"`
+	ID           int64          `db:"id"`
+	Provider     string         `db:"provider"`
+	BucketName   string         `db:"bucket_name"`
+	URL          string         `db:"url"`
+	Domain       string         `db:"domain"`
+	Source       sql.NullString `db:"source"`
+	AccessLevel  string         `db:"access_level"`
+	Severity     string         `db:"severity"`
+	Evidence     string         `db:"evidence"`
+	Status       string         `db:"status"`
+	DiscoveredAt time.Time      `db:"discovered_at"`
 }
 
 // GetCertificatesForDomain returns all certificates for hosts matching a domain
