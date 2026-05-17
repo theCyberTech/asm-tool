@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/scanner/ports"
 )
 
 func TestPersistResultsCommitsSuccessfulScan(t *testing.T) {
@@ -147,6 +148,41 @@ func TestRunReturnsPersistenceErrors(t *testing.T) {
 	}
 	if result.Errors[ModuleType("persist")] == nil {
 		t.Fatal("Run did not record the persistence error")
+	}
+}
+
+func TestFlattenPortScanResultsPreservesBatchOrder(t *testing.T) {
+	batch := []*ports.Result{
+		{
+			Host: "first.example.com",
+			OpenPorts: []ports.Port{
+				{Port: 443, State: "open", Service: "https", Banner: "first"},
+			},
+		},
+		nil,
+		{
+			Host: "second.example.com",
+			OpenPorts: []ports.Port{
+				{Port: 80, State: "open", Service: "http", Banner: "second"},
+				{Port: 8080, State: "open", Service: "http-proxy"},
+			},
+		},
+	}
+
+	results := flattenPortScanResults(batch)
+
+	want := []PortResult{
+		{Host: "first.example.com", Port: 443, State: "open", Service: "https", Banner: "first"},
+		{Host: "second.example.com", Port: 80, State: "open", Service: "http", Banner: "second"},
+		{Host: "second.example.com", Port: 8080, State: "open", Service: "http-proxy"},
+	}
+	if len(results) != len(want) {
+		t.Fatalf("flattenPortScanResults returned %d results, want %d: %#v", len(results), len(want), results)
+	}
+	for i := range want {
+		if results[i] != want[i] {
+			t.Fatalf("result %d = %#v, want %#v", i, results[i], want[i])
+		}
 	}
 }
 

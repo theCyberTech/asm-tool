@@ -552,15 +552,23 @@ func (r *Runner) runPorts(ctx context.Context, hosts []string) ([]PortResult, er
 		portsToScan = []int{21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 8080, 8443}
 	}
 
+	results := flattenPortScanResults(scanner.ScanBatch(ctx, hosts, portsToScan))
+
+	if err := ctx.Err(); err != nil {
+		return results, err
+	}
+	return results, nil
+}
+
+func flattenPortScanResults(scanResults []*ports.Result) []PortResult {
 	var results []PortResult
-	for _, host := range hosts {
-		if ctx.Err() != nil {
-			return results, ctx.Err()
+	for _, scanResult := range scanResults {
+		if scanResult == nil {
+			continue
 		}
-		scanResult := scanner.Scan(ctx, host, portsToScan)
 		for _, p := range scanResult.OpenPorts {
 			results = append(results, PortResult{
-				Host:    host,
+				Host:    scanResult.Host,
 				Port:    p.Port,
 				State:   p.State,
 				Service: p.Service,
@@ -568,7 +576,7 @@ func (r *Runner) runPorts(ctx context.Context, hosts []string) ([]PortResult, er
 			})
 		}
 	}
-	return results, nil
+	return results
 }
 
 func (r *Runner) runCertificates(ctx context.Context, hosts []string) ([]*Certificate, error) {
