@@ -200,29 +200,32 @@ func emailBelongsToDomain(email, domain string) bool {
 	return target.IsSubdomainOf(emailDomain, domain)
 }
 
+var roleEmailLocalParts = [...]string{
+	"admin", "administrator", "webmaster", "postmaster", "hostmaster",
+	"info", "contact", "support", "help", "sales", "marketing",
+	"hr", "jobs", "careers", "recruiting", "legal", "compliance",
+	"security", "abuse", "noc", "operations", "billing", "finance",
+	"press", "media", "pr", "news", "office", "team", "staff",
+	"hello", "hi", "enquiries", "inquiries", "feedback",
+}
+
+var genericEmailLocalPatterns = [...]string{
+	"noreply", "no-reply", "donotreply", "mailer", "newsletter", "notification",
+}
+
 func classifyEmail(email string) string {
 	local := strings.Split(email, "@")[0]
 	local = strings.ToLower(local)
 
 	// Role-based emails
-	roleEmails := []string{
-		"admin", "administrator", "webmaster", "postmaster", "hostmaster",
-		"info", "contact", "support", "help", "sales", "marketing",
-		"hr", "jobs", "careers", "recruiting", "legal", "compliance",
-		"security", "abuse", "noc", "operations", "billing", "finance",
-		"press", "media", "pr", "news", "office", "team", "staff",
-		"hello", "hi", "enquiries", "inquiries", "feedback",
-	}
-
-	for _, role := range roleEmails {
+	for _, role := range roleEmailLocalParts {
 		if local == role || strings.HasPrefix(local, role+".") || strings.HasSuffix(local, "."+role) {
 			return "role"
 		}
 	}
 
 	// Generic patterns
-	genericPatterns := []string{"noreply", "no-reply", "donotreply", "mailer", "newsletter", "notification"}
-	for _, pattern := range genericPatterns {
+	for _, pattern := range genericEmailLocalPatterns {
 		if strings.Contains(local, pattern) {
 			return "generic"
 		}
