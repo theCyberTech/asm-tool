@@ -185,7 +185,7 @@ type VulnEntry struct {
 }
 
 func (r *Reporter) generateJSON(result *parallel.ScanResult) (string, error) {
-	vulnCounts := countVulnerabilities(result)
+	groupedVulns := groupVulnerabilitiesBySeverity(result)
 	report := JSONReport{
 		Domain:   result.Domain,
 		ScanTime: result.StartTime,
@@ -201,10 +201,10 @@ func (r *Reporter) generateJSON(result *parallel.ScanResult) (string, error) {
 			EmailCount:       len(result.Emails),
 			BucketCount:      len(result.CloudStorage),
 			PublicBuckets:    countPublicBuckets(result),
-			VulnCount:        vulnCounts.Total,
-			VulnCritical:     vulnCounts.Critical,
-			VulnHigh:         vulnCounts.High,
-			VulnMedium:       vulnCounts.Medium,
+			VulnCount:        groupedVulns.Total,
+			VulnCritical:     len(groupedVulns.Critical),
+			VulnHigh:         len(groupedVulns.High),
+			VulnMedium:       len(groupedVulns.Medium),
 		},
 		Subdomains: result.Subdomains,
 		Errors:     make(map[string]string),
@@ -343,7 +343,7 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 	sb.WriteString(fmt.Sprintf("**Duration:** %s\n\n", result.Duration.Round(time.Millisecond)))
 
 	// Summary
-	vulnCounts := countVulnerabilities(result)
+	groupedVulns := groupVulnerabilitiesBySeverity(result)
 	sb.WriteString("## Summary\n\n")
 	sb.WriteString("| Metric | Count |\n")
 	sb.WriteString("|--------|-------|\n")
@@ -356,8 +356,8 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 	sb.WriteString(fmt.Sprintf("| APIs | %d |\n", len(result.APIs)))
 	sb.WriteString(fmt.Sprintf("| Emails | %d |\n", len(result.Emails)))
 	sb.WriteString(fmt.Sprintf("| Cloud Buckets | %d (public: %d) |\n", len(result.CloudStorage), countPublicBuckets(result)))
-	if vulnCounts.Total > 0 {
-		sb.WriteString(fmt.Sprintf("| **Vulnerabilities** | **%d** (critical: %d, high: %d, medium: %d) |\n", vulnCounts.Total, vulnCounts.Critical, vulnCounts.High, vulnCounts.Medium))
+	if groupedVulns.Total > 0 {
+		sb.WriteString(fmt.Sprintf("| **Vulnerabilities** | **%d** (critical: %d, high: %d, medium: %d) |\n", groupedVulns.Total, len(groupedVulns.Critical), len(groupedVulns.High), len(groupedVulns.Medium)))
 	}
 	sb.WriteString("\n")
 
@@ -459,12 +459,11 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 		sb.WriteString("## Vulnerabilities\n\n")
 
 		// Critical vulnerabilities
-		criticalVulns := getVulnerabilitiesBySeverity(result, "critical")
-		if len(criticalVulns) > 0 {
+		if len(groupedVulns.Critical) > 0 {
 			sb.WriteString("### Critical\n\n")
 			sb.WriteString("| Template | Name | Host | CVE |\n")
 			sb.WriteString("|----------|------|------|-----|\n")
-			for _, v := range criticalVulns {
+			for _, v := range groupedVulns.Critical {
 				cve := v.Info.Classification.CVEID
 				if cve == "" {
 					cve = "-"
@@ -475,12 +474,11 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 		}
 
 		// High vulnerabilities
-		highVulns := getVulnerabilitiesBySeverity(result, "high")
-		if len(highVulns) > 0 {
+		if len(groupedVulns.High) > 0 {
 			sb.WriteString("### High\n\n")
 			sb.WriteString("| Template | Name | Host | CVE |\n")
 			sb.WriteString("|----------|------|------|-----|\n")
-			for _, v := range highVulns {
+			for _, v := range groupedVulns.High {
 				cve := v.Info.Classification.CVEID
 				if cve == "" {
 					cve = "-"
@@ -491,12 +489,11 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 		}
 
 		// Medium vulnerabilities
-		mediumVulns := getVulnerabilitiesBySeverity(result, "medium")
-		if len(mediumVulns) > 0 {
+		if len(groupedVulns.Medium) > 0 {
 			sb.WriteString("### Medium\n\n")
 			sb.WriteString("| Template | Name | Host |\n")
 			sb.WriteString("|----------|------|------|\n")
-			for _, v := range mediumVulns {
+			for _, v := range groupedVulns.Medium {
 				sb.WriteString(fmt.Sprintf("| %s | %s | %s |\n", v.TemplateID, v.Info.Name, v.Host))
 			}
 			sb.WriteString("\n")
@@ -759,7 +756,7 @@ func (r *Reporter) generateHTML(result *parallel.ScanResult) (string, error) {
 		return "", err
 	}
 
-	vulnCounts := countVulnerabilities(result)
+	groupedVulns := groupVulnerabilitiesBySeverity(result)
 	data := map[string]interface{}{
 		"Domain":         result.Domain,
 		"ScanTime":       result.StartTime.Format(time.RFC3339),
@@ -773,7 +770,7 @@ func (r *Reporter) generateHTML(result *parallel.ScanResult) (string, error) {
 		"APICount":       len(result.APIs),
 		"EmailCount":     len(result.Emails),
 		"BucketCount":    len(result.CloudStorage),
-		"VulnCount":      vulnCounts.Total,
+		"VulnCount":      groupedVulns.Total,
 		"Subdomains":     result.Subdomains,
 		"Ports":          result.Ports,
 		"Certificates":   result.Certificates,
@@ -781,9 +778,9 @@ func (r *Reporter) generateHTML(result *parallel.ScanResult) (string, error) {
 		"PublicBuckets":  getPublicBuckets(result),
 		"APIs":           result.APIs,
 		"Emails":         result.Emails,
-		"CriticalVulns":  getVulnerabilitiesBySeverity(result, "critical"),
-		"HighVulns":      getVulnerabilitiesBySeverity(result, "high"),
-		"MediumVulns":    getVulnerabilitiesBySeverity(result, "medium"),
+		"CriticalVulns":  groupedVulns.Critical,
+		"HighVulns":      groupedVulns.High,
+		"MediumVulns":    groupedVulns.Medium,
 	}
 
 	var sb strings.Builder
@@ -843,41 +840,31 @@ func getPublicBuckets(result *parallel.ScanResult) []parallel.CloudBucket {
 	return buckets
 }
 
-type vulnCounts struct {
+type groupedVulnerabilities struct {
 	Total    int
-	Critical int
-	High     int
-	Medium   int
-	Low      int
-	Info     int
+	Critical []*parallel.VulnFinding
+	High     []*parallel.VulnFinding
+	Medium   []*parallel.VulnFinding
+	Low      []*parallel.VulnFinding
+	Info     []*parallel.VulnFinding
 }
 
-func countVulnerabilities(result *parallel.ScanResult) vulnCounts {
-	counts := vulnCounts{}
+func groupVulnerabilitiesBySeverity(result *parallel.ScanResult) groupedVulnerabilities {
+	grouped := groupedVulnerabilities{}
 	for _, v := range result.Vulnerabilities {
-		counts.Total++
+		grouped.Total++
 		switch strings.ToLower(v.Info.Severity) {
 		case "critical":
-			counts.Critical++
+			grouped.Critical = append(grouped.Critical, v)
 		case "high":
-			counts.High++
+			grouped.High = append(grouped.High, v)
 		case "medium":
-			counts.Medium++
+			grouped.Medium = append(grouped.Medium, v)
 		case "low":
-			counts.Low++
+			grouped.Low = append(grouped.Low, v)
 		case "info":
-			counts.Info++
+			grouped.Info = append(grouped.Info, v)
 		}
 	}
-	return counts
-}
-
-func getVulnerabilitiesBySeverity(result *parallel.ScanResult, severity string) []*parallel.VulnFinding {
-	var vulns []*parallel.VulnFinding
-	for _, v := range result.Vulnerabilities {
-		if strings.EqualFold(v.Info.Severity, severity) {
-			vulns = append(vulns, v)
-		}
-	}
-	return vulns
+	return grouped
 }
