@@ -50,3 +50,8 @@ schedule:
   
   # Certificate check every 6 hours
   cert_check: "0 */6 * * *"
+
+# Dashboard server
+dashboard:
+  host: "127.0.0.1"
+  port: 8080

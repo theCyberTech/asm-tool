@@ -37,6 +37,9 @@ cd ..
 
 # Check database status
 ./asm.sh status
+
+# Start the local dashboard
+./asm.sh dashboard
 ```
 
 ## Commands
@@ -44,6 +47,10 @@ cd ..
 ```bash
 # Database status
 ./asm.sh status
+
+# Web dashboard
+./asm.sh dashboard
+./asm.sh dashboard --port 8081
 
 # Full scan (all modules)
 ./asm.sh scan example.com

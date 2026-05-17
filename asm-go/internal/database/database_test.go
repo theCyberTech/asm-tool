@@ -239,6 +239,49 @@ func TestCertificateRepository(t *testing.T) {
 	}
 }
 
+func TestCloudStorageQueriesMapSchemaColumns(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	db, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer db.Close()
+
+	err = db.SaveCloudBucket(
+		"s3",
+		"example-assets",
+		"https://example-assets.s3.amazonaws.com",
+		"example.com",
+		"authenticated_only",
+		"low",
+		"bucket exists but requires authentication",
+	)
+	if err != nil {
+		t.Fatalf("SaveCloudBucket failed: %v", err)
+	}
+
+	allBuckets, err := db.GetAllCloudStorage()
+	if err != nil {
+		t.Fatalf("GetAllCloudStorage failed: %v", err)
+	}
+	if len(allBuckets) != 1 {
+		t.Fatalf("GetAllCloudStorage returned %d buckets, want 1", len(allBuckets))
+	}
+	if allBuckets[0].BucketName != "example-assets" || allBuckets[0].Status != "open" {
+		t.Fatalf("bucket = %+v, want example-assets open", allBuckets[0])
+	}
+
+	domainBuckets, err := db.GetCloudStorageForDomain("example.com")
+	if err != nil {
+		t.Fatalf("GetCloudStorageForDomain failed: %v", err)
+	}
+	if len(domainBuckets) != 1 {
+		t.Fatalf("GetCloudStorageForDomain returned %d buckets, want 1", len(domainBuckets))
+	}
+}
+
 func TestIsTableNotExistsError(t *testing.T) {
 	tests := []struct {
 		name     string

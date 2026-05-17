@@ -36,6 +36,7 @@ print_help() {
     echo ""
     echo "Commands:"
     echo "  status             Show database status"
+    echo "  dashboard          Start the web dashboard"
     echo "  scan <domain>      Run a full scan on a domain"
     echo "  discover <domain>  Enumerate subdomains"
     echo "  portscan <domain>  Scan ports on discovered hosts"
@@ -52,6 +53,7 @@ print_help() {
     echo ""
     echo "Examples:"
     echo "  ./asm.sh status"
+    echo "  ./asm.sh dashboard"
     echo "  ./asm.sh scan example.com"
     echo "  ./asm.sh discover example.com"
     echo "  ./asm.sh portscan example.com --ports 80,443,8080"
@@ -92,7 +94,7 @@ case "${1:-help}" in
     help|--help|-h)
         print_help
         ;;
-    status|scan|discover|portscan|ports|certificates|certs|dns|takeover|fingerprint|urls|apis|emails|cloudstorage|cloud|nuclei|report|migrate)
+    status|dashboard|scan|discover|portscan|ports|certificates|certs|dns|takeover|fingerprint|urls|apis|emails|cloudstorage|cloud|nuclei|report|migrate)
         cmd="$1"
         shift
         # Normalize command aliases

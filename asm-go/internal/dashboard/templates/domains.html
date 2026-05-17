@@ -1,0 +1,42 @@
+{{define "domains-base"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Domains - ASM Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <style>{{template "styles" .}}</style>
+</head>
+<body hx-boost="true" x-data="{}">
+    {{template "nav" .}}
+    <div class="layout">
+        {{template "sidebar" .}}
+        <main class="main-content">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Domains</h1>
+                    <p class="page-description">Known root domains and their current scan coverage</p>
+                </div>
+            </div>
+
+            {{template "domains-card" .}}
+        </main>
+    </div>
+
+    {{template "domain-filter-scripts" .}}
+</body>
+</html>
+{{end}}
+
+{{define "domain-filter-scripts"}}
+<script>
+function clearFilters() {
+    document.getElementById('domain-search').value = '';
+    document.getElementById('date-from').value = '';
+    document.getElementById('date-to').value = '';
+    htmx.trigger('#domain-search', 'search');
+}
+</script>
+{{end}}

@@ -20,14 +20,55 @@ var (
 
 // PageData represents the data passed to templates
 type PageData struct {
-	ActivePage    string
-	Stats         Stats
-	Findings      FindingCounts
-	Domains       []DomainStats
-	DomainDetail  *DomainDetailData
-	GlobalList    *GlobalListData
-	ChangeEvents  []ChangeEventView
-	Error         string
+	ActivePage   string
+	Stats        Stats
+	Findings     FindingCounts
+	Domains      []DomainStats
+	DomainDetail *DomainDetailData
+	GlobalList   *GlobalListData
+	Operations   *OperationsData
+	ChangeEvents []ChangeEventView
+	Error        string
+}
+
+// OperationsData holds command runner state for the operations dashboard.
+type OperationsData struct {
+	Actions      []OperationOption
+	Runs         []RunRecord
+	RunningCount int
+	BinaryPath   string
+	ConfigPath   string
+	DatabasePath string
+	LogPath      string
+}
+
+// OperationOption represents a safe tool workflow available from the dashboard.
+type OperationOption struct {
+	ID                   string
+	Label                string
+	RequiresTarget       bool
+	SupportsAllKnown     bool
+	SupportsPorts        bool
+	SupportsOutputFormat bool
+	SupportsNuclei       bool
+}
+
+// RunRecord represents a command execution shown in the dashboard.
+type RunRecord struct {
+	ID         int64
+	Action     string
+	Label      string
+	Command    string
+	Target     string
+	Status     string
+	ExitCode   int
+	StartedAt  time.Time
+	FinishedAt *time.Time
+	Duration   string
+	Stdout     string
+	Stderr     string
+	Error      string
+	Truncated  bool
 }
 
 // GlobalListData holds data for the global asset list pages
@@ -81,22 +122,22 @@ type FindingCounts struct {
 
 // DomainDetailData holds all data for the domain detail page
 type DomainDetailData struct {
-	Domain        string
-	AddedAt       time.Time
-	LastScanned   *time.Time
-	Stats         DomainDetailStats
-	Subdomains    []SubdomainView
-	Ports         []PortView
-	Certificates  []CertificateView
-	Technologies  []TechnologyView
-	DNSRecords    []DNSRecordView
-	Findings      []FindingView
-	URLs          []URLView
-	APIs          []APIView
-	Emails        []EmailView
-	CloudStorage  []CloudStorageView
-	Takeovers     []TakeoverView
-	ChangeEvents  []ChangeEventView
+	Domain       string
+	AddedAt      time.Time
+	LastScanned  *time.Time
+	Stats        DomainDetailStats
+	Subdomains   []SubdomainView
+	Ports        []PortView
+	Certificates []CertificateView
+	Technologies []TechnologyView
+	DNSRecords   []DNSRecordView
+	Findings     []FindingView
+	URLs         []URLView
+	APIs         []APIView
+	Emails       []EmailView
+	CloudStorage []CloudStorageView
+	Takeovers    []TakeoverView
+	ChangeEvents []ChangeEventView
 }
 
 // ChangeEventView represents a DNS change event for display
