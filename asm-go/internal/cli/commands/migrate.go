@@ -302,19 +302,7 @@ func runMigration(db *database.Database, tinydbPath string, dryRun bool) error {
 	for _, t := range tinydb.Technologies {
 		techList, _ := json.Marshal(t.Technologies)
 		headerList, _ := json.Marshal(t.Headers)
-		_, err := db.Exec(`
-			INSERT INTO technologies (host, status_code, title, server, technologies, headers, content_length, redirect_url)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(host) DO UPDATE SET
-				status_code = excluded.status_code,
-				title = excluded.title,
-				server = excluded.server,
-				technologies = excluded.technologies,
-				headers = excluded.headers,
-				content_length = excluded.content_length,
-				redirect_url = excluded.redirect_url,
-				checked_at = CURRENT_TIMESTAMP
-		`, t.Host, t.StatusCode, t.Title, t.Server, string(techList), string(headerList), t.ContentLength, t.RedirectURL)
+		err := db.SaveTechnology(t.Host, t.StatusCode, t.Title, t.Server, string(techList), string(headerList), int64(t.ContentLength), t.RedirectURL)
 		if err != nil {
 			continue
 		}
@@ -326,13 +314,7 @@ func runMigration(db *database.Database, tinydbPath string, dryRun bool) error {
 	migratedDNS := 0
 	for _, d := range tinydb.DNSRecords {
 		recordsJSON, _ := json.Marshal(d.Records)
-		_, err := db.Exec(`
-			INSERT INTO dns_records (domain, records)
-			VALUES (?, ?)
-			ON CONFLICT(domain) DO UPDATE SET
-				records = excluded.records,
-				checked_at = CURRENT_TIMESTAMP
-		`, d.Domain, string(recordsJSON))
+		err := db.SaveDNSRecords(d.Domain, string(recordsJSON))
 		if err != nil {
 			continue
 		}
@@ -347,11 +329,7 @@ func runMigration(db *database.Database, tinydbPath string, dryRun bool) error {
 		if u.Interesting {
 			interesting = 1
 		}
-		_, err := db.Exec(`
-			INSERT INTO urls (domain, url, interesting)
-			VALUES (?, ?, ?)
-			ON CONFLICT(url) DO NOTHING
-		`, u.Domain, u.URL, interesting)
+		err := db.SaveURL(u.Domain, u.URL, "", "", interesting)
 		if err != nil {
 			continue
 		}
@@ -367,17 +345,7 @@ func runMigration(db *database.Database, tinydbPath string, dryRun bool) error {
 		if a.IntrospectionEnabled {
 			introspection = 1
 		}
-		_, err := db.Exec(`
-			INSERT INTO apis (url, api_type, version, title, endpoints_count, endpoints, introspection_enabled)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(url) DO UPDATE SET
-				api_type = excluded.api_type,
-				version = excluded.version,
-				title = excluded.title,
-				endpoints_count = excluded.endpoints_count,
-				endpoints = excluded.endpoints,
-				introspection_enabled = excluded.introspection_enabled
-		`, a.URL, a.Type, a.Version, a.Title, a.EndpointsCount, string(endpoints), introspection)
+		err := db.SaveAPI(a.URL, a.Type, a.Title, a.Version, a.EndpointsCount, string(endpoints), introspection)
 		if err != nil {
 			continue
 		}
@@ -388,11 +356,7 @@ func runMigration(db *database.Database, tinydbPath string, dryRun bool) error {
 	// Migrate emails
 	migratedEmails := 0
 	for _, e := range tinydb.Emails {
-		_, err := db.Exec(`
-			INSERT INTO emails (domain, email, source)
-			VALUES (?, ?, ?)
-			ON CONFLICT(email) DO NOTHING
-		`, e.Domain, e.Email, e.Source)
+		err := db.SaveEmail(e.Domain, e.Email, e.Source)
 		if err != nil {
 			continue
 		}
@@ -424,24 +388,7 @@ func runMigration(db *database.Database, tinydbPath string, dryRun bool) error {
 			registrarURL = strings.Join(urls, ", ")
 		}
 
-		_, err := db.Exec(`
-			INSERT INTO whois_records (domain, registrar, registrar_url, creation_date, expiration_date,
-				updated_date, days_until_expiry, registrant_org, registrant_country, name_servers, status, dnssec)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(domain) DO UPDATE SET
-				registrar = excluded.registrar,
-				registrar_url = excluded.registrar_url,
-				creation_date = excluded.creation_date,
-				expiration_date = excluded.expiration_date,
-				updated_date = excluded.updated_date,
-				days_until_expiry = excluded.days_until_expiry,
-				registrant_org = excluded.registrant_org,
-				registrant_country = excluded.registrant_country,
-				name_servers = excluded.name_servers,
-				status = excluded.status,
-				dnssec = excluded.dnssec,
-				checked_at = CURRENT_TIMESTAMP
-		`, w.Domain, w.Registrar, registrarURL, creationDate, expirationDate,
+		err := db.SaveWHOISRecord(w.Domain, w.Registrar, registrarURL, creationDate, expirationDate,
 			updatedDate, w.DaysUntilExpiry, w.RegistrantOrg, w.RegistrantCountry, nameServers, status, w.DNSSEC)
 		if err != nil {
 			continue

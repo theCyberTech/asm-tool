@@ -569,11 +569,6 @@ func (r *FindingRepository) Resolve(id int64) error {
 	return err
 }
 
-// Exec executes a raw SQL query (for migrations and advanced use)
-func (d *Database) Exec(query string, args ...interface{}) (sql.Result, error) {
-	return d.db.Exec(query, args...)
-}
-
 // GetLatestDNSRecord returns the most recently stored DNS result for a domain.
 // Returns nil, nil if no record exists yet.
 func (d *Database) GetLatestDNSRecord(domain string) (*DNSRecord, error) {
@@ -710,16 +705,17 @@ type Email struct {
 
 // CloudStorage represents a cloud storage bucket
 type CloudStorage struct {
-	ID          int64     `db:"id"`
-	Provider    string    `db:"provider"`
-	BucketName  string    `db:"bucket_name"`
-	URL         string    `db:"url"`
-	Domain      string    `db:"domain"`
-	AccessLevel string    `db:"access_level"`
-	Severity    string    `db:"severity"`
-	Evidence    string    `db:"evidence"`
-	Status      string    `db:"status"`
-	CheckedAt   time.Time `db:"checked_at"`
+	ID           int64          `db:"id"`
+	Provider     string         `db:"provider"`
+	BucketName   string         `db:"bucket_name"`
+	URL          string         `db:"url"`
+	Domain       string         `db:"domain"`
+	Source       sql.NullString `db:"source"`
+	AccessLevel  string         `db:"access_level"`
+	Severity     string         `db:"severity"`
+	Evidence     string         `db:"evidence"`
+	Status       string         `db:"status"`
+	DiscoveredAt time.Time      `db:"discovered_at"`
 }
 
 // GetCertificatesForDomain returns all certificates for hosts matching a domain
@@ -1081,26 +1077,27 @@ func saveURL(db queryExecutor, domain, url, category, source string, interesting
 }
 
 // SaveAPI upserts a discovered API endpoint
-func (d *Database) SaveAPI(url, apiType, title, version string, endpointsCount int, endpointsJSON string) error {
-	return saveAPI(d.db, url, apiType, title, version, endpointsCount, endpointsJSON)
+func (d *Database) SaveAPI(url, apiType, title, version string, endpointsCount int, endpointsJSON string, introspectionEnabled int) error {
+	return saveAPI(d.db, url, apiType, title, version, endpointsCount, endpointsJSON, introspectionEnabled)
 }
 
 // SaveAPI upserts a discovered API endpoint in this transaction.
-func (tx *Transaction) SaveAPI(url, apiType, title, version string, endpointsCount int, endpointsJSON string) error {
-	return saveAPI(tx.db, url, apiType, title, version, endpointsCount, endpointsJSON)
+func (tx *Transaction) SaveAPI(url, apiType, title, version string, endpointsCount int, endpointsJSON string, introspectionEnabled int) error {
+	return saveAPI(tx.db, url, apiType, title, version, endpointsCount, endpointsJSON, introspectionEnabled)
 }
 
-func saveAPI(db queryExecutor, url, apiType, title, version string, endpointsCount int, endpointsJSON string) error {
+func saveAPI(db queryExecutor, url, apiType, title, version string, endpointsCount int, endpointsJSON string, introspectionEnabled int) error {
 	_, err := db.Exec(`
-		INSERT INTO apis (url, api_type, title, version, endpoints_count, endpoints)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO apis (url, api_type, title, version, endpoints_count, endpoints, introspection_enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(url) DO UPDATE SET
 			api_type = excluded.api_type,
 			title = excluded.title,
 			version = excluded.version,
 			endpoints_count = excluded.endpoints_count,
-			endpoints = excluded.endpoints
-	`, url, apiType, title, version, endpointsCount, endpointsJSON)
+			endpoints = excluded.endpoints,
+			introspection_enabled = excluded.introspection_enabled
+	`, url, apiType, title, version, endpointsCount, endpointsJSON, introspectionEnabled)
 	return err
 }
 
@@ -1142,6 +1139,31 @@ func saveCloudBucket(db queryExecutor, provider, bucketName, url, domain, access
 			severity = excluded.severity,
 			evidence = excluded.evidence
 	`, provider, bucketName, url, domain, accessLevel, severity, evidence)
+	return err
+}
+
+
+// SaveWHOISRecord upserts a WHOIS record for a domain.
+func (d *Database) SaveWHOISRecord(domain, registrar, registrarURL string, creationDate, expirationDate, updatedDate time.Time, daysUntilExpiry int, registrantOrg, registrantCountry, nameServers, status, dnssec string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO whois_records (domain, registrar, registrar_url, creation_date, expiration_date,
+			updated_date, days_until_expiry, registrant_org, registrant_country, name_servers, status, dnssec)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(domain) DO UPDATE SET
+			registrar = excluded.registrar,
+			registrar_url = excluded.registrar_url,
+			creation_date = excluded.creation_date,
+			expiration_date = excluded.expiration_date,
+			updated_date = excluded.updated_date,
+			days_until_expiry = excluded.days_until_expiry,
+			registrant_org = excluded.registrant_org,
+			registrant_country = excluded.registrant_country,
+			name_servers = excluded.name_servers,
+			status = excluded.status,
+			dnssec = excluded.dnssec,
+			checked_at = CURRENT_TIMESTAMP
+	`, domain, registrar, registrarURL, creationDate, expirationDate,
+		updatedDate, daysUntilExpiry, registrantOrg, registrantCountry, nameServers, status, dnssec)
 	return err
 }
 

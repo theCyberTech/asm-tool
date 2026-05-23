@@ -28,7 +28,7 @@ type writer struct {
 	saveChangeEvent      func(string, string, string, string, string, string) error
 	saveCloudBucket      func(string, string, string, string, string, string, string) error
 	saveDNSRecords       func(string, string) error
-	saveAPI              func(string, string, string, string, int, string) error
+	saveAPI              func(string, string, string, string, int, string, int) error
 	saveEmail            func(string, string, string) error
 	saveTakeover         func(string, string, string, string, string) error
 	saveTechnology       func(string, int, string, string, string, string, int64, string) error
@@ -297,7 +297,11 @@ func SaveAPIs(store any, results []apis.API) (int, error) {
 		if !collect(&errs, err, "encoding API endpoints for %q", api.URL) {
 			continue
 		}
-		err = w.saveAPI(api.URL, api.Type, api.Title, api.Version, api.EndpointsCount, string(endpointsJSON))
+		introspection := 0
+		if api.IntrospectionEnabled {
+			introspection = 1
+		}
+		err = w.saveAPI(api.URL, api.Type, api.Title, api.Version, api.EndpointsCount, string(endpointsJSON), introspection)
 		if collect(&errs, err, "saving API %q", api.URL) {
 			saved++
 		}
