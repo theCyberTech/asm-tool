@@ -247,12 +247,13 @@ func (s *HunterSource) Enumerate(ctx context.Context, domain string) ([]string, 
 		return nil, fmt.Errorf("no API key configured")
 	}
 
-	apiURL := fmt.Sprintf("https://api.hunter.io/v2/domain-search?domain=%s&api_key=%s", url.QueryEscape(domain), url.QueryEscape(s.APIKey))
+	apiURL := fmt.Sprintf("https://api.hunter.io/v2/domain-search?domain=%s", url.QueryEscape(domain))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("X-API-KEY", s.APIKey)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
