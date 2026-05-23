@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/ratelimit"
+	"github.com/asm-tool/asm-go/internal/scanner/safehttp"
 	"github.com/asm-tool/asm-go/internal/target"
 )
 
@@ -73,8 +74,9 @@ func NewEnumeratorWithRateLimit(rps int) *Enumerator {
 	transport = ratelimit.NewTransport(transport, rps)
 
 	client := &http.Client{
-		Timeout:   60 * time.Second,
-		Transport: transport,
+		Timeout:       60 * time.Second,
+		Transport:     transport,
+		CheckRedirect: safehttp.NoFollow,
 	}
 
 	return &Enumerator{
@@ -209,13 +211,8 @@ func (e *Enumerator) ProbeURLs(ctx context.Context, urlList []URL, concurrency i
 
 	// Probe client: short timeout, follow redirects, record final URL.
 	probeClient := &http.Client{
-		Timeout: 10 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return http.ErrUseLastResponse
-			}
-			return nil
-		},
+		Timeout:       10 * time.Second,
+		CheckRedirect: safehttp.SameHostRedirect(5),
 	}
 
 	sem := make(chan struct{}, concurrency)

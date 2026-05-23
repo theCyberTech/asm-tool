@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"github.com/asm-tool/asm-go/internal/scanner/safehttp"
 	"strings"
 	"sync"
 	"time"
@@ -65,12 +66,7 @@ func NewDiscovery(insecureSkipVerify bool) *Discovery {
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
 				MaxIdleConns:    100,
 			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 2 {
-					return http.ErrUseLastResponse
-				}
-				return nil
-			},
+			CheckRedirect: safehttp.SameHostRedirect(2),
 		},
 		Timeout: 10 * time.Second,
 		Workers: 30,

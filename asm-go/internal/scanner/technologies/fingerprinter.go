@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"github.com/asm-tool/asm-go/internal/scanner/safehttp"
 	"regexp"
 	"sort"
 	"strings"
@@ -71,12 +72,7 @@ func NewFingerprinter(insecureSkipVerify bool) *Fingerprinter {
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
 			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 3 {
-					return http.ErrUseLastResponse
-				}
-				return nil
-			},
+			CheckRedirect: safehttp.SameHostRedirect(3),
 		},
 		Timeout:            10 * time.Second,
 		Workers:            30,

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/ratelimit"
+	"github.com/asm-tool/asm-go/internal/scanner/safehttp"
 	"github.com/asm-tool/asm-go/internal/target"
 )
 
@@ -55,8 +56,9 @@ func NewEnumeratorWithRateLimit(rps int) *Enumerator {
 	transport = ratelimit.NewTransport(transport, rps)
 
 	client := &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: transport,
+		Timeout:       30 * time.Second,
+		Transport:     transport,
+		CheckRedirect: safehttp.NoFollow,
 	}
 
 	return &Enumerator{

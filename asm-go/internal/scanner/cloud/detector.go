@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"github.com/asm-tool/asm-go/internal/scanner/safehttp"
 	"regexp"
 	"strings"
 	"sync"
@@ -55,9 +56,7 @@ func NewDetector(insecureSkipVerify bool) *Detector {
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
 			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
+			CheckRedirect: safehttp.NoFollow,
 		},
 		Timeout:            10 * time.Second,
 		Workers:            20,

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/target"
+	"github.com/asm-tool/asm-go/internal/scanner/safehttp"
 )
 
 // Email represents a discovered email address
@@ -50,10 +51,9 @@ type Enumerator struct {
 // DefaultEnumerator returns an enumerator with built-in sources
 func DefaultEnumerator() *Enumerator {
 	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns: 100,
-		},
+		Timeout:       30 * time.Second,
+		Transport:     &http.Transport{MaxIdleConns: 100},
+		CheckRedirect: safehttp.NoFollow,
 	}
 
 	return &Enumerator{
