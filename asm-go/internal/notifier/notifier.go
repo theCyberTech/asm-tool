@@ -232,18 +232,34 @@ func (n *Notifier) NotifyEmail(result *parallel.ScanResult) error {
 		return n.sendMailTLS(addr, []byte(msg))
 	}
 
-	// Fallback to plain SMTP (not recommended)
+	if !isLocalSMTPHost(n.SMTPHost) {
+		return fmt.Errorf("plaintext SMTP is only supported for localhost hosts; enable TLS for %q", n.SMTPHost)
+	}
+
+	return n.sendMailPlain(addr, []byte(msg))
+}
+
+func (n *Notifier) sendMailPlain(addr string, msg []byte) error {
 	var auth smtp.Auth
 	if n.SMTPUser != "" && n.SMTPPassword != "" {
 		auth = smtp.PlainAuth("", n.SMTPUser, n.SMTPPassword, n.SMTPHost)
 	}
 
-	err := smtp.SendMail(addr, auth, n.EmailFrom, n.EmailTo, []byte(msg))
-	if err != nil {
+	if err := smtp.SendMail(addr, auth, n.EmailFrom, n.EmailTo, msg); err != nil {
 		return fmt.Errorf("sending email: %w", err)
 	}
 
 	return nil
+}
+
+func isLocalSMTPHost(host string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	switch host {
+	case "localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1":
+		return true
+	default:
+		return false
+	}
 }
 
 // sendMailTLS sends email using TLS (supports both STARTTLS on port 587 and implicit TLS on port 465)
