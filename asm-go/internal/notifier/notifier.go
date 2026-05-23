@@ -8,6 +8,7 @@ import (
 	"html"
 	"net"
 	"net/http"
+	"net/url"
 	"net/smtp"
 	"strings"
 	"time"
@@ -44,6 +45,11 @@ func (n *Notifier) NotifySlack(result *parallel.ScanResult) error {
 		return fmt.Errorf("slack webhook not configured")
 	}
 
+	webhookURL, err := validateSlackWebhookURL(n.SlackWebhook)
+	if err != nil {
+		return err
+	}
+
 	message := n.buildSlackMessage(result)
 
 	payload, err := json.Marshal(message)
@@ -51,7 +57,7 @@ func (n *Notifier) NotifySlack(result *parallel.ScanResult) error {
 		return fmt.Errorf("marshaling slack payload: %w", err)
 	}
 
-	resp, err := n.HTTPClient.Post(n.SlackWebhook, "application/json", bytes.NewReader(payload))
+	resp, err := n.HTTPClient.Post(webhookURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("posting to slack: %w", err)
 	}
@@ -250,6 +256,25 @@ func (n *Notifier) sendMailPlain(addr string, msg []byte) error {
 	}
 
 	return nil
+}
+
+
+func validateSlackWebhookURL(raw string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", fmt.Errorf("invalid slack webhook URL: %w", err)
+	}
+	if parsed.Scheme != "https" {
+		return "", fmt.Errorf("slack webhook URL must use https")
+	}
+	if parsed.Host != "hooks.slack.com" {
+		return "", fmt.Errorf("slack webhook URL must point to hooks.slack.com")
+	}
+	if parsed.Path == "" || parsed.Path == "/" {
+		return "", fmt.Errorf("slack webhook URL path is required")
+	}
+
+	return parsed.String(), nil
 }
 
 func isLocalSMTPHost(host string) bool {

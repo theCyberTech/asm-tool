@@ -44,6 +44,46 @@ func TestNotifyEmailRejectsPlaintextRemoteHost(t *testing.T) {
 	}
 }
 
+
+func TestValidateSlackWebhookURL(t *testing.T) {
+	t.Parallel()
+
+	valid := "https://hooks.slack.com/services/T000/B000/XXXX"
+	got, err := validateSlackWebhookURL(valid)
+	if err != nil {
+		t.Fatalf("validateSlackWebhookURL() error = %v", err)
+	}
+	if got != valid {
+		t.Fatalf("validateSlackWebhookURL() = %q, want %q", got, valid)
+	}
+
+	cases := []string{
+		"http://hooks.slack.com/services/T000/B000/XXXX",
+		"https://evil.com/hooks.slack.com/services/T000/B000/XXXX",
+		"https://hooks.slack.com.evil.com/services/T000/B000/XXXX",
+		"https://hooks.slack.com/",
+		"https://example.com/webhook",
+	}
+	for _, raw := range cases {
+		if _, err := validateSlackWebhookURL(raw); err == nil {
+			t.Fatalf("validateSlackWebhookURL(%q) expected error", raw)
+		}
+	}
+}
+
+func TestNotifySlackRejectsUntrustedWebhookURL(t *testing.T) {
+	n := DefaultNotifier()
+	n.SlackWebhook = "https://example.com/exfil"
+
+	err := n.NotifySlack(&parallel.ScanResult{Domain: "example.com"})
+	if err == nil {
+		t.Fatal("NotifySlack() expected error for untrusted webhook URL")
+	}
+	if !strings.Contains(err.Error(), "hooks.slack.com") {
+		t.Fatalf("NotifySlack() error = %v, want hooks.slack.com validation error", err)
+	}
+}
+
 func TestNotifyEmailAllowsPlaintextLocalhost(t *testing.T) {
 	n := DefaultNotifier()
 	n.UseTLS = false
