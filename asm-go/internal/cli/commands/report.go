@@ -3,11 +3,11 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/pathsafe"
 	"github.com/asm-tool/asm-go/internal/parallel"
 	"github.com/asm-tool/asm-go/internal/reporter"
 	"github.com/spf13/cobra"
@@ -256,8 +256,8 @@ func runReportConvert(inputFile, outputFormat, outputDir string) error {
 	fmt.Printf("\n%s Converting report from %s\n", titleStyle.Render("[*]"), valueStyle.Render(inputFile))
 	fmt.Println(strings.Repeat("-", 50))
 
-	// Read JSON file
-	data, err := os.ReadFile(inputFile)
+	// Read JSON file (bounded, confined to working directory)
+	data, err := pathsafe.ReadFile(inputFile, pathsafe.MaxReportJSONBytes)
 	if err != nil {
 		return fmt.Errorf("reading input file: %w", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/pathsafe"
 	"github.com/spf13/cobra"
 )
 
@@ -35,8 +36,8 @@ This command reads the TinyDB JSON file and imports all data including:
 - WHOIS records
 
 Example:
-  asm migrate --from ../data/asm.db
-  asm migrate --from ../data/asm.db --dry-run`,
+  asm migrate --from data/asm.db
+  asm migrate --from data/asm.db --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if tinydbPath == "" {
 				// Default to sibling directory
@@ -172,15 +173,18 @@ func runMigration(db *database.Database, tinydbPath string, dryRun bool) error {
 	fmt.Printf("\n%s TinyDB to SQLite Migration\n", titleStyle.Render("[*]"))
 	fmt.Println(strings.Repeat("=", 60))
 
-	// Check if TinyDB file exists
-	if _, err := os.Stat(tinydbPath); os.IsNotExist(err) {
-		return fmt.Errorf("TinyDB file not found: %s", tinydbPath)
+	// Check if TinyDB file exists and is readable under cwd
+	if _, err := pathsafe.Stat(tinydbPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("TinyDB file not found: %s", tinydbPath)
+		}
+		return fmt.Errorf("TinyDB file: %w", err)
 	}
 
 	fmt.Printf("%s Reading TinyDB from: %s\n", labelStyle.Render("[*]"), tinydbPath)
 
-	// Read TinyDB JSON file
-	data, err := os.ReadFile(tinydbPath)
+	// Read TinyDB JSON file (bounded, confined to working directory)
+	data, err := pathsafe.ReadFile(tinydbPath, pathsafe.MaxMigrateFileBytes)
 	if err != nil {
 		return fmt.Errorf("reading TinyDB file: %w", err)
 	}
