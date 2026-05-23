@@ -44,15 +44,20 @@ func runDashboard(deps *Deps, host string, port int) error {
 
 	// Create router
 	mux := http.NewServeMux()
+	ops := newDashboardOps(deps)
 
 	// Register routes
 	mux.HandleFunc("/", makeIndexHandler(deps))
-	mux.HandleFunc("/domains", makeIndexHandler(deps))
+	mux.HandleFunc("/domains", makeDomainsHandler(deps))
 	mux.HandleFunc("/domains/", makeDomainDetailHandler(deps))
+	mux.HandleFunc("/operations", makeOperationsHandler(deps, ops))
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/stats", makeStatsHandler(deps))
+	mux.HandleFunc("/api/runs", ops.handleRunsJSON)
+	mux.HandleFunc("/api/runs/start", ops.handleStartRun)
 	mux.HandleFunc("/partials/stats", makeStatsPartialHandler(deps))
 	mux.HandleFunc("/partials/domains", makeDomainsPartialHandler(deps))
+	mux.HandleFunc("/partials/runs", ops.handleRunsPartial)
 
 	// Asset list pages
 	for _, route := range []struct{ path, page, title string }{
@@ -213,7 +218,25 @@ func makeIndexHandler(deps *Deps) http.HandlerFunc {
 		data := getPageData(deps, "dashboard")
 
 		if err := dashboard.RenderPage(w, "base", data); err != nil {
-			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			writeDashboardInternalError(w, "Failed to render page", err)
+			return
+		}
+	}
+}
+
+func makeDomainsHandler(deps *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/domains" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		data := getPageData(deps, "domains")
+
+		if err := dashboard.RenderPage(w, "domains-base", data); err != nil {
+			writeDashboardInternalError(w, "Failed to render page", err)
 			return
 		}
 	}
@@ -226,7 +249,7 @@ func makeStatsPartialHandler(deps *Deps) http.HandlerFunc {
 		data := getPageData(deps, "dashboard")
 
 		if err := dashboard.RenderPartial(w, "stats-content", data); err != nil {
-			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			writeDashboardInternalError(w, "Failed to render page", err)
 			return
 		}
 	}
@@ -245,7 +268,7 @@ func makeDomainsPartialHandler(deps *Deps) http.HandlerFunc {
 		// Get all domains with stats
 		domains, err := deps.DB.GetDomainsWithStats()
 		if err != nil {
-			http.Error(w, "Failed to get domains: "+err.Error(), http.StatusInternalServerError)
+			writeDashboardInternalError(w, "Failed to load domains", err)
 			return
 		}
 
@@ -295,7 +318,7 @@ func makeDomainsPartialHandler(deps *Deps) http.HandlerFunc {
 		}
 
 		if err := dashboard.RenderPartial(w, "domains-table-rows", data); err != nil {
-			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			writeDashboardInternalError(w, "Failed to render page", err)
 			return
 		}
 	}
@@ -310,7 +333,11 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 
 		switch activePage {
 		case "subdomains":
-			rows, _ := deps.DB.GetAllSubdomains()
+			rows, err := deps.DB.GetAllSubdomains()
+			if err != nil {
+				writeDashboardInternalError(w, "Failed to load subdomains", err)
+				return
+			}
 			for _, s := range rows {
 				list.Subdomains = append(list.Subdomains, dashboard.SubdomainView{
 					Subdomain:    s.Subdomain,
@@ -319,7 +346,11 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 				})
 			}
 		case "ports":
-			rows, _ := deps.DB.GetAllPorts()
+			rows, err := deps.DB.GetAllPorts()
+			if err != nil {
+				writeDashboardInternalError(w, "Failed to load ports", err)
+				return
+			}
 			for _, p := range rows {
 				list.Ports = append(list.Ports, dashboard.PortView{
 					Host:         p.Host,
@@ -333,7 +364,11 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 				})
 			}
 		case "certificates":
-			rows, _ := deps.DB.GetAllCertificates()
+			rows, err := deps.DB.GetAllCertificates()
+			if err != nil {
+				writeDashboardInternalError(w, "Failed to load certificates", err)
+				return
+			}
 			for _, c := range rows {
 				list.Certificates = append(list.Certificates, dashboard.CertificateView{
 					Host:            c.Host,
@@ -346,7 +381,11 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 				})
 			}
 		case "urls":
-			rows, _ := deps.DB.GetAllURLs()
+			rows, err := deps.DB.GetAllURLs()
+			if err != nil {
+				writeDashboardInternalError(w, "Failed to load URLs", err)
+				return
+			}
 			for _, u := range rows {
 				list.URLs = append(list.URLs, dashboard.URLView{
 					URL:          u.URL,
@@ -358,7 +397,11 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 				})
 			}
 		case "apis":
-			rows, _ := deps.DB.GetAllAPIs()
+			rows, err := deps.DB.GetAllAPIs()
+			if err != nil {
+				writeDashboardInternalError(w, "Failed to load APIs", err)
+				return
+			}
 			for _, a := range rows {
 				list.APIs = append(list.APIs, dashboard.APIView{
 					URL:          a.URL,
@@ -369,7 +412,11 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 				})
 			}
 		case "emails":
-			rows, _ := deps.DB.GetAllEmails()
+			rows, err := deps.DB.GetAllEmails()
+			if err != nil {
+				writeDashboardInternalError(w, "Failed to load emails", err)
+				return
+			}
 			for _, e := range rows {
 				list.Emails = append(list.Emails, dashboard.EmailView{
 					Address:      e.Address,
@@ -378,7 +425,11 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 				})
 			}
 		case "cloud":
-			rows, _ := deps.DB.GetAllCloudStorage()
+			rows, err := deps.DB.GetAllCloudStorage()
+			if err != nil {
+				writeDashboardInternalError(w, "Failed to load cloud storage", err)
+				return
+			}
 			for _, c := range rows {
 				list.CloudStorage = append(list.CloudStorage, dashboard.CloudStorageView{
 					Provider:    c.Provider,
@@ -391,7 +442,11 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 				})
 			}
 		case "findings":
-			rows, _ := deps.DB.GetAllFindings()
+			rows, err := deps.DB.GetAllFindings()
+			if err != nil {
+				writeDashboardInternalError(w, "Failed to load findings", err)
+				return
+			}
 			for _, f := range rows {
 				list.Findings = append(list.Findings, dashboard.FindingView{
 					ID:           f.ID,
@@ -405,7 +460,11 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 				})
 			}
 		case "takeovers":
-			rows, _ := deps.DB.GetAllTakeovers()
+			rows, err := deps.DB.GetAllTakeovers()
+			if err != nil {
+				writeDashboardInternalError(w, "Failed to load takeovers", err)
+				return
+			}
 			for _, t := range rows {
 				list.Takeovers = append(list.Takeovers, dashboard.TakeoverView{
 					Subdomain:    t.Subdomain,
@@ -421,7 +480,7 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 
 		data.GlobalList = list
 		if err := dashboard.RenderPage(w, "list-base", data); err != nil {
-			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			writeDashboardInternalError(w, "Failed to render page", err)
 		}
 	}
 }
@@ -490,14 +549,14 @@ func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
 		// Check if this is a refresh request (htmx partial)
 		if strings.HasSuffix(r.URL.Path, "/refresh") {
 			if err := dashboard.RenderPartial(w, "domain-detail-content", data); err != nil {
-				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+				writeDashboardInternalError(w, "Failed to render page", err)
 			}
 			return
 		}
 
 		// Full page render
 		if err := dashboard.RenderPage(w, "domain-base", data); err != nil {
-			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			writeDashboardInternalError(w, "Failed to render page", err)
 			return
 		}
 	}
