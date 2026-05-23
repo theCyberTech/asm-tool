@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // API represents a discovered API endpoint
@@ -97,44 +99,29 @@ func (d *Discovery) Discover(ctx context.Context, host string) *Result {
 		return result
 	}
 
-	// Check common API paths concurrently
-	type pathResult struct {
-		api *API
-	}
+	// Check common API paths with bounded concurrency.
+	const pathConcurrency = 10
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(pathConcurrency)
 
-	results := make(chan pathResult, len(d.Paths))
-	sem := make(chan struct{}, 10) // Limit concurrent requests per host
-
-	var wg sync.WaitGroup
+	var mu sync.Mutex
 	for _, path := range d.Paths {
-		wg.Add(1)
-		go func(p string) {
-			defer wg.Done()
-
-			select {
-			case <-ctx.Done():
-				return
-			case sem <- struct{}{}:
+		p := path
+		g.Go(func() error {
+			if gctx.Err() != nil {
+				return nil
 			}
-			defer func() { <-sem }()
 
 			url := baseURL + p
-			if api := d.checkPath(ctx, url, p); api != nil {
-				results <- pathResult{api: api}
+			if api := d.checkPath(gctx, url, p); api != nil {
+				mu.Lock()
+				result.APIs = append(result.APIs, *api)
+				mu.Unlock()
 			}
-		}(path)
+			return nil
+		})
 	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	for pr := range results {
-		if pr.api != nil {
-			result.APIs = append(result.APIs, *pr.api)
-		}
-	}
+	_ = g.Wait()
 
 	// Check for GraphQL
 	if gql := d.checkGraphQL(ctx, baseURL); gql != nil {
