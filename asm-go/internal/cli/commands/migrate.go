@@ -37,7 +37,8 @@ This command reads the TinyDB JSON file and imports all data including:
 
 Example:
   asm migrate --from data/asm.db
-  asm migrate --from data/asm.db --dry-run`,
+  asm migrate --from ../data/asm.db
+  asm migrate --from ../data/asm.db --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if tinydbPath == "" {
 				// Default to sibling directory
