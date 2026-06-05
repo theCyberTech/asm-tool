@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -43,6 +44,7 @@ type Source interface {
 // Enumerator discovers email addresses from multiple sources
 type Enumerator struct {
 	Sources    []Source
+	HunterRef  *HunterSource // reference to configure API key
 	HTTPClient *http.Client
 	Timeout    time.Duration
 }
@@ -52,18 +54,24 @@ func DefaultEnumerator() *Enumerator {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
-			MaxIdleConns: 100,
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
 		},
 	}
 
+	hunter := &HunterSource{client: client}
+
 	return &Enumerator{
 		Sources: []Source{
-			&HunterSource{client: client},
+			hunter,
 			&SkymemSource{client: client},
-			&CrtShEmailSource{client: client},
+			&GitHubEmailSource{client: client},
+			&EmailPermutatorSource{client: client},
 		},
+		HunterRef:  hunter,
 		HTTPClient: client,
-		Timeout:    60 * time.Second,
+		Timeout:    90 * time.Second,
 	}
 }
 
@@ -77,10 +85,15 @@ func DefaultEnumeratorWithHunterAPIKey(apiKey string) *Enumerator {
 // SetHunterAPIKey wires a configured Hunter.io API key into the Hunter source.
 func (e *Enumerator) SetHunterAPIKey(apiKey string) {
 	apiKey = strings.TrimSpace(apiKey)
-	for _, src := range e.Sources {
-		if hunter, ok := src.(*HunterSource); ok {
-			hunter.APIKey = apiKey
-		}
+	if apiKey == "" {
+		return
+	}
+	if e.HunterRef != nil {
+		e.HunterRef.APIKey = apiKey
+	} else {
+		hunter := &HunterSource{client: e.HTTPClient, APIKey: apiKey}
+		e.HunterRef = hunter
+		e.Sources = append(e.Sources, hunter)
 	}
 }
 
@@ -234,9 +247,123 @@ func classifyEmail(email string) string {
 	return "personal"
 }
 
-var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+var emailRegex = regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
 
-// HunterSource queries Hunter.io (free tier)
+// GitHubEmailSource searches GitHub for email addresses in commits
+type GitHubEmailSource struct {
+	client *http.Client
+}
+
+func (s *GitHubEmailSource) Name() string { return "github" }
+
+func (s *GitHubEmailSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
+	// Search GitHub for email patterns in code
+	apiURL := fmt.Sprintf("https://api.github.com/search/code?q=\\\"@%s\\\"&per_page=100", url.QueryEscape(domain))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "ASM-Tool/2.0")
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// GitHub API rate limits without auth
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("rate limited by GitHub API")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract emails from search results
+	return extractEmails(string(body), domain), nil
+}
+
+// SkymemSource queries Skymem
+type SkymemSource struct {
+	client *http.Client
+}
+
+func (s *SkymemSource) Name() string { return "skymem" }
+
+func (s *SkymemSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
+	apiURL := fmt.Sprintf("https://www.skymem.info/srch?q=%s", url.QueryEscape(domain))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return extractEmails(string(body), domain), nil
+}
+
+// EmailPermutatorSource generates common email permutations for domains with
+// valid MX records. It verifies the domain accepts mail before returning
+// addresses to avoid polluting results with non-existent domains.
+type EmailPermutatorSource struct {
+	client *http.Client
+}
+
+func (s *EmailPermutatorSource) Name() string { return "permutator" }
+
+func (s *EmailPermutatorSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
+	// Only generate permutations if the domain has MX records
+	if !hasMXRecords(ctx, domain) {
+		return nil, nil
+	}
+
+	patterns := []string{
+		"info", "contact", "support", "help", "admin",
+		"sales", "marketing", "hr", "jobs", "careers",
+		"hello", "team", "office", "press", "media",
+		"billing", "finance", "legal", "security",
+		"noreply", "no-reply", "webmaster", "postmaster",
+		"hostmaster", "abuse", "feedback", "enquiries",
+	}
+
+	emails := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		emails = append(emails, fmt.Sprintf("%s@%s", pattern, domain))
+	}
+
+	return emails, nil
+}
+
+// hasMXRecords checks if a domain has MX records indicating it accepts email.
+func hasMXRecords(ctx context.Context, domain string) bool {
+	mxRecords, err := net.DefaultResolver.LookupMX(ctx, domain)
+	return err == nil && len(mxRecords) > 0
+}
+
+// HunterSource queries Hunter.io (requires API key)
 type HunterSource struct {
 	client *http.Client
 	APIKey string
@@ -246,7 +373,6 @@ func (s *HunterSource) Name() string { return "hunter" }
 
 func (s *HunterSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
 	if s.APIKey == "" {
-		// Try without API key (very limited)
 		return nil, fmt.Errorf("no API key configured")
 	}
 
@@ -289,71 +415,6 @@ func (s *HunterSource) Enumerate(ctx context.Context, domain string) ([]string, 
 	return emails, nil
 }
 
-// SkymemSource queries Skymem
-type SkymemSource struct {
-	client *http.Client
-}
-
-func (s *SkymemSource) Name() string { return "skymem" }
-
-func (s *SkymemSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	apiURL := fmt.Sprintf("https://www.skymem.info/srch?q=%s", url.QueryEscape(domain))
-
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract emails from response
-	return extractEmails(string(body), domain), nil
-}
-
-// CrtShEmailSource extracts emails from certificate data
-type CrtShEmailSource struct {
-	client *http.Client
-}
-
-func (s *CrtShEmailSource) Name() string { return "crtsh" }
-
-func (s *CrtShEmailSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	apiURL := fmt.Sprintf("https://crt.sh/?q=%s&output=json", url.QueryEscape("%."+domain))
-
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "ASM-Tool/2.0")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return extractEmails(string(body), domain), nil
-}
-
 // extractEmails extracts email addresses from text
 func extractEmails(text, domain string) []string {
 	var emails []string
@@ -361,7 +422,7 @@ func extractEmails(text, domain string) []string {
 
 	matches := emailRegex.FindAllString(text, -1)
 	for _, match := range matches {
-		match = strings.ToLower(match)
+		match = strings.ToLower(strings.TrimSpace(match))
 		if !seen[match] && emailBelongsToDomain(match, domain) {
 			seen[match] = true
 			emails = append(emails, match)
