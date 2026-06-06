@@ -25,6 +25,9 @@ var migration002 string
 //go:embed migrations/003_findings_dedup.sql
 var migration003 string
 
+//go:embed migrations/004_snapshot_vulns.sql
+var migration004 string
+
 // Database is the main database facade
 type Database struct {
 	db *sqlx.DB
@@ -163,6 +166,12 @@ func (d *Database) migrate() error {
 	if version < 3 {
 		if _, err = d.db.Exec(migration003); err != nil {
 			return fmt.Errorf("running migration 003: %w", err)
+		}
+	}
+
+	if version < 4 {
+		if _, err = d.db.Exec(migration004); err != nil {
+			return fmt.Errorf("running migration 004: %w", err)
 		}
 	}
 
@@ -1328,4 +1337,61 @@ func (d *Database) GetAllTakeovers() ([]Takeover, error) {
 		return nil, nil
 	}
 	return rows, err
+}
+
+// Snapshot represents a point-in-time capture of domain scan state.
+type Snapshot struct {
+	ID              int64     `db:"id"`
+	SnapshotID      string    `db:"snapshot_id"`
+	Domain          string    `db:"domain"`
+	ScanType        string    `db:"scan_type"`
+	Timestamp       time.Time `db:"timestamp"`
+	SubdomainCount  int       `db:"subdomain_count"`
+	PortCount       int       `db:"port_count"`
+	CertificateCount int     `db:"certificate_count"`
+	FindingCounts   string    `db:"finding_counts"`
+	RiskScore       int       `db:"risk_score"`
+	Subdomains      string    `db:"subdomains"`
+	Ports           string    `db:"ports"`
+	Certificates    string    `db:"certificates"`
+	Vulnerabilities string    `db:"vulnerabilities"`
+}
+
+// SaveSnapshot stores a point-in-time snapshot of a domain's scan state.
+// JSON strings should be pre-encoded by the caller.
+func (d *Database) SaveSnapshot(domain, scanType string, subdomainCount, portCount, certCount, riskScore int, findingCounts, subdomainsJSON, portsJSON, certsJSON, vulnsJSON string) error {
+	var rnd [8]byte
+	_, _ = rand.Read(rnd[:])
+	snapshotID := fmt.Sprintf("snap-%s-%s-%d", domain, hex.EncodeToString(rnd[:]), time.Now().UnixNano())
+
+	_, err := d.db.Exec(`
+		INSERT INTO scan_snapshots
+			(snapshot_id, domain, scan_type, subdomain_count, port_count, certificate_count,
+			 finding_counts, risk_score, subdomains, ports, certificates, vulnerabilities)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, snapshotID, domain, scanType, subdomainCount, portCount, certCount,
+		findingCounts, riskScore, subdomainsJSON, portsJSON, certsJSON, vulnsJSON)
+	return err
+}
+
+// GetLatestSnapshots returns the N most recent snapshots for a domain,
+// ordered newest-first.
+func (d *Database) GetLatestSnapshots(domain string, limit int) ([]Snapshot, error) {
+	if limit <= 0 {
+		limit = 2
+	}
+	var snapshots []Snapshot
+	err := d.db.Select(&snapshots, `
+		SELECT * FROM scan_snapshots
+		WHERE domain = ?
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`, domain, limit)
+	if err != nil {
+		if isTableNotExistsError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("querying snapshots for %q: %w", domain, err)
+	}
+	return snapshots, nil
 }

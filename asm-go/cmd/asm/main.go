@@ -49,6 +49,7 @@ DNS records, vulnerabilities, URLs, subdomain takeovers, API endpoints, and emai
 	rootCmd.AddCommand(commands.NucleiCmd(deps))
 	rootCmd.AddCommand(commands.MigrateCmd(deps))
 	rootCmd.AddCommand(commands.DashboardCmd(deps))
+	rootCmd.AddCommand(commands.DiffCmd(deps))
 	rootCmd.AddCommand(versionCmd())
 
 	if err := rootCmd.Execute(); err != nil {

@@ -2,8 +2,10 @@ package parallel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -407,6 +409,10 @@ func (r *Runner) Run(ctx context.Context, domain string) (*ScanResult, error) {
 			result.Errors[ModuleType("persist")] = err
 			return result, err
 		}
+		// Save a snapshot for diff tracking (best-effort, non-fatal)
+		if snapErr := r.saveSnapshotForDomain(domain, result); snapErr != nil {
+			result.Errors[ModuleType("snapshot")] = snapErr
+		}
 	}
 
 	return result, nil
@@ -417,6 +423,92 @@ func (r *Runner) persistResults(domain string, result *ScanResult) error {
 	return r.DB.WithTransaction(func(tx *database.Transaction) error {
 		return persistResultsInTransaction(tx, domain, result)
 	})
+}
+
+// saveSnapshotForDomain captures a point-in-time snapshot of the domain's
+// current state for diff tracking.
+func (r *Runner) saveSnapshotForDomain(domain string, result *ScanResult) error {
+	// Encode subdomains as JSON array
+	subNames := result.Subdomains
+	if subNames == nil {
+		subNames = []string{}
+	}
+	subsJSON, _ := json.Marshal(subNames)
+
+	// Build port summaries
+	type portEntry struct {
+		Host    string `json:"host"`
+		Port    int    `json:"port"`
+		Service string `json:"service"`
+		State   string `json:"state"`
+	}
+	var portEntries []portEntry
+	for _, p := range result.Ports {
+		portEntries = append(portEntries, portEntry{
+			Host:    p.Host,
+			Port:    p.Port,
+			Service: p.Service,
+			State:   p.State,
+		})
+	}
+	if portEntries == nil {
+		portEntries = []portEntry{}
+	}
+	portsJSON, _ := json.Marshal(portEntries)
+
+	// Build vulnerability summaries
+	type vulnEntry struct {
+		TemplateID string `json:"template_id"`
+		Name       string `json:"name"`
+		Severity   string `json:"severity"`
+		Host       string `json:"host"`
+	}
+	var vulnEntries []vulnEntry
+	for _, v := range result.Vulnerabilities {
+		vulnEntries = append(vulnEntries, vulnEntry{
+			TemplateID: v.TemplateID,
+			Name:       v.Info.Name,
+			Severity:   strings.ToLower(v.Info.Severity),
+			Host:       v.Host,
+		})
+	}
+	if vulnEntries == nil {
+		vulnEntries = []vulnEntry{}
+	}
+	vulnsJSON, _ := json.Marshal(vulnEntries)
+
+	// Finding counts by severity
+	critCount, highCount, medCount := 0, 0, 0
+	for _, v := range result.Vulnerabilities {
+		switch strings.ToLower(v.Info.Severity) {
+		case "critical":
+			critCount++
+		case "high":
+			highCount++
+		case "medium":
+			medCount++
+		}
+	}
+	findingCounts, _ := json.Marshal(map[string]int{
+		"critical": critCount,
+		"high":     highCount,
+		"medium":   medCount,
+		"total":    len(result.Vulnerabilities),
+	})
+
+	return r.DB.SaveSnapshot(
+		domain,
+		"full",
+		len(result.Subdomains),
+		len(result.Ports),
+		len(result.Certificates),
+		0, // risk score — not computed here
+		string(findingCounts),
+		string(subsJSON),
+		string(portsJSON),
+		"[]", // certificates JSON (not tracked in diff for now)
+		string(vulnsJSON),
+	)
 }
 
 func persistResultsInTransaction(tx *database.Transaction, domain string, result *ScanResult) error {
