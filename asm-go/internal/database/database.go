@@ -28,6 +28,9 @@ var migration003 string
 //go:embed migrations/004_snapshot_vulns.sql
 var migration004 string
 
+//go:embed migrations/005_scheduled_runs.sql
+var migration005 string
+
 // Database is the main database facade
 type Database struct {
 	db *sqlx.DB
@@ -172,6 +175,12 @@ func (d *Database) migrate() error {
 	if version < 4 {
 		if _, err = d.db.Exec(migration004); err != nil {
 			return fmt.Errorf("running migration 004: %w", err)
+		}
+	}
+
+	if version < 5 {
+		if _, err = d.db.Exec(migration005); err != nil {
+			return fmt.Errorf("running migration 005: %w", err)
 		}
 	}
 
@@ -581,6 +590,11 @@ func (r *FindingRepository) Resolve(id int64) error {
 // Exec executes a raw SQL query (for migrations and advanced use)
 func (d *Database) Exec(query string, args ...interface{}) (sql.Result, error) {
 	return d.db.Exec(query, args...)
+}
+
+// Raw returns the underlying sqlx.DB for direct queries.
+func (d *Database) Raw() *sqlx.DB {
+	return d.db
 }
 
 // GetLatestDNSRecord returns the most recently stored DNS result for a domain.
