@@ -56,12 +56,12 @@ func TestPassiveSourceRequestsEscapeQueryValues(t *testing.T) {
 		wantRawQuery string
 	}{
 		{
-			name: "crtsh wildcard percent escaped",
+			name: "certspotter domain parameter",
 			source: func(client *http.Client) Source {
-				return &CrtShSource{client: client}
+				return &CertSpotterSource{client: client}
 			},
 			body:         `[]`,
-			wantRawQuery: "q=%25.example.com&output=json",
+			wantRawQuery: "domain=example.com&include_subdomains=true&expand=dns_names",
 		},
 		{
 			name: "urlscan colon escaped",

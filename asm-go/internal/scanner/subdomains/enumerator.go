@@ -61,13 +61,13 @@ func NewEnumeratorWithRateLimit(rps int) *Enumerator {
 
 	return &Enumerator{
 		Sources: []Source{
-			&CrtShSource{client: client},
+			&CertSpotterSource{client: client},
 			&HackerTargetSource{client: client},
 			&URLScanSource{client: client},
-			&AlienVaultSource{client: client},
+			&RapidDNSSource{client: client},
 		},
 		HTTPClient: client,
-		Timeout:    60 * time.Second,
+		Timeout:    120 * time.Second,
 	}
 }
 
@@ -177,57 +177,77 @@ func isValidSubdomain(s string) bool {
 	return true
 }
 
-// CrtShSource queries certificate transparency logs via crt.sh
-type CrtShSource struct {
+// CertSpotterSource queries SSLMate's CertSpotter API for certificate transparency logs
+type CertSpotterSource struct {
 	client *http.Client
 }
 
-func (s *CrtShSource) Name() string { return "crt.sh" }
+func (s *CertSpotterSource) Name() string { return "certspotter" }
 
-func (s *CrtShSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	apiURL := fmt.Sprintf("https://crt.sh/?q=%s&output=json", url.QueryEscape("%."+domain))
+func (s *CertSpotterSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
+	apiURL := fmt.Sprintf("https://api.certspotter.com/v1/issuances?domain=%s&include_subdomains=true&expand=dns_names", url.QueryEscape(domain))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "ASM-Tool/2.0")
+	maxRetries := 3
+	var lastErr error
 
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			waitDuration := time.Duration(2<<uint(attempt-1)) * time.Second
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(waitDuration):
+			}
+		}
 
-	if resp.StatusCode != http.StatusOK {
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		req.Header.Set("User-Agent", "ASM-Tool/2.0")
+
+		resp, err := s.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+
+			var certs []struct {
+				DNSNames []string `json:"dns_names"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&certs); err != nil {
+				return nil, err
+			}
+
+			seen := make(map[string]bool)
+			var subs []string
+			for _, cert := range certs {
+				for _, name := range cert.DNSNames {
+					name = strings.TrimSpace(name)
+					if name != "" && !seen[name] {
+						seen[name] = true
+						subs = append(subs, name)
+					}
+				}
+			}
+			return subs, nil
+		}
+
+		resp.Body.Close()
+
+		// Rate limited or server error - retry
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("status %d", resp.StatusCode)
+			continue
+		}
+
+		// Client errors - don't retry
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	// Limit response body to 10MB to prevent memory exhaustion
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
-	if err != nil {
-		return nil, err
-	}
-
-	var entries []struct {
-		NameValue string `json:"name_value"`
-	}
-	if err := json.Unmarshal(body, &entries); err != nil {
-		return nil, err
-	}
-
-	var subs []string
-	for _, entry := range entries {
-		// Handle multi-line entries
-		for _, line := range strings.Split(entry.NameValue, "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				subs = append(subs, line)
-			}
-		}
-	}
-
-	return subs, nil
+	return nil, lastErr
 }
 
 // HackerTargetSource queries the HackerTarget API
@@ -331,51 +351,80 @@ func (s *URLScanSource) Enumerate(ctx context.Context, domain string) ([]string,
 	return subs, nil
 }
 
-// AlienVaultSource queries AlienVault OTX
-type AlienVaultSource struct {
+// RapidDNSSource scrapes rapiddns.io for subdomains
+
+type RapidDNSSource struct {
 	client *http.Client
 }
 
-func (s *AlienVaultSource) Name() string { return "alienvault" }
+func (s *RapidDNSSource) Name() string { return "rapiddns" }
 
-func (s *AlienVaultSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
-	apiURL := fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/domain/%s/passive_dns", url.PathEscape(domain))
+func (s *RapidDNSSource) Enumerate(ctx context.Context, domain string) ([]string, error) {
+	apiURL := fmt.Sprintf("https://rapiddns.io/subdomain/%s", url.QueryEscape(domain))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "ASM-Tool/2.0")
+	maxRetries := 3
+	var lastErr error
 
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			waitDuration := time.Duration(2<<uint(attempt-1)) * time.Second
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(waitDuration):
+			}
+		}
 
-	if resp.StatusCode != http.StatusOK {
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		req.Header.Set("User-Agent", "ASM-Tool/2.0")
+
+		resp, err := s.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+			body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
+			if err != nil {
+				return nil, err
+			}
+
+			// Parse HTML table - look for <td> elements containing subdomains
+			seen := make(map[string]bool)
+			var subs []string
+			for _, line := range strings.Split(string(body), "\n") {
+				line = strings.TrimSpace(line)
+				// Look for table rows with subdomains
+				if strings.Contains(line, "<td>") {
+					// Extract content between <td> and </td>
+					start := strings.Index(line, "<td>")
+					end := strings.Index(line, "</td>")
+					if start >= 0 && end > start {
+						val := strings.TrimSpace(line[start+4 : end])
+						if val != "" && strings.HasSuffix(val, domain) && !seen[val] {
+							seen[val] = true
+							subs = append(subs, val)
+						}
+					}
+				}
+			}
+			return subs, nil
+		}
+
+		resp.Body.Close()
+
+		if resp.StatusCode >= 500 || resp.StatusCode == 429 {
+			lastErr = fmt.Errorf("status %d", resp.StatusCode)
+			continue
+		}
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	var data struct {
-		PassiveDNS []struct {
-			Hostname string `json:"hostname"`
-		} `json:"passive_dns"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-
-	seen := make(map[string]bool)
-	var subs []string
-	for _, entry := range data.PassiveDNS {
-		if entry.Hostname != "" && !seen[entry.Hostname] {
-			seen[entry.Hostname] = true
-			subs = append(subs, entry.Hostname)
-		}
-	}
-
-	return subs, nil
+	return nil, lastErr
 }
 
 // DNSBruteSource performs DNS brute forcing with a wordlist
