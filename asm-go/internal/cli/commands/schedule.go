@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scheduler"
 	"github.com/spf13/cobra"
 )
@@ -116,7 +117,7 @@ func showScheduleStatus(deps *Deps) error {
 
 	// Recent runs
 	fmt.Printf("\n  %s\n", labelStyle.Render("Recent Runs:"))
-	runs, err := scheduler.New(cfg, deps.DB, log.New(os.Stderr, "", 0)).RecentRuns(10)
+	runs, err := scheduler.New(cfg, deps.DB, persistence.NewStore(deps.DB), log.New(os.Stderr, "", 0)).RecentRuns(10)
 	if err != nil {
 		fmt.Printf("    %s Error reading history: %v\n", highStyle.Render("[!]"), err)
 	} else if len(runs) == 0 {
@@ -150,7 +151,7 @@ func showScheduleStatus(deps *Deps) error {
 func startScheduler(deps *Deps) error {
 	logger := log.New(os.Stderr, "[scheduler] ", log.LstdFlags)
 
-	s := scheduler.New(deps.Cfg, deps.DB, logger)
+	s := scheduler.New(deps.Cfg, deps.DB, persistence.NewStore(deps.DB), logger)
 	if err := s.RegisterJobs(); err != nil {
 		return fmt.Errorf("registering jobs: %w", err)
 	}
@@ -192,7 +193,7 @@ func runScheduleOnce(deps *Deps, jobType scheduler.JobType, domains []string) er
 		valueStyle.Render(strings.Join(domains, ", ")))
 	fmt.Println(strings.Repeat("-", 60))
 
-	s := scheduler.New(deps.Cfg, deps.DB, logger)
+	s := scheduler.New(deps.Cfg, deps.DB, persistence.NewStore(deps.DB), logger)
 	err := s.RunOnce(jobType, domains)
 
 	fmt.Println(strings.Repeat("-", 60))
@@ -205,7 +206,7 @@ func runScheduleOnce(deps *Deps, jobType scheduler.JobType, domains []string) er
 
 // showScheduleHistory displays recent run history.
 func showScheduleHistory(deps *Deps) error {
-	s := scheduler.New(deps.Cfg, deps.DB, log.New(os.Stderr, "", 0))
+	s := scheduler.New(deps.Cfg, deps.DB, persistence.NewStore(deps.DB), log.New(os.Stderr, "", 0))
 	runs, err := s.RecentRuns(50)
 	if err != nil {
 		return fmt.Errorf("reading run history: %w", err)

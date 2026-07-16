@@ -149,7 +149,7 @@ func TestRunOnceReturnsScanError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	s := New(config.Default(), db, log.New(io.Discard, "", 0))
+	s := New(config.Default(), db, nil, log.New(io.Discard, "", 0))
 	want := errors.New("scan failed")
 	s.execute = func(JobType, string) error { return want }
 

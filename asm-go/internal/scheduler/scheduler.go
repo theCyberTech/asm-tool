@@ -14,6 +14,7 @@ import (
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/notifier"
 	"github.com/asm-tool/asm-go/internal/parallel"
+	"github.com/asm-tool/asm-go/internal/persistence"
 )
 
 // JobType identifies a scheduled job.
@@ -194,6 +195,7 @@ func parseField(field string, min, max int) (fieldSet, error) {
 type Scheduler struct {
 	cfg    *config.Config
 	db     *database.Database
+	store  persistence.Store
 	logger *log.Logger
 	execute func(JobType, string) error
 	mu     sync.Mutex
@@ -208,10 +210,11 @@ type job struct {
 }
 
 // New creates a new Scheduler.
-func New(cfg *config.Config, db *database.Database, logger *log.Logger) *Scheduler {
+func New(cfg *config.Config, db *database.Database, store persistence.Store, logger *log.Logger) *Scheduler {
 	s := &Scheduler{
 		cfg:    cfg,
 		db:     db,
+		store:  store,
 		logger: logger,
 	}
 	s.execute = s.executeScan
@@ -409,6 +412,16 @@ func (s *Scheduler) executeScan(jobType JobType, domain string) error {
 	// Log result summary
 	s.logger.Printf("  subdomains=%d ports=%d vulns=%d",
 		len(result.Subdomains), len(result.Ports), len(result.Vulnerabilities))
+
+	// Persist scan results
+	if s.store != nil {
+		if err := s.store.EnsureDomain(domain); err != nil {
+			return fmt.Errorf("ensuring domain: %w", err)
+		}
+		if err := s.store.SaveAll(result); err != nil {
+			return fmt.Errorf("persisting scan results: %w", err)
+		}
+	}
 
 	return nil
 }
