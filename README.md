@@ -1,103 +1,177 @@
-# ASM Tool - Attack Surface Management
+# ASM Tool
+
+A fast, local-first attack surface management toolkit for security practitioners. Discover and monitor your external attack surface — subdomains, open ports, certificates, vulnerabilities, and more — all from a single tool.
 
 ![Go 1.21+](https://img.shields.io/badge/go-1.21+-00ADD8.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
-A high-performance attack surface management tool for security practitioners. Written in Go for speed and efficiency.
-
 ## Features
 
-- **Subdomain Enumeration** - Multiple sources: crt.sh, HackerTarget, urlscan.io, AlienVault OTX
-- **Port Scanning** - Native TCP scanning with service detection (10-20x faster than nmap)
-- **Certificate Monitoring** - SSL/TLS cert tracking, expiry alerts
-- **Technology Fingerprinting** - Identify web technologies, frameworks, CDNs
-- **DNS Monitoring** - Track DNS record changes, email security (SPF/DKIM/DMARC)
-- **Vulnerability Scanning** - Nuclei integration for automated vuln detection
-- **URL Enumeration** - Historical URL discovery from Wayback Machine
-- **Subdomain Takeover Detection** - Identify vulnerable subdomains
-- **API Discovery** - Automatic detection of Swagger, OpenAPI, and GraphQL endpoints
-- **Email Enumeration** - Discover email addresses for target domains
-- **Cloud Storage Detection** - Find exposed S3, Azure, and GCS buckets
-- **Reporting** - Generate reports in JSON, Markdown, and HTML formats
-- **Parallel Execution** - Goroutine-based concurrent scanning
+- **Subdomain Enumeration** — Multi-source discovery (crt.sh, Google Transparency, HackerTarget, urlscan.io, Alienvault OTX, and more)
+- **Port Scanning** — Native TCP scanning with service detection — 10-20x faster than nmap
+- **Certificate Monitoring** — TLS cert tracking with expiry alerts
+- **Vulnerability Scanning** — Nuclei integration for automated vuln detection
+- **URL & API Discovery** — Historical URL enumeration and OpenAPI/Swagger/GraphQL detection
+- **Technology Fingerprinting** — Identify frameworks, CDNs, libraries, and servers
+- **DNS Monitoring** — Track record changes and audit email security (SPF/DKIM/DMARC)
+- **Subdomain Takeover Detection** — Spot misconfigured DNS pointing to vulnerable services
+- **Email & Cloud Enumeration** — Find exposed email addresses and public cloud buckets (S3, Azure, GCS)
+- **Reporting** — Export findings as JSON, Markdown, or HTML
+- **Scheduled Scans** — Cron-based recurring scans with Slack/email notifications
+- **Dashboard** — Lightweight web UI for browsing findings
+
+## Installation
+
+### Prerequisites
+
+- **Go 1.21+**
+- Optional: [Nuclei](https://github.com/projectdiscovery/nuclei) for vulnerability scanning
+
+### Linux / macOS
+
+```bash
+# Clone the repository
+git clone https://github.com/theCyberTech/asm-tool.git
+cd asm-tool
+
+# Build the CLI binary
+cd asm-go
+go build -o ../asm ./cmd/asm
+cd ..
+
+# Initialize the project (creates config, data dirs)
+chmod +x asm.sh
+./asm.sh init
+```
+
+### Using Go Install (CLI only)
+
+```bash
+go install github.com/theCyberTech/asm-tool/asm-go/cmd/asm@latest
+```
+
+### Install Nuclei (optional)
+
+```bash
+go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+```
 
 ## Quick Start
 
 ```bash
-# Build the Go binary
-cd asm-go
-go build -o asm-go ./cmd/asm
-
-# Initialize (creates config and directories)
-cd ..
+# Initialize config and database
 ./asm.sh init
 
 # Run a full scan
 ./asm.sh scan example.com
 
-# Check database status
+# Check results
 ./asm.sh status
 
-# Start the local dashboard
+# View the dashboard
 ./asm.sh dashboard
 ```
 
-## Commands
+## Usage
+
+### Scanning
 
 ```bash
-# Database status
-./asm.sh status
-
-# Web dashboard
-./asm.sh dashboard
-./asm.sh dashboard --port 8081
-
-# Full scan (all modules)
+# Full scan (all enabled modules)
 ./asm.sh scan example.com
-./asm.sh scan example.com --nuclei              # Include vulnerability scanning
-./asm.sh scan example.com --output html         # Generate HTML report
-./asm.sh scan example.com --skip ports,dns      # Skip specific modules
-./asm.sh scan example.com --only subdomains,ports  # Run only specific modules
 
-# Individual modules
-./asm.sh discover example.com                   # Subdomain enumeration
-./asm.sh portscan example.com                   # Port scanning
-./asm.sh portscan --all-known                   # Scan all known subdomains
-./asm.sh portscan example.com --ports 80,443,8080
-./asm.sh certificates example.com               # Certificate checking
-./asm.sh dns example.com                        # DNS record lookup
-./asm.sh takeover example.com                   # Subdomain takeover detection
-./asm.sh fingerprint example.com                # Technology fingerprinting
-./asm.sh urls example.com                       # URL enumeration
-./asm.sh apis example.com                       # API discovery
-./asm.sh emails example.com                     # Email enumeration
-./asm.sh cloudstorage example.com               # Cloud storage detection
+# Scan with vulnerability detection
+./asm.sh scan example.com --nuclei
 
-# Vulnerability scanning (requires nuclei installed)
-./asm.sh nuclei example.com
-./asm.sh nuclei --all-known --severity critical,high
-./asm.sh nuclei --all-known --tags cve
+# Skip or limit modules
+./asm.sh scan example.com --skip ports,dns
+./asm.sh scan example.com --only subdomains,ports
 
-# Reporting
-./asm.sh report --format html
+# Generate a report inline
+./asm.sh scan example.com --output html   # HTML report
+./asm.sh scan example.com --output json   # JSON report
+./asm.sh scan example.com --output markdown  # Markdown report
+```
+
+### Individual Modules
+
+```bash
+./asm.sh discover example.com          # Subdomain enumeration
+./asm.sh portscan example.com          # Port scanning
+./asm.sh portscan --all-known          # Scan all discovered subdomains
+./asm.sh certificates example.com      # Check SSL/TLS certificates
+./asm.sh dns example.com               # DNS record lookup
+./asm.sh takeover example.com          # Subdomain takeover detection
+./asm.sh fingerprint example.com       # Technology fingerprinting
+./asm.sh urls example.com              # URL enumeration
+./asm.sh apis example.com              # API endpoint discovery
+./asm.sh emails example.com            # Email enumeration
+./asm.sh cloudstorage example.com      # Cloud bucket detection
+./asm.sh nuclei example.com            # Vulnerability scanning
+```
+
+### Dashboard
+
+```bash
+# Start the web dashboard (default: localhost:8080)
+./asm.sh dashboard
+
+# Custom port
+./asm.sh dashboard --port 3000
+```
+
+### Reporting
+
+```bash
+# Generate a report for all scanned domains
+./asm.sh report --format html --output ./reports/
 ./asm.sh report --format markdown
 ./asm.sh report --format json
 ```
 
+### Scheduled Scans
+
+```bash
+# Start the scheduler (runs in foreground)
+./asm.sh schedule start
+
+# Run a scheduled job manually
+./asm.sh schedule run full_scan
+./asm.sh schedule run cert_check example.com
+
+# View schedule and history
+./asm.sh schedule
+./asm.sh schedule history
+```
+
 ## Configuration
 
-Edit `config.yaml` to customize:
+Edit `config.yaml` (created by `asm.sh init`):
 
 ```yaml
 # Domains to monitor
 domains:
   - example.com
+  - api.example.com
 
-# Notification settings
+# Scanning options
+scanning:
+  ports: "21,22,23,25,53,80,110,143,443,445,993,995,3306,3389,5432,8080,8443"
+  nuclei_severity: "medium,high,critical"
+  rate_limit: 100
+
+# Nuclei (vulnerability scanner)
+nuclei:
+  concurrency: 25
+  batch_size: 25
+  exclude_tags: "dos,fuzz,brute"
+  retries: 1
+
+# Notifications
 notifications:
   slack:
-    enabled: true
-    webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+    enabled: false
+    webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK"
   email:
     enabled: false
     smtp_host: "smtp.example.com"
@@ -105,21 +179,12 @@ notifications:
     from_addr: "alerts@example.com"
     to_addr: "security@example.com"
 
-# Scanning configuration
-scanning:
-  ports: "21,22,23,25,53,80,110,143,443,445,993,995,3306,3389,5432,8080,8443"
-  nuclei_severity: "medium,high,critical"
-  passive_only: false
-  rate_limit: 100
+# Scheduling
+schedule:
+  full_scan: "0 6 * * *"       # Daily at 6 AM
+  cert_check: "0 */6 * * *"   # Every 6 hours
 
-# Nuclei configuration
-nuclei:
-  concurrency: 25
-  batch_size: 25
-  exclude_tags: "dos,fuzz,brute"
-  retries: 1
-
-# External API integrations (optional)
+# External API keys (optional)
 hunter:
   api_key: "your-hunter-api-key"
 ```
@@ -130,62 +195,39 @@ hunter:
 asm-go/
 ├── cmd/asm/main.go              # CLI entry point (Cobra)
 ├── internal/
-│   ├── config/config.go         # YAML config (Viper)
-│   ├── database/
-│   │   ├── database.go          # SQLite facade (sqlx)
-│   │   └── migrations/          # SQL migrations
-│   ├── scanner/
-│   │   ├── ports/               # Native TCP scanning
+│   ├── config/                  # YAML config (Viper)
+│   ├── database/                # SQLite ORM (sqlx)
+│   ├── scanner/                 # 11 scanning modules
 │   │   ├── subdomains/          # Multi-source enumeration
-│   │   ├── certificates/        # TLS cert checking
-│   │   ├── dns/                 # DNS monitoring
+│   │   ├── ports/               # Native TCP scanning
+│   │   ├── certificates/        # TLS monitoring
+│   │   ├── dns/                 # DNS record tracking
 │   │   ├── takeover/            # Subdomain takeover
 │   │   ├── technologies/        # Tech fingerprinting
-│   │   ├── urls/                # URL enumeration
-│   │   ├── apis/                # API discovery
+│   │   ├── urls/                # URL discovery
+│   │   ├── apis/                # API detection
 │   │   ├── emails/              # Email enumeration
-│   │   ├── cloud/               # Cloud storage detection
-│   │   └── nuclei/              # Nuclei integration
-│   ├── cli/commands/            # CLI commands
+│   │   ├── cloud/               # Cloud bucket detection
+│   │   └── nuclei/              # Vuln scanning
+│   ├── persistence/             # Unified Store interface
+│   ├── parallel/                # Goroutine orchestration
 │   ├── reporter/                # JSON/Markdown/HTML reports
-│   ├── notifier/                # Slack/email notifications
-│   └── parallel/                # Goroutine orchestration
-└── data/                        # SQLite database
+│   ├── notifier/                # Slack/email alerts
+│   ├── scheduler/               # Cron-based scheduling
+│   └── cli/commands/            # CLI command handlers
+├── data/                        # SQLite database
+└── reports/                     # Generated reports
 ```
 
 ## Data Storage
 
-Data is stored in SQLite at `asm-go/data/asm.db` with WAL mode for concurrent access.
-
-Reports are saved to `./reports`.
-
-## Scheduling
-
-For automated scans, add to your crontab:
-
-```bash
-# Run full scan daily at 6 AM
-0 6 * * * cd /path/to/asm-tool && ./asm.sh scan example.com >> logs/scan.log 2>&1
-
-# Certificate check every 6 hours
-0 */6 * * * cd /path/to/asm-tool && ./asm.sh certificates --all-known >> logs/certs.log 2>&1
-```
-
-## Dependencies
-
-- Go 1.21+
-- Nuclei (optional, for vulnerability scanning)
-
-Install Nuclei:
-```bash
-go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
-```
+All findings are stored in a local SQLite database at `asm-go/data/asm.db` with WAL mode for safe concurrent access. Reports are written to the `./reports/` directory.
 
 ## Security Considerations
 
-- Only scan domains you own or have permission to test
-- Protect API keys in config.yaml (don't commit to git)
-- Consider rate limiting when scanning production systems
+- **Only scan domains you own or have explicit permission to test**
+- Keep API keys out of version control — use environment variables or a separate `.env` file
+- Respect rate limits to avoid overwhelming target infrastructure
 
 ## License
 
