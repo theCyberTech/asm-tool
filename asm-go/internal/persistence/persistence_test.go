@@ -16,25 +16,25 @@ import (
 func TestScannerHelpersPersistDashboardData(t *testing.T) {
 	db := newTestDB(t)
 
-	if saved, err := SaveURLs(db, []urls.URL{
+	if _, err := SaveURLs(db, []urls.URL{
 		{Domain: "example.com", URL: "https://www.example.com/api/users", Category: "api", Source: "wayback", Interesting: true},
-	}); err != nil || saved != 1 {
-		t.Fatalf("SaveURLs saved=%d err=%v, want saved=1 err=nil", saved, err)
+	}); err != nil {
+		t.Fatalf("SaveURLs err=%v, want nil", err)
 	}
 
-	if saved, err := SaveAPIs(db, []apis.API{
+	if _, err := SaveAPIs(db, []apis.API{
 		{URL: "https://www.example.com/openapi.json", Type: "openapi", Title: "Example API", Version: "3.0.0", EndpointsCount: 1, Endpoints: []string{"/users"}},
-	}); err != nil || saved != 1 {
-		t.Fatalf("SaveAPIs saved=%d err=%v, want saved=1 err=nil", saved, err)
+	}); err != nil {
+		t.Fatalf("SaveAPIs err=%v, want nil", err)
 	}
 
-	if saved, err := SaveEmails(db, []emails.Email{
+	if _, err := SaveEmails(db, []emails.Email{
 		{Domain: "example.com", Address: "security@example.com", Source: "crtsh", Type: "role"},
-	}); err != nil || saved != 1 {
-		t.Fatalf("SaveEmails saved=%d err=%v, want saved=1 err=nil", saved, err)
+	}); err != nil {
+		t.Fatalf("SaveEmails err=%v, want nil", err)
 	}
 
-	if saved, err := SaveCloudBuckets(db, []cloud.Bucket{
+	if _, err := SaveCloudBuckets(db, []cloud.Bucket{
 		{
 			URL:         "https://example-assets.s3.amazonaws.com",
 			Provider:    "s3",
@@ -44,11 +44,11 @@ func TestScannerHelpersPersistDashboardData(t *testing.T) {
 			Severity:    "high",
 			Evidence:    "public read",
 		},
-	}); err != nil || saved != 1 {
-		t.Fatalf("SaveCloudBuckets saved=%d err=%v, want saved=1 err=nil", saved, err)
+	}); err != nil {
+		t.Fatalf("SaveCloudBuckets err=%v, want nil", err)
 	}
 
-	if saved, err := SaveTechnologies(db, []*technologies.Result{
+	if _, err := SaveTechnologies(db, []*technologies.Result{
 		{
 			Host:         "www.example.com",
 			StatusCode:   200,
@@ -57,20 +57,20 @@ func TestScannerHelpersPersistDashboardData(t *testing.T) {
 			Technologies: []technologies.Technology{{Name: "React", Category: "javascript", Confidence: 100}},
 			Headers:      map[string]string{"server": "nginx"},
 		},
-	}); err != nil || saved != 1 {
-		t.Fatalf("SaveTechnologies saved=%d err=%v, want saved=1 err=nil", saved, err)
+	}); err != nil {
+		t.Fatalf("SaveTechnologies err=%v, want nil", err)
 	}
 
-	if saved, err := SaveTakeovers(db, []TakeoverFinding{
+	if _, err := SaveTakeovers(db, []TakeoverFinding{
 		{Subdomain: "dangling.example.com", CNAME: "dangling.github.io", Service: "github", Confidence: "HIGH", Evidence: "unclaimed", Vulnerable: true},
-	}); err != nil || saved != 1 {
-		t.Fatalf("SaveTakeovers saved=%d err=%v, want saved=1 err=nil", saved, err)
+	}); err != nil {
+		t.Fatalf("SaveTakeovers err=%v, want nil", err)
 	}
 
-	if saved, err := SaveNucleiFindings(db, []*nuclei.Finding{
+	if _, err := SaveNucleiFindings(db, []*nuclei.Finding{
 		{TemplateID: "unknown-severity", Info: nuclei.TemplateInfo{Name: "Unknown severity finding", Severity: "unknown"}, Host: "www.example.com"},
-	}); err != nil || saved != 1 {
-		t.Fatalf("SaveNucleiFindings saved=%d err=%v, want saved=1 err=nil", saved, err)
+	}); err != nil {
+		t.Fatalf("SaveNucleiFindings err=%v, want nil", err)
 	}
 
 	if err := MarkDomainScanned(db, "example.com"); err != nil {

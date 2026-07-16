@@ -1,12 +1,16 @@
+// Package persistence handles database persistence for scanner results.
+// It provides a deep Store interface — two methods, one entry point.
+// All save logic (type mapping, transaction handling, error collection)
+// lives inside the concrete implementation.
 package persistence
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/parallel"
 	"github.com/asm-tool/asm-go/internal/scanner/apis"
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
@@ -14,460 +18,287 @@ import (
 	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
+	"github.com/asm-tool/asm-go/internal/scanner/takeover"
 	"github.com/asm-tool/asm-go/internal/scanner/technologies"
 	"github.com/asm-tool/asm-go/internal/scanner/urls"
 )
 
-type writer struct {
-	domains      *database.DomainRepository
-	ports        *database.PortRepository
-	certificates *database.CertificateRepository
-	findings     *database.FindingRepository
-
-	getLatestDNSRecord   func(string) (*database.DNSRecord, error)
-	saveChangeEvent      func(string, string, string, string, string, string) error
-	saveCloudBucket      func(string, string, string, string, string, string, string) error
-	saveDNSRecords       func(string, string) error
-	saveAPI              func(string, string, string, string, int, string) error
-	saveEmail            func(string, string, string) error
-	saveTakeover         func(string, string, string, string, string) error
-	saveTechnology       func(string, int, string, string, string, string, int64, string) error
-	saveURL              func(string, string, string, string, int) error
-	updateDomainLastScan func(string) error
+// Store is the persistence entry point. A Store owns a database connection
+// and persists scan results through a single method. Callers construct a
+// Store once, pass it around or use it directly.
+type Store interface {
+	// SaveAll persists the complete scan result for a domain in a transaction.
+	SaveAll(result *parallel.ScanResult) error
+	// EnsureDomain creates or reactivates a domain row and marks it as
+	// just scanned so the dashboard shows the result.
+	EnsureDomain(domain string) error
 }
 
-// TakeoverFinding is the persistence shape shared by standalone takeover scans
-// and full scans.
-type TakeoverFinding struct {
-	Subdomain  string
-	CNAME      string
-	Service    string
-	Confidence string
-	Evidence   string
-	Vulnerable bool
+// storeImpl is the concrete implementation behind the Store interface.
+type storeImpl struct {
+	db *database.Database
 }
 
-// EnsureDomain creates or reactivates a domain row so dashboard views have an
-// anchor for scanner results.
-func EnsureDomain(store any, domain string) error {
+// storeTxImpl wraps a database transaction as a Store.
+type storeTxImpl struct {
+	tx *database.Transaction
+}
+
+// NewStore returns a Store backed by the given database connection.
+func NewStore(db *database.Database) Store {
+	return &storeImpl{db: db}
+}
+
+// SaveAll persists the complete scan result for a domain.
+func (s *storeImpl) SaveAll(result *parallel.ScanResult) error {
+	return s.db.WithTransaction(func(tx *database.Transaction) error {
+		return saveTx(tx, result)
+	})
+}
+
+// saveTx saves a scan result within an existing transaction.
+func saveTx(tx *database.Transaction, result *parallel.ScanResult) error {
+	errs := []error{}
+	collect := func(err error, msg string, args ...interface{}) {
+		if err != nil {
+			errs = append(errs, fmt.Errorf(msg, args...))
+		}
+	}
+
+		// Subdomains
+		if len(result.Subdomains) > 0 {
+			domain, err := tx.Domains.Add(result.Domain)
+			if err != nil {
+				collect(err, "saving domain %q", result.Domain)
+			} else {
+				for _, sub := range result.Subdomains {
+					if err := tx.Domains.AddSubdomain(domain.ID, sub); err != nil {
+						collect(err, "saving subdomain %q", sub)
+					}
+				}
+			}
+		}
+
+		// Ports
+		for _, r := range result.Ports {
+			if r == nil {
+				continue
+			}
+			for _, p := range r.OpenPorts {
+				dbPort := database.Port{
+					Host:    r.Host,
+					Port:    p.Port,
+					State:   p.State,
+					Service: p.Service,
+					Banner:  p.Banner,
+				}
+				if err := tx.Ports.Add(&dbPort); err != nil {
+					collect(err, "saving port %s:%d", r.Host, p.Port)
+				}
+			}
+		}
+
+		// Certificates
+		for _, cert := range result.Certificates {
+			if cert == nil || cert.Error != "" {
+				continue
+			}
+			dbCert := &database.Certificate{
+				Host:               cert.Host,
+				Port:               cert.Port,
+				Subject:            cert.Subject,
+				Issuer:             cert.Issuer,
+				SerialNumber:       cert.SerialNumber,
+				NotBefore:          cert.NotBefore,
+				NotAfter:           cert.NotAfter,
+				DaysUntilExpiry:    cert.DaysUntilExpiry,
+				Fingerprint:        cert.Fingerprint,
+				SAN:                cert.SANString(),
+				SignatureAlgorithm: cert.SignatureAlgorithm,
+			}
+			if err := tx.Certificates.Add(dbCert); err != nil {
+				collect(err, "saving certificate %s:%d", cert.Host, cert.Port)
+			}
+		}
+
+		// DNS
+		for _, r := range result.DNSRecords {
+			if r.Domain == "" {
+				continue
+			}
+			prev, err := tx.GetLatestDNSRecord(r.Domain)
+			if err != nil {
+				collect(err, "loading DNS record %q", r.Domain)
+			}
+
+			resultJSON, err := json.Marshal(r)
+			if err != nil {
+				collect(err, "encoding DNS records %q", r.Domain)
+			} else {
+				if err := tx.SaveDNSRecords(r.Domain, string(resultJSON)); err != nil {
+					collect(err, "saving DNS records %q", r.Domain)
+				}
+			}
+
+			if prev != nil && prev.Records != "" {
+				var prevResult dns.Result
+				if err := json.Unmarshal([]byte(prev.Records), &prevResult); err == nil {
+					for _, ch := range dns.DetectChanges(&r, &prevResult) {
+						sev := dnsSeverity(ch.RecordType)
+						if err := tx.SaveChangeEvent(r.Domain, ch.Type, sev, ch.Description, ch.OldValue, ch.NewValue); err != nil {
+							collect(err, "saving DNS change event %q", r.Domain)
+						}
+					}
+				}
+			}
+		}
+
+		// Takeovers
+		for _, f := range result.Takeovers {
+			if !f.Vulnerable {
+				continue
+			}
+			if err := tx.SaveTakeover(f.Subdomain, f.CNAME, f.Service, f.Confidence, f.Evidence); err != nil {
+				collect(err, "saving takeover %q", f.Subdomain)
+			}
+		}
+
+		// Technologies
+		for _, r := range result.Technologies {
+			if r == nil || r.Error != "" {
+				continue
+			}
+			techJSON, err := json.Marshal(r.Technologies)
+			if err != nil {
+				collect(err, "encoding technologies for %q", r.Host)
+			}
+			headersJSON, err := json.Marshal(r.Headers)
+			if err != nil {
+				collect(err, "encoding technology headers for %q", r.Host)
+			}
+			if err := tx.SaveTechnology(r.Host, r.StatusCode, r.Title, r.Server,
+				string(techJSON), string(headersJSON), r.ContentLength, r.RedirectURL); err != nil {
+				collect(err, "saving technology %q", r.Host)
+			}
+		}
+
+		// URLs
+		for _, u := range result.URLs {
+			tx.Domains.Add(u.Domain)
+			interesting := 0
+			if u.Interesting {
+				interesting = 1
+			}
+			if err := tx.SaveURL(u.Domain, u.URL, u.Category, u.Source, interesting); err != nil {
+				collect(err, "saving URL %q", u.URL)
+			}
+		}
+
+		// APIs
+		for _, a := range result.APIs {
+			endpointsJSON, err := json.Marshal(a.Endpoints)
+			if err != nil {
+				collect(err, "encoding API endpoints for %q", a.URL)
+			}
+			if err := tx.SaveAPI(a.URL, a.Type, a.Title, a.Version, a.EndpointsCount, string(endpointsJSON)); err != nil {
+				collect(err, "saving API %q", a.URL)
+			}
+		}
+
+		// Emails
+		for _, e := range result.Emails {
+			tx.Domains.Add(e.Domain)
+			if err := tx.SaveEmail(e.Domain, e.Address, e.Source); err != nil {
+				collect(err, "saving email %q", e.Address)
+			}
+		}
+
+		// Cloud storage
+		for _, b := range result.CloudStorage {
+			tx.Domains.Add(b.Domain)
+			if err := tx.SaveCloudBucket(b.Provider, b.BucketName, b.URL, b.Domain, b.AccessLevel, b.Severity, b.Evidence); err != nil {
+				collect(err, "saving cloud bucket %q", b.URL)
+			}
+		}
+
+		// Nuclei findings
+		for _, f := range result.Vulnerabilities {
+			if f == nil {
+				continue
+			}
+			dbFinding := &database.Finding{
+				TemplateID:  f.TemplateID,
+				Name:        f.Info.Name,
+				Severity:    normalizeSeverity(f.Info.Severity),
+				Description: f.Info.Description,
+				Host:        f.Host,
+				MatchedAt:   f.Matched,
+				MatcherName: f.MatcherName,
+				Evidence:    strings.Join(f.ExtractedResults, ", "),
+				Refs:        strings.Join(f.Info.Reference, "\n"),
+				Tags:        f.Info.Tags,
+				Type:        f.Type,
+				Status:      "open",
+			}
+			if err := tx.Findings.Add(dbFinding); err != nil {
+				collect(err, "saving finding %q for %q", f.TemplateID, f.Host)
+			}
+		}
+
+		// Update last_scanned timestamp
+		if err := tx.UpdateDomainLastScanned(result.Domain); err != nil {
+			collect(err, "updating last scanned for %q", result.Domain)
+		}
+
+		if len(errs) > 0 {
+			return fmt.Errorf("saving scan results: %w", errs[0])
+		}
+		return nil
+}
+
+// EnsureDomain creates or reactivates a domain and updates last_scanned.
+func (s *storeImpl) EnsureDomain(domain string) error {
 	domain = strings.TrimSpace(domain)
 	if domain == "" {
 		return nil
 	}
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return err
-	}
-	_, err = w.domains.Add(domain)
-	if err != nil {
-		return fmt.Errorf("saving domain %q: %w", domain, err)
-	}
-	return nil
+	return s.db.WithTransaction(func(tx *database.Transaction) error {
+		if _, err := tx.Domains.Add(domain); err != nil {
+			return fmt.Errorf("saving domain %q: %w", domain, err)
+		}
+		if err := tx.UpdateDomainLastScanned(domain); err != nil {
+			return fmt.Errorf("updating last scanned for %q: %w", domain, err)
+		}
+		return nil
+	})
 }
 
-// MarkDomainScanned updates the dashboard timestamp for a completed scanner
-// run. It creates the domain first so standalone module scans appear on the
-// dashboard even if discover has not run yet.
-func MarkDomainScanned(store any, domain string) error {
+// EnsureDomain creates or reactivates a domain within a transaction.
+func (s *storeTxImpl) EnsureDomain(domain string) error {
+	return ensureDomainTx(s.tx, domain)
+}
+
+// SaveAll persists the complete scan result for a domain (already inside a transaction).
+func (s *storeTxImpl) SaveAll(result *parallel.ScanResult) error {
+	return saveTx(s.tx, result)
+}
+
+// ensureDomainTx creates or reactivates a domain within an existing transaction.
+func ensureDomainTx(tx *database.Transaction, domain string) error {
 	domain = strings.TrimSpace(domain)
 	if domain == "" {
 		return nil
 	}
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return err
-	}
-	if _, err := w.domains.Add(domain); err != nil {
+	if _, err := tx.Domains.Add(domain); err != nil {
 		return fmt.Errorf("saving domain %q: %w", domain, err)
 	}
-	if err := w.updateDomainLastScan(domain); err != nil {
+	if err := tx.UpdateDomainLastScanned(domain); err != nil {
 		return fmt.Errorf("updating last scanned for %q: %w", domain, err)
 	}
 	return nil
 }
 
-func SaveSubdomains(store any, domain string, subdomains []string) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	d, err := w.domains.Add(domain)
-	if err != nil {
-		return 0, fmt.Errorf("saving domain %q: %w", domain, err)
-	}
-
-	var errs []error
-	saved := 0
-	for _, sub := range subdomains {
-		err := w.domains.AddSubdomain(d.ID, sub)
-		if collect(&errs, err, "saving subdomain %q", sub) {
-			saved++
-		}
-	}
-	return saved, joined("saving subdomains", errs)
-}
-
-func SavePortScanResult(store any, result *ports.Result) (int, error) {
-	if result == nil {
-		return 0, nil
-	}
-	return SavePortScanResults(store, []*ports.Result{result})
-}
-
-func SavePortScanResults(store any, results []*ports.Result) (int, error) {
-	var dbPorts []database.Port
-	for _, result := range results {
-		if result == nil {
-			continue
-		}
-		for _, p := range result.OpenPorts {
-			dbPorts = append(dbPorts, database.Port{
-				Host:     result.Host,
-				Port:     p.Port,
-				Protocol: p.Protocol,
-				Service:  p.Service,
-				Version:  p.Version,
-				State:    p.State,
-				Banner:   p.Banner,
-			})
-		}
-	}
-	return SavePorts(store, dbPorts)
-}
-
-func SavePorts(store any, dbPorts []database.Port) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	var errs []error
-	saved := 0
-	for _, p := range dbPorts {
-		err := w.ports.Add(&p)
-		if collect(&errs, err, "saving port %s:%d", p.Host, p.Port) {
-			saved++
-		}
-	}
-	return saved, joined("saving ports", errs)
-}
-
-func SaveCertificates(store any, certs []*certificates.Certificate) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	var errs []error
-	saved := 0
-	for _, cert := range certs {
-		if cert == nil || cert.Error != "" {
-			continue
-		}
-		err := w.certificates.Add(&database.Certificate{
-			Host:               cert.Host,
-			Port:               cert.Port,
-			Subject:            cert.Subject,
-			Issuer:             cert.Issuer,
-			SerialNumber:       cert.SerialNumber,
-			NotBefore:          cert.NotBefore,
-			NotAfter:           cert.NotAfter,
-			DaysUntilExpiry:    cert.DaysUntilExpiry,
-			Fingerprint:        cert.Fingerprint,
-			SAN:                cert.SANString(),
-			SignatureAlgorithm: cert.SignatureAlgorithm,
-		})
-		if collect(&errs, err, "saving certificate %s:%d", cert.Host, cert.Port) {
-			saved++
-		}
-	}
-	return saved, joined("saving certificates", errs)
-}
-
-func SaveDNSResult(store any, result *dns.Result) error {
-	if result == nil {
-		return nil
-	}
-	return SaveDNSResults(store, []*dns.Result{result})
-}
-
-func SaveDNSResults(store any, results []*dns.Result) error {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return err
-	}
-
-	var errs []error
-	for _, result := range results {
-		if result == nil {
-			continue
-		}
-		prev, err := w.getLatestDNSRecord(result.Domain)
-		collect(&errs, err, "loading latest DNS record %q", result.Domain)
-
-		resultJSON, err := json.Marshal(result)
-		if !collect(&errs, err, "encoding DNS records %q", result.Domain) {
-			continue
-		}
-		collect(&errs, w.saveDNSRecords(result.Domain, string(resultJSON)), "saving DNS records %q", result.Domain)
-
-		if prev == nil {
-			continue
-		}
-		var prevResult dns.Result
-		if err := json.Unmarshal([]byte(prev.Records), &prevResult); err != nil {
-			continue
-		}
-		for _, ch := range dns.DetectChanges(result, &prevResult) {
-			sev := dnsSeverity(ch.RecordType)
-			err := w.saveChangeEvent(result.Domain, ch.Type, sev, ch.Description, ch.OldValue, ch.NewValue)
-			collect(&errs, err, "saving DNS change event %q", result.Domain)
-		}
-	}
-	return joined("saving DNS records", errs)
-}
-
-func SaveTechnologies(store any, results []*technologies.Result) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	var errs []error
-	saved := 0
-	for _, result := range results {
-		if result == nil || result.Error != "" {
-			continue
-		}
-		techJSON, err := json.Marshal(result.Technologies)
-		if !collect(&errs, err, "encoding technologies for %q", result.Host) {
-			continue
-		}
-		headersJSON, err := json.Marshal(result.Headers)
-		if !collect(&errs, err, "encoding technology headers for %q", result.Host) {
-			continue
-		}
-		err = w.saveTechnology(result.Host, result.StatusCode, result.Title, result.Server,
-			string(techJSON), string(headersJSON), result.ContentLength, result.RedirectURL)
-		if collect(&errs, err, "saving technology %q", result.Host) {
-			saved++
-		}
-	}
-	return saved, joined("saving technologies", errs)
-}
-
-func SaveURLs(store any, results []urls.URL) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	var errs []error
-	saved := 0
-	ensuredDomains := make(map[string]bool)
-	for _, u := range results {
-		if u.Domain != "" && !ensuredDomains[u.Domain] {
-			_, err := w.domains.Add(u.Domain)
-			collect(&errs, err, "saving domain %q", u.Domain)
-			ensuredDomains[u.Domain] = err == nil
-		}
-		interesting := 0
-		if u.Interesting {
-			interesting = 1
-		}
-		err := w.saveURL(u.Domain, u.URL, u.Category, u.Source, interesting)
-		if collect(&errs, err, "saving URL %q", u.URL) {
-			saved++
-		}
-	}
-	return saved, joined("saving URLs", errs)
-}
-
-func SaveAPIs(store any, results []apis.API) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	var errs []error
-	saved := 0
-	for _, api := range results {
-		endpointsJSON, err := json.Marshal(api.Endpoints)
-		if !collect(&errs, err, "encoding API endpoints for %q", api.URL) {
-			continue
-		}
-		err = w.saveAPI(api.URL, api.Type, api.Title, api.Version, api.EndpointsCount, string(endpointsJSON))
-		if collect(&errs, err, "saving API %q", api.URL) {
-			saved++
-		}
-	}
-	return saved, joined("saving APIs", errs)
-}
-
-func SaveEmails(store any, results []emails.Email) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	var errs []error
-	saved := 0
-	ensuredDomains := make(map[string]bool)
-	for _, email := range results {
-		if email.Domain != "" && !ensuredDomains[email.Domain] {
-			_, err := w.domains.Add(email.Domain)
-			collect(&errs, err, "saving domain %q", email.Domain)
-			ensuredDomains[email.Domain] = err == nil
-		}
-		err := w.saveEmail(email.Domain, email.Address, email.Source)
-		if collect(&errs, err, "saving email %q", email.Address) {
-			saved++
-		}
-	}
-	return saved, joined("saving emails", errs)
-}
-
-func SaveCloudBuckets(store any, results []cloud.Bucket) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	var errs []error
-	saved := 0
-	ensuredDomains := make(map[string]bool)
-	for _, bucket := range results {
-		if bucket.Domain != "" && !ensuredDomains[bucket.Domain] {
-			_, err := w.domains.Add(bucket.Domain)
-			collect(&errs, err, "saving domain %q", bucket.Domain)
-			ensuredDomains[bucket.Domain] = err == nil
-		}
-		err := w.saveCloudBucket(bucket.Provider, bucket.BucketName, bucket.URL, bucket.Domain, bucket.AccessLevel, bucket.Severity, bucket.Evidence)
-		if collect(&errs, err, "saving cloud bucket %q", bucket.URL) {
-			saved++
-		}
-	}
-	return saved, joined("saving cloud buckets", errs)
-}
-
-func SaveTakeovers(store any, results []TakeoverFinding) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	var errs []error
-	saved := 0
-	for _, takeover := range results {
-		if !takeover.Vulnerable {
-			continue
-		}
-		err := w.saveTakeover(takeover.Subdomain, takeover.CNAME, takeover.Service, takeover.Confidence, takeover.Evidence)
-		if collect(&errs, err, "saving takeover %q", takeover.Subdomain) {
-			saved++
-		}
-	}
-	return saved, joined("saving takeovers", errs)
-}
-
-func SaveNucleiFindings(store any, results []*nuclei.Finding) (int, error) {
-	w, ok, err := newWriter(store)
-	if err != nil || !ok {
-		return 0, err
-	}
-
-	var errs []error
-	saved := 0
-	for _, finding := range results {
-		if finding == nil {
-			continue
-		}
-		err := w.findings.Add(&database.Finding{
-			TemplateID:  finding.TemplateID,
-			Name:        finding.Info.Name,
-			Severity:    normalizeSeverity(finding.Info.Severity),
-			Description: finding.Info.Description,
-			Host:        finding.Host,
-			MatchedAt:   finding.Matched,
-			MatcherName: finding.MatcherName,
-			Evidence:    strings.Join(finding.ExtractedResults, ", "),
-			Refs:        strings.Join(finding.Info.Reference, "\n"),
-			Tags:        finding.Info.Tags,
-			Type:        finding.Type,
-			Status:      "open",
-		})
-		if collect(&errs, err, "saving finding %q for %q", finding.TemplateID, finding.Host) {
-			saved++
-		}
-	}
-	return saved, joined("saving nuclei findings", errs)
-}
-
-func newWriter(store any) (writer, bool, error) {
-	switch s := store.(type) {
-	case nil:
-		return writer{}, false, nil
-	case *database.Database:
-		if s == nil {
-			return writer{}, false, nil
-		}
-		return writer{
-			domains:              s.Domains,
-			ports:                s.Ports,
-			certificates:         s.Certificates,
-			findings:             s.Findings,
-			getLatestDNSRecord:   s.GetLatestDNSRecord,
-			saveChangeEvent:      s.SaveChangeEvent,
-			saveCloudBucket:      s.SaveCloudBucket,
-			saveDNSRecords:       s.SaveDNSRecords,
-			saveAPI:              s.SaveAPI,
-			saveEmail:            s.SaveEmail,
-			saveTakeover:         s.SaveTakeover,
-			saveTechnology:       s.SaveTechnology,
-			saveURL:              s.SaveURL,
-			updateDomainLastScan: s.UpdateDomainLastScanned,
-		}, true, nil
-	case *database.Transaction:
-		if s == nil {
-			return writer{}, false, nil
-		}
-		return writer{
-			domains:              s.Domains,
-			ports:                s.Ports,
-			certificates:         s.Certificates,
-			findings:             s.Findings,
-			getLatestDNSRecord:   s.GetLatestDNSRecord,
-			saveChangeEvent:      s.SaveChangeEvent,
-			saveCloudBucket:      s.SaveCloudBucket,
-			saveDNSRecords:       s.SaveDNSRecords,
-			saveAPI:              s.SaveAPI,
-			saveEmail:            s.SaveEmail,
-			saveTakeover:         s.SaveTakeover,
-			saveTechnology:       s.SaveTechnology,
-			saveURL:              s.SaveURL,
-			updateDomainLastScan: s.UpdateDomainLastScanned,
-		}, true, nil
-	default:
-		return writer{}, false, fmt.Errorf("unsupported persistence store %T", store)
-	}
-}
-
-func collect(errs *[]error, err error, format string, args ...interface{}) bool {
-	if err == nil {
-		return true
-	}
-	*errs = append(*errs, fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err))
-	return false
-}
-
-func joined(action string, errs []error) error {
-	if len(errs) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%s: %w", action, errors.Join(errs...))
-}
-
+// normalizeSeverity maps severity strings to canonical values.
 func normalizeSeverity(severity string) string {
 	switch strings.ToLower(strings.TrimSpace(severity)) {
 	case "critical", "high", "medium", "low", "info":
@@ -477,6 +308,7 @@ func normalizeSeverity(severity string) string {
 	}
 }
 
+// dnsSeverity maps record type to change event severity.
 func dnsSeverity(recordType string) string {
 	switch recordType {
 	case "NS", "DNSSEC":
@@ -488,4 +320,206 @@ func dnsSeverity(recordType string) string {
 	default:
 		return "low"
 	}
+}
+
+// ── Convenience functions ────────────────────────────────────────────────
+// These functions are provided for backward compatibility with callers that
+// persist individual module results. Each wraps Store.SaveAll with a minimal
+// ScanResult. Prefer calling Store directly for new code.
+
+// newStore creates a Store from a database connection or transaction.
+func newStore(store any) (Store, error) {
+	switch s := store.(type) {
+	case *database.Database:
+		if s == nil {
+			return nil, nil
+		}
+		return &storeImpl{db: s}, nil
+	case *database.Transaction:
+		if s == nil {
+			return nil, nil
+		}
+		return &storeTxImpl{tx: s}, nil
+	default:
+		return nil, fmt.Errorf("unsupported persistence store %T", store)
+	}
+}
+
+// ensureDomain creates or reactivates a domain.
+func ensureDomain(store any, domain string) error {
+	domain = strings.TrimSpace(domain)
+	if domain == "" {
+		return nil
+	}
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return err
+	}
+	return s.EnsureDomain(domain)
+}
+
+// EnsureDomain creates or reactivates a domain.
+func EnsureDomain(db *database.Database, domain string) error {
+	return ensureDomain(db, domain)
+}
+
+// MarkDomainScanned updates the dashboard timestamp for a completed scanner run.
+func MarkDomainScanned(store any, domain string) error {
+	return ensureDomain(store, domain)
+}
+
+// SaveSubdomains persists subdomains for a domain.
+func SaveSubdomains(store any, domain string, subdomains []string) (int, error) {
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		Domain:     domain,
+		Subdomains: subdomains,
+	})
+	return len(subdomains), err
+}
+
+// SavePortScanResults persists port scan results for a domain.
+func SavePortScanResults(store any, results []*ports.Result) (int, error) {
+	if results == nil {
+		return 0, nil
+	}
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		Ports: results,
+	})
+	return 0, err
+}
+
+// SaveAPIs persists API discovery results.
+func SaveAPIs(store any, results []apis.API) (int, error) {
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		APIs: results,
+	})
+	return 0, err
+}
+
+// SaveCertificates persists TLS certificate results.
+func SaveCertificates(store any, certs []*certificates.Certificate) (int, error) {
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		Certificates: certs,
+	})
+	return 0, err
+}
+
+// SaveDNSResults persists DNS lookup results.
+func SaveDNSResults(store any, results []*dns.Result) error {
+	if results == nil {
+		return nil
+	}
+	var recs []dns.Result
+	for _, r := range results {
+		if r != nil {
+			recs = append(recs, *r)
+		}
+	}
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return err
+	}
+	return s.SaveAll(&parallel.ScanResult{
+		DNSRecords: recs,
+	})
+}
+
+// SaveDNSResult is an alias for SaveDNSResults (singular form for single result saves).
+func SaveDNSResult(store any, result *dns.Result) error {
+	if result == nil {
+		return nil
+	}
+	return SaveDNSResults(store, []*dns.Result{result})
+}
+
+// SaveEmails persists email enumeration results.
+func SaveEmails(store any, results []emails.Email) (int, error) {
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		Emails: results,
+	})
+	return 0, err
+}
+
+// SaveCloudBuckets persists cloud storage detection results.
+func SaveCloudBuckets(store any, results []cloud.Bucket) (int, error) {
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		CloudStorage: results,
+	})
+	return 0, err
+}
+
+// SaveTechnologies persists technology fingerprint results.
+func SaveTechnologies(store any, results []*technologies.Result) (int, error) {
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		Technologies: results,
+	})
+	return 0, err
+}
+
+// SaveURLs persists URL enumeration results.
+func SaveURLs(store any, results []urls.URL) (int, error) {
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		URLs: results,
+	})
+	return 0, err
+}
+
+// TakeoverFinding is the persistence shape shared by standalone takeover scans
+// and full scans. Kept for backward compatibility.
+type TakeoverFinding = takeover.Finding
+
+// SaveTakeovers persists subdomain takeover results.
+func SaveTakeovers(store any, findings []TakeoverFinding) (int, error) {
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		Takeovers: findings,
+	})
+	return 0, err
+}
+
+// SaveNucleiFindings persists vulnerability scan results.
+func SaveNucleiFindings(store any, results []*nuclei.Finding) (int, error) {
+	s, err := newStore(store)
+	if err != nil || s == nil {
+		return 0, err
+	}
+	err = s.SaveAll(&parallel.ScanResult{
+		Vulnerabilities: results,
+	})
+	return 0, err
 }
