@@ -533,3 +533,82 @@ func (r *Result) HighConfidenceCount() int {
 	}
 	return count
 }
+
+// Config holds configuration for takeover detection.
+type Config struct {
+	Workers            int
+	Timeout            time.Duration
+	HTTPClientTimeout  time.Duration
+	InsecureSkipVerify bool
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		Workers:            50,
+		Timeout:            10 * time.Second,
+		HTTPClientTimeout:  10 * time.Second,
+	}
+}
+
+// ScanResult holds the result of takeover detection.
+type ScanResult struct {
+	Findings []Finding
+	Duration time.Duration
+	Err      error
+}
+
+// Scan performs takeover detection over hosts and returns findings.
+func Scan(ctx context.Context, cfg Config, hosts []string) *ScanResult {
+	if len(hosts) == 0 {
+		return &ScanResult{}
+	}
+
+	// Apply defaults.
+	if cfg.Workers == 0 {
+		cfg.Workers = DefaultConfig().Workers
+	}
+	if cfg.Timeout == 0 {
+		cfg.Timeout = DefaultConfig().Timeout
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify},
+	}
+	client := &http.Client{
+		Timeout:   cfg.Timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	detector := &Detector{
+		HTTPClient:         client,
+		Timeout:            cfg.Timeout,
+		Workers:            cfg.Workers,
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+		Fingerprints:       DefaultFingerprints(),
+	}
+
+	result := detector.CheckBatch(ctx, hosts)
+
+	// Convert []*Finding to []Finding for the package-level return.
+	findings := make([]Finding, 0, len(result.Findings))
+	for _, f := range result.Findings {
+		findings = append(findings, *f)
+	}
+
+	return &ScanResult{
+		Findings: findings,
+		Duration: result.Duration,
+		Err:      result.firstError(),
+	}
+}
+
+func (r *Result) firstError() error {
+	if len(r.Errors) == 0 {
+		return nil
+	}
+	return fmt.Errorf("takeover errors: %s", strings.Join(r.Errors, "; "))
+}

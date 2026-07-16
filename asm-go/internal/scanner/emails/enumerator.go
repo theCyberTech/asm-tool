@@ -448,3 +448,66 @@ func CommonRoleEmails(domain string) []string {
 	}
 	return emails
 }
+
+// Config holds configuration for email enumeration.
+type Config struct {
+	HunterAPIKey string
+	RateLimit    int
+	Timeout      time.Duration
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		Timeout: 90 * time.Second,
+	}
+}
+
+// ScanResult holds the result of email enumeration.
+type ScanResult struct {
+	Emails   []Email
+	Errors   []string
+	Err      error
+}
+
+// Scan enumerates emails from passive sources.
+func Scan(ctx context.Context, cfg Config, domain string) *ScanResult {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
+	hunter := &HunterSource{client: client, APIKey: cfg.HunterAPIKey}
+	sources := []Source{
+		hunter,
+		&SkymemSource{client: client},
+		&GitHubEmailSource{client: client},
+		&EmailPermutatorSource{client: client},
+	}
+
+	enum := &Enumerator{
+		Sources:    sources,
+		HunterRef:  hunter,
+		HTTPClient: client,
+		Timeout:    cfg.Timeout,
+	}
+
+	r := enum.Enumerate(ctx, domain)
+	return &ScanResult{
+		Emails:   r.Emails,
+		Errors:   r.Errors,
+		Err:      firstError(r.Errors),
+	}
+}
+
+// firstError returns a non-nil error if errs has any entries.
+func firstError(errs []string) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("enumeration errors: %s", strings.Join(errs, "; "))
+}

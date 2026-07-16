@@ -677,6 +677,14 @@ var jsURLPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`["'](/[a-zA-Z0-9_/\-\.]+)["']`),
 }
 
+// firstError returns a non-nil error if errs has any entries.
+func firstError(errs []string) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("enumeration errors: %s", strings.Join(errs, "; "))
+}
+
 // ExtractFromJS extracts URLs from JavaScript content
 func ExtractFromJS(content, baseURL string) []string {
 	var urls []string
@@ -702,4 +710,56 @@ func ExtractFromJS(content, baseURL string) []string {
 	}
 
 	return urls
+}
+
+// Config holds configuration for URL enumeration.
+type Config struct {
+	RateLimit int           // rps, 0 = unlimited
+	Timeout   time.Duration
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		Timeout: 2 * time.Minute,
+	}
+}
+
+// ScanResult holds the result of URL enumeration.
+type ScanResult struct {
+	URLs  []URL
+	Errors []string
+	Err   error
+}
+
+// Scan enumerates URLs from passive sources.
+func Scan(ctx context.Context, cfg Config, domain string) *ScanResult {
+	var transport http.RoundTripper = &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+	}
+	transport = ratelimit.NewTransport(transport, cfg.RateLimit)
+
+	client := &http.Client{
+		Timeout:   60 * time.Second,
+		Transport: transport,
+	}
+
+	enum := &Enumerator{
+		Sources: []Source{
+			&WaybackSource{client: client},
+			&CommonCrawlSource{client: client},
+			&URLScanSource{client: client},
+			&AlienVaultSource{client: client},
+		},
+		HTTPClient: client,
+		Timeout:    cfg.Timeout,
+	}
+
+	r := enum.Enumerate(ctx, domain)
+	return &ScanResult{
+		URLs:   r.URLs,
+		Errors: r.Errors,
+		Err:    firstError(r.Errors),
+	}
 }

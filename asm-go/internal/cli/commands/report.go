@@ -8,8 +8,16 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/scanner/certificates"
+	"github.com/asm-tool/asm-go/internal/scanner/cloud"
+	"github.com/asm-tool/asm-go/internal/scanner/emails"
+	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/asm-tool/asm-go/internal/scanner/ports"
+	"github.com/asm-tool/asm-go/internal/scanner/takeover"
 	"github.com/asm-tool/asm-go/internal/parallel"
 	"github.com/asm-tool/asm-go/internal/reporter"
+	"github.com/asm-tool/asm-go/internal/scanner/apis"
+	"github.com/asm-tool/asm-go/internal/scanner/urls"
 	"github.com/spf13/cobra"
 )
 
@@ -94,30 +102,20 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 
 	// Get ports for all subdomains
 	for _, sub := range result.Subdomains {
-		ports, err := db.Ports.GetByHost(sub)
+		portRows, err := db.Ports.GetByHost(sub)
 		if err == nil {
-			for _, p := range ports {
-				result.Ports = append(result.Ports, parallel.PortResult{
-					Host:    p.Host,
-					Port:    p.Port,
-					State:   p.State,
-					Service: p.Service,
-					Banner:  p.Banner,
-				})
+			for _, p := range portRows {
+				port := ports.Port{Port: p.Port, State: p.State, Service: p.Service, Banner: p.Banner}
+				result.Ports = append(result.Ports, &ports.Result{Host: p.Host, OpenPorts: []ports.Port{port}})
 			}
 		}
 	}
 	// Also get ports for the main domain
-	ports, err := db.Ports.GetByHost(domain)
+	domainRows, err := db.Ports.GetByHost(domain)
 	if err == nil {
-		for _, p := range ports {
-			result.Ports = append(result.Ports, parallel.PortResult{
-				Host:    p.Host,
-				Port:    p.Port,
-				State:   p.State,
-				Service: p.Service,
-				Banner:  p.Banner,
-			})
+		for _, p := range domainRows {
+			port := ports.Port{Port: p.Port, State: p.State, Service: p.Service, Banner: p.Banner}
+			result.Ports = append(result.Ports, &ports.Result{Host: p.Host, OpenPorts: []ports.Port{port}})
 		}
 	}
 	fmt.Printf("  %s %d open ports\n", labelStyle.Render("Loaded:"), len(result.Ports))
@@ -126,7 +124,7 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	certs, err := db.GetCertificatesForDomain(domain)
 	if err == nil {
 		for _, c := range certs {
-			result.Certificates = append(result.Certificates, &parallel.Certificate{
+			result.Certificates = append(result.Certificates, &certificates.Certificate{
 				Host:            c.Host,
 				Subject:         c.Subject,
 				Issuer:          c.Issuer,
@@ -141,12 +139,12 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	takeovers, err := db.GetTakeoversForDomain(domain)
 	if err == nil {
 		for _, t := range takeovers {
-			result.Takeovers = append(result.Takeovers, parallel.TakeoverResult{
-				Host:       t.Subdomain,
-				Vulnerable: t.Status == "open",
-				Service:    t.Service,
-				Confidence: t.Confidence,
-				Evidence:   t.Evidence,
+			result.Takeovers = append(result.Takeovers, takeover.Finding{
+				Subdomain:    t.Subdomain,
+				Vulnerable:   t.Status == "open",
+				Service:      t.Service,
+				Confidence:   t.Confidence,
+				Evidence:     t.Evidence,
 			})
 		}
 	}
@@ -156,7 +154,7 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	dbUrls, err := db.GetURLsForDomain(domain)
 	if err == nil {
 		for _, u := range dbUrls {
-			result.URLs = append(result.URLs, parallel.URLResult{
+			result.URLs = append(result.URLs, urls.URL{
 				URL:         u.URL,
 				Domain:      u.Domain,
 				Category:    u.Category.String,
@@ -170,7 +168,7 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	dbApis, err := db.GetAPIsForDomain(domain)
 	if err == nil {
 		for _, a := range dbApis {
-			result.APIs = append(result.APIs, parallel.APIResult{
+			result.APIs = append(result.APIs, apis.API{
 				URL:     a.URL,
 				Type:    a.Type.String,
 				Title:   a.Title.String,
@@ -184,7 +182,7 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	dbEmails, err := db.GetEmailsForDomain(domain)
 	if err == nil {
 		for _, e := range dbEmails {
-			result.Emails = append(result.Emails, parallel.EmailResult{
+			result.Emails = append(result.Emails, emails.Email{
 				Address: e.Address,
 				Domain:  e.Domain,
 				Source:  e.Source,
@@ -197,7 +195,7 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	buckets, err := db.GetCloudStorageForDomain(domain)
 	if err == nil {
 		for _, b := range buckets {
-			result.CloudStorage = append(result.CloudStorage, parallel.CloudBucket{
+			result.CloudStorage = append(result.CloudStorage, cloud.Bucket{
 				Provider:    b.Provider,
 				BucketName:  b.BucketName,
 				URL:         b.URL,
@@ -212,11 +210,11 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	vulns, err := db.GetVulnerabilitiesForDomain(domain)
 	if err == nil {
 		for _, v := range vulns {
-			result.Vulnerabilities = append(result.Vulnerabilities, &parallel.VulnFinding{
+			result.Vulnerabilities = append(result.Vulnerabilities, &nuclei.Finding{
 				TemplateID: v.TemplateID,
 				Host:       v.Host,
 				Matched:    v.MatchedAt,
-				Info: parallel.VulnInfo{
+				Info: nuclei.TemplateInfo{
 					Name:        v.Name,
 					Severity:    v.Severity,
 					Description: v.Description,
@@ -278,29 +276,24 @@ func runReportConvert(inputFile, outputFormat, outputDir string) error {
 
 	// Convert ports
 	for _, p := range jsonReport.Ports {
-		result.Ports = append(result.Ports, parallel.PortResult{
-			Host:    p.Host,
-			Port:    p.Port,
-			State:   p.State,
-			Service: p.Service,
-			Banner:  p.Banner,
-		})
+		port := ports.Port{Port: p.Port, State: p.State, Service: p.Service, Banner: p.Banner}
+		result.Ports = append(result.Ports, &ports.Result{Host: p.Host, OpenPorts: []ports.Port{port}})
 	}
 
 	// Convert takeovers
 	for _, t := range jsonReport.Takeovers {
-		result.Takeovers = append(result.Takeovers, parallel.TakeoverResult{
-			Host:       t.Host,
-			Vulnerable: t.Vulnerable,
-			Service:    t.Service,
-			Confidence: t.Confidence,
-			Evidence:   t.Evidence,
+		result.Takeovers = append(result.Takeovers, takeover.Finding{
+			Subdomain:    t.Host,
+			Vulnerable:   t.Vulnerable,
+			Service:      t.Service,
+			Confidence:   t.Confidence,
+			Evidence:     t.Evidence,
 		})
 	}
 
 	// Convert cloud storage
 	for _, b := range jsonReport.CloudStorage {
-		result.CloudStorage = append(result.CloudStorage, parallel.CloudBucket{
+		result.CloudStorage = append(result.CloudStorage, cloud.Bucket{
 			Provider:    b.Provider,
 			BucketName:  b.BucketName,
 			URL:         b.URL,

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/parallel"
+	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 )
 
 func TestGenerateUsesSafeFilename(t *testing.T) {
@@ -37,10 +38,10 @@ func TestGenerateUsesSafeFilename(t *testing.T) {
 }
 
 func TestGroupVulnerabilitiesBySeverityPreservesOrder(t *testing.T) {
-	vuln := func(severity, name string) *parallel.VulnFinding {
-		return &parallel.VulnFinding{
+	vuln := func(severity, name string) *nuclei.Finding {
+		return &nuclei.Finding{
 			TemplateID: "template-" + name,
-			Info: parallel.VulnInfo{
+			Info: nuclei.TemplateInfo{
 				Name:     name,
 				Severity: severity,
 			},
@@ -49,7 +50,7 @@ func TestGroupVulnerabilitiesBySeverityPreservesOrder(t *testing.T) {
 	}
 
 	grouped := groupVulnerabilitiesBySeverity(&parallel.ScanResult{
-		Vulnerabilities: []*parallel.VulnFinding{
+		Vulnerabilities: []*nuclei.Finding{
 			vuln("high", "high-1"),
 			vuln("critical", "critical-1"),
 			vuln("HIGH", "high-2"),
@@ -70,7 +71,7 @@ func TestGroupVulnerabilitiesBySeverityPreservesOrder(t *testing.T) {
 	assertVulnNames(t, grouped.Info, "info-1")
 }
 
-func assertVulnNames(t *testing.T, vulns []*parallel.VulnFinding, names ...string) {
+func assertVulnNames(t *testing.T, vulns []*nuclei.Finding, names ...string) {
 	t.Helper()
 	if len(vulns) != len(names) {
 		t.Fatalf("expected %d vulnerabilities, got %d", len(names), len(vulns))

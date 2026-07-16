@@ -470,3 +470,65 @@ func DefaultAPIPaths() []string {
 		"/.well-known/openapi.json",
 	}
 }
+
+// Config holds configuration for API discovery.
+type Config struct {
+	Workers   int
+	Timeout   time.Duration
+	HTTPClientTimeout time.Duration
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		Workers:  30,
+		Timeout:  10 * time.Second,
+	}
+}
+
+// ScanResult holds the result of API discovery.
+type ScanResult struct {
+	APIs   []API
+	Errors []string
+	Err    error
+}
+
+// Scan discovers APIs on hosts.
+func Scan(ctx context.Context, cfg Config, hosts []string) *ScanResult {
+	if len(hosts) == 0 {
+		return &ScanResult{}
+	}
+
+	// Apply defaults.
+	if cfg.Timeout == 0 {
+		cfg.Timeout = DefaultConfig().Timeout
+	}
+
+	transport := &http.Transport{
+		MaxIdleConns: 100,
+	}
+	client := &http.Client{
+		Timeout:   cfg.Timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 2 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	disc := &Discovery{
+		HTTPClient: client,
+		Timeout:    cfg.Timeout,
+		Workers:    cfg.Workers,
+		Paths:      DefaultAPIPaths(),
+	}
+
+	batch := disc.DiscoverBatch(ctx, hosts)
+	var apis []API
+	for _, r := range batch.Results {
+		apis = append(apis, r.APIs...)
+	}
+	return &ScanResult{APIs: apis}
+}

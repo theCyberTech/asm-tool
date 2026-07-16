@@ -415,7 +415,7 @@ th { background: #f5f5f5; }
 		for _, t := range result.Takeovers {
 			if t.Vulnerable {
 				sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
-					html.EscapeString(t.Host), html.EscapeString(t.Service), html.EscapeString(t.Confidence)))
+					html.EscapeString(t.Subdomain), html.EscapeString(t.Service), html.EscapeString(t.Confidence)))
 			}
 		}
 		sb.WriteString(`</table>`)

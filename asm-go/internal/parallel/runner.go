@@ -1,16 +1,13 @@
+// Package parallel orchestrates concurrent execution of scanner modules.
+// It is pure orchestration: goroutine fan-out, timing, error collection.
+// All scanning logic lives in the individual scanner modules.
 package parallel
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/database"
-	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scanner/apis"
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
@@ -24,807 +21,203 @@ import (
 	"github.com/asm-tool/asm-go/internal/scanner/urls"
 )
 
-// ModuleType represents the type of scanner module
+// ModuleType identifies a scanner module.
 type ModuleType string
 
 const (
-	ModuleSubdomains   ModuleType = "subdomains"
-	ModulePorts        ModuleType = "ports"
-	ModuleCertificates ModuleType = "certificates"
-	ModuleDNS          ModuleType = "dns"
-	ModuleTakeover     ModuleType = "takeover"
-	ModuleTechnologies ModuleType = "technologies"
-	ModuleURLs         ModuleType = "urls"
-	ModuleAPIs         ModuleType = "apis"
-	ModuleEmails       ModuleType = "emails"
-	ModuleCloudStorage ModuleType = "cloudstorage"
-	ModuleNuclei       ModuleType = "nuclei"
+	ModuleSubdomains    ModuleType = "subdomains"
+	ModulePorts         ModuleType = "ports"
+	ModuleCertificates  ModuleType = "certificates"
+	ModuleDNS           ModuleType = "dns"
+	ModuleTakeover      ModuleType = "takeover"
+	ModuleTechnologies  ModuleType = "technologies"
+	ModuleURLs          ModuleType = "urls"
+	ModuleAPIs          ModuleType = "apis"
+	ModuleEmails        ModuleType = "emails"
+	ModuleCloudStorage  ModuleType = "cloudstorage"
+	ModuleNuclei        ModuleType = "nuclei"
 )
 
-// PortResult represents an open port
-type PortResult struct {
-	Host    string
-	Port    int
-	State   string
-	Service string
-	Banner  string
-}
+// ProgressCallback is called when a module completes.
+type ProgressCallback func(module ModuleType, duration time.Duration, err error)
 
-// DNSRecordSet represents DNS records for a host, including SOA, CAA, and DNSSEC.
-type DNSRecordSet struct {
-	Host    string
-	Records []dns.Record
-	SOA     *dns.SOARecord
-	CAA     []dns.CAARecord
-	DNSSEC  *dns.DNSSECResult
-}
-
-// TakeoverResult represents a takeover finding
-type TakeoverResult struct {
-	Host       string
-	Vulnerable bool
-	Service    string
-	Confidence string
-	Evidence   string
-}
-
-// Certificate is an alias for certificates.Certificate
-type Certificate = certificates.Certificate
-
-// TechResult represents technology detection for a host
-type TechResult = technologies.Result
-
-// CloudBucket is an alias for cloud.Bucket
-type CloudBucket = cloud.Bucket
-
-// VulnFinding is an alias for nuclei.Finding
-type VulnFinding = nuclei.Finding
-
-// VulnInfo is an alias for nuclei.TemplateInfo
-type VulnInfo = nuclei.TemplateInfo
-
-// URLResult is an alias for urls.URL
-type URLResult = urls.URL
-
-// APIResult is an alias for apis.API
-type APIResult = apis.API
-
-// EmailResult is an alias for emails.Email
-type EmailResult = emails.Email
-
-// ScanResult holds the complete scan results
+// ScanResult holds the complete scan results using scanner-specific types.
+// Each field uses the output type of the corresponding scanner module.
 type ScanResult struct {
 	Domain          string
 	StartTime       time.Time
 	EndTime         time.Time
 	Duration        time.Duration
 	Subdomains      []string
-	Ports           []PortResult
-	Certificates    []*Certificate
-	DNSRecords      []DNSRecordSet
-	Takeovers       []TakeoverResult
-	Technologies    []*TechResult
+	Ports           []*ports.Result
+	Certificates    []*certificates.Certificate
+	DNSRecords      []dns.Result
+	Takeovers       []takeover.Finding
+	Technologies    []*technologies.Result
 	URLs            []urls.URL
 	APIs            []apis.API
 	Emails          []emails.Email
 	CloudStorage    []cloud.Bucket
-	Vulnerabilities []*VulnFinding
+	Vulnerabilities []*nuclei.Finding
 	Errors          map[ModuleType]error
 }
 
-// ProgressCallback is called when a module completes
-type ProgressCallback func(module ModuleType, duration time.Duration, err error)
+// Runner is the scan orchestrator. It has no configuration state; all config
+// comes through RunConfig passed to Run().
+type Runner struct{}
 
-// Runner orchestrates parallel execution of scanner modules
-type Runner struct {
-	DB                 *database.Database
-	EnabledModules     map[ModuleType]bool
-	PortWorkers        int
-	Ports              []int // ports to scan (nil = use common defaults)
-	APIWorkers         int
-	TakeoverWorkers    int
-	CloudWorkers       int
-	SubdomainTimeout   time.Duration
-	PortTimeout        time.Duration
-	HTTPTimeout        time.Duration
-	DNSTimeout         time.Duration
-	URLTimeout         time.Duration
-	EmailTimeout       time.Duration
-	NucleiTimeout      time.Duration
-	NucleiSeverities   []string
-	NucleiRateLimit    int
-	NucleiBulkSize     int
-	NucleiConcurrency  int
-	NucleiRetries      int
-	NucleiExcludeTags  []string
-	RateLimit          int // max requests/sec for passive HTTP sources (0 = unlimited)
-	InsecureSkipVerify bool
-	HunterAPIKey       string
-	OnProgress         ProgressCallback
-}
-
-// DefaultRunner creates a runner with default settings
-func DefaultRunner(db *database.Database) *Runner {
-	return &Runner{
-		DB: db,
-		EnabledModules: map[ModuleType]bool{
-			ModuleSubdomains:   true,
-			ModulePorts:        true,
-			ModuleCertificates: true,
-			ModuleDNS:          true,
-			ModuleTakeover:     true,
-			ModuleTechnologies: true,
-			ModuleURLs:         true,
-			ModuleAPIs:         true,
-			ModuleEmails:       true,
-			ModuleCloudStorage: true,
-			ModuleNuclei:       false, // Disabled by default (requires nuclei installed)
-		},
-		PortWorkers:       100,
-		APIWorkers:        30,
-		TakeoverWorkers:   50,
-		CloudWorkers:      20,
-		SubdomainTimeout:  60 * time.Second,
-		PortTimeout:       2 * time.Second,
-		HTTPTimeout:       10 * time.Second,
-		DNSTimeout:        5 * time.Second,
-		URLTimeout:        2 * time.Minute,
-		EmailTimeout:      60 * time.Second,
-		NucleiTimeout:     30 * time.Minute,
-		NucleiSeverities:  []string{"critical", "high"},
-		NucleiRateLimit:   150,
-		NucleiBulkSize:    25,
-		NucleiConcurrency: 25,
-		NucleiRetries:     1,
-	}
-}
-
-// Run executes a full scan for the given domain
-func (r *Runner) Run(ctx context.Context, domain string) (*ScanResult, error) {
+// Run executes a full scan for the given domain using the provided
+// configuration. It returns a ScanResult with per-module errors in
+// result.Errors. Progress callbacks are invoked as each module completes.
+func (r *Runner) Run(ctx context.Context, domain string, cfg RunConfig, enabled map[ModuleType]bool, progress ProgressCallback) *ScanResult {
 	result := &ScanResult{
 		Domain:    domain,
 		StartTime: time.Now(),
 		Errors:    make(map[ModuleType]error),
 	}
 
-	// Phase 1: Subdomain enumeration (must complete first)
-	if r.isEnabled(ModuleSubdomains) {
-		r.reportProgress(ModuleSubdomains, 0, nil)
-		start := time.Now()
-		subs, err := r.runSubdomains(ctx, domain)
-		duration := time.Since(start)
-		if err != nil {
-			result.Errors[ModuleSubdomains] = err
-		}
-		result.Subdomains = subs
-		r.reportProgress(ModuleSubdomains, duration, err)
+	// Phase 1: Subdomain enumeration (sequential — results feed Phase 2).
+	if enabled[ModuleSubdomains] {
+		runSubdomains(ctx, domain, cfg.Subdomains, progress, ModuleSubdomains, result)
 	}
 
-	// Check context
-	if ctx.Err() != nil {
+	// Check context after Phase 1.
+	if err := ctx.Err(); err != nil {
 		result.EndTime = time.Now()
 		result.Duration = result.EndTime.Sub(result.StartTime)
-		return result, ctx.Err()
+		return result
 	}
 
-	// If no subdomains, use domain itself
+	// If no subdomains found, scan the domain itself.
 	hosts := result.Subdomains
 	if len(hosts) == 0 {
 		hosts = []string{domain}
 	}
 
-	// Phase 2: Independent modules in parallel
+	// Phase 2: Independent modules in parallel.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	// Ports scan
-	if r.isEnabled(ModulePorts) {
+	enabledModules := enabledModules(enabled)
+
+	for _, mod := range enabledModules {
 		wg.Add(1)
-		go func() {
+		go func(m ModuleType) {
 			defer wg.Done()
 			start := time.Now()
-			portResults, err := r.runPorts(ctx, hosts)
+			err := runModule(ctx, m, cfg, hosts, result)
 			duration := time.Since(start)
 			mu.Lock()
-			result.Ports = portResults
 			if err != nil {
-				result.Errors[ModulePorts] = err
+				result.Errors[m] = err
 			}
 			mu.Unlock()
-			r.reportProgress(ModulePorts, duration, err)
-		}()
-	}
-
-	// Certificates
-	if r.isEnabled(ModuleCertificates) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			certs, err := r.runCertificates(ctx, hosts)
-			duration := time.Since(start)
-			mu.Lock()
-			result.Certificates = certs
-			if err != nil {
-				result.Errors[ModuleCertificates] = err
+			if progress != nil {
+				progress(m, duration, err)
 			}
-			mu.Unlock()
-			r.reportProgress(ModuleCertificates, duration, err)
-		}()
+		}(mod)
 	}
 
-	// DNS
-	if r.isEnabled(ModuleDNS) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			records, err := r.runDNS(ctx, hosts)
-			duration := time.Since(start)
-			mu.Lock()
-			result.DNSRecords = records
-			if err != nil {
-				result.Errors[ModuleDNS] = err
-			}
-			mu.Unlock()
-			r.reportProgress(ModuleDNS, duration, err)
-		}()
-	}
-
-	// Takeover detection
-	if r.isEnabled(ModuleTakeover) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			takeovers, err := r.runTakeover(ctx, hosts)
-			duration := time.Since(start)
-			mu.Lock()
-			result.Takeovers = takeovers
-			if err != nil {
-				result.Errors[ModuleTakeover] = err
-			}
-			mu.Unlock()
-			r.reportProgress(ModuleTakeover, duration, err)
-		}()
-	}
-
-	// Technologies
-	if r.isEnabled(ModuleTechnologies) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			techs, err := r.runTechnologies(ctx, hosts)
-			duration := time.Since(start)
-			mu.Lock()
-			result.Technologies = techs
-			if err != nil {
-				result.Errors[ModuleTechnologies] = err
-			}
-			mu.Unlock()
-			r.reportProgress(ModuleTechnologies, duration, err)
-		}()
-	}
-
-	// URLs
-	if r.isEnabled(ModuleURLs) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			urlResults, err := r.runURLs(ctx, domain)
-			duration := time.Since(start)
-			mu.Lock()
-			result.URLs = urlResults
-			if err != nil {
-				result.Errors[ModuleURLs] = err
-			}
-			mu.Unlock()
-			r.reportProgress(ModuleURLs, duration, err)
-		}()
-	}
-
-	// APIs
-	if r.isEnabled(ModuleAPIs) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			apiResults, err := r.runAPIs(ctx, hosts)
-			duration := time.Since(start)
-			mu.Lock()
-			result.APIs = apiResults
-			if err != nil {
-				result.Errors[ModuleAPIs] = err
-			}
-			mu.Unlock()
-			r.reportProgress(ModuleAPIs, duration, err)
-		}()
-	}
-
-	// Emails
-	if r.isEnabled(ModuleEmails) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			emailResults, err := r.runEmails(ctx, domain)
-			duration := time.Since(start)
-			mu.Lock()
-			result.Emails = emailResults
-			if err != nil {
-				result.Errors[ModuleEmails] = err
-			}
-			mu.Unlock()
-			r.reportProgress(ModuleEmails, duration, err)
-		}()
-	}
-
-	// Cloud storage
-	if r.isEnabled(ModuleCloudStorage) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			buckets, err := r.runCloudStorage(ctx, domain)
-			duration := time.Since(start)
-			mu.Lock()
-			result.CloudStorage = buckets
-			if err != nil {
-				result.Errors[ModuleCloudStorage] = err
-			}
-			mu.Unlock()
-			r.reportProgress(ModuleCloudStorage, duration, err)
-		}()
-	}
-
-	// Nuclei vulnerability scanning
-	if r.isEnabled(ModuleNuclei) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			vulns, err := r.runNuclei(ctx, hosts)
-			duration := time.Since(start)
-			mu.Lock()
-			result.Vulnerabilities = vulns
-			if err != nil {
-				result.Errors[ModuleNuclei] = err
-			}
-			mu.Unlock()
-			r.reportProgress(ModuleNuclei, duration, err)
-		}()
-	}
-
-	// Wait for all modules to complete
 	wg.Wait()
 
 	result.EndTime = time.Now()
 	result.Duration = result.EndTime.Sub(result.StartTime)
 
-	// Persist results to database
-	if r.DB != nil {
-		if err := r.persistResults(domain, result); err != nil {
-			result.Errors[ModuleType("persist")] = err
-			return result, err
-		}
-		// Save a snapshot for diff tracking (best-effort, non-fatal)
-		if snapErr := r.saveSnapshotForDomain(domain, result); snapErr != nil {
-			result.Errors[ModuleType("snapshot")] = snapErr
-		}
-	}
-
-	return result, nil
+	return result
 }
 
-// persistResults saves all scan results to the database
-func (r *Runner) persistResults(domain string, result *ScanResult) error {
-	return r.DB.WithTransaction(func(tx *database.Transaction) error {
-		return persistResultsInTransaction(tx, domain, result)
-	})
-}
-
-// saveSnapshotForDomain captures a point-in-time snapshot of the domain's
-// current state for diff tracking.
-func (r *Runner) saveSnapshotForDomain(domain string, result *ScanResult) error {
-	// Encode subdomains as JSON array
-	subNames := result.Subdomains
-	if subNames == nil {
-		subNames = []string{}
-	}
-	subsJSON, _ := json.Marshal(subNames)
-
-	// Build port summaries
-	type portEntry struct {
-		Host    string `json:"host"`
-		Port    int    `json:"port"`
-		Service string `json:"service"`
-		State   string `json:"state"`
-	}
-	var portEntries []portEntry
-	for _, p := range result.Ports {
-		portEntries = append(portEntries, portEntry{
-			Host:    p.Host,
-			Port:    p.Port,
-			Service: p.Service,
-			State:   p.State,
-		})
-	}
-	if portEntries == nil {
-		portEntries = []portEntry{}
-	}
-	portsJSON, _ := json.Marshal(portEntries)
-
-	// Build vulnerability summaries
-	type vulnEntry struct {
-		TemplateID string `json:"template_id"`
-		Name       string `json:"name"`
-		Severity   string `json:"severity"`
-		Host       string `json:"host"`
-	}
-	var vulnEntries []vulnEntry
-	for _, v := range result.Vulnerabilities {
-		vulnEntries = append(vulnEntries, vulnEntry{
-			TemplateID: v.TemplateID,
-			Name:       v.Info.Name,
-			Severity:   strings.ToLower(v.Info.Severity),
-			Host:       v.Host,
-		})
-	}
-	if vulnEntries == nil {
-		vulnEntries = []vulnEntry{}
-	}
-	vulnsJSON, _ := json.Marshal(vulnEntries)
-
-	// Finding counts by severity
-	critCount, highCount, medCount := 0, 0, 0
-	for _, v := range result.Vulnerabilities {
-		switch strings.ToLower(v.Info.Severity) {
-		case "critical":
-			critCount++
-		case "high":
-			highCount++
-		case "medium":
-			medCount++
+// enabledModules returns the list of enabled module types in a stable order.
+func enabledModules(enabled map[ModuleType]bool) []ModuleType {
+	var mods []ModuleType
+	// Fixed order for deterministic progress output.
+	for _, m := range []ModuleType{
+		ModulePorts,
+		ModuleCertificates,
+		ModuleDNS,
+		ModuleTakeover,
+		ModuleTechnologies,
+		ModuleURLs,
+		ModuleAPIs,
+		ModuleEmails,
+		ModuleCloudStorage,
+		ModuleNuclei,
+	} {
+		if enabled[m] {
+			mods = append(mods, m)
 		}
 	}
-	findingCounts, _ := json.Marshal(map[string]int{
-		"critical": critCount,
-		"high":     highCount,
-		"medium":   medCount,
-		"total":    len(result.Vulnerabilities),
-	})
-
-	return r.DB.SaveSnapshot(
-		domain,
-		"full",
-		len(result.Subdomains),
-		len(result.Ports),
-		len(result.Certificates),
-		0, // risk score — not computed here
-		string(findingCounts),
-		string(subsJSON),
-		string(portsJSON),
-		"[]", // certificates JSON (not tracked in diff for now)
-		string(vulnsJSON),
-	)
+	return mods
 }
 
-func persistResultsInTransaction(tx *database.Transaction, domain string, result *ScanResult) error {
-	var errs []error
-	collect := func(err error) {
+// runModule dispatches to the correct scanner module.
+func runModule(ctx context.Context, mod ModuleType, cfg RunConfig, hosts []string, result *ScanResult) error {
+	switch mod {
+	case ModulePorts:
+		r := ports.Scan(ctx, cfg.Ports, hosts)
+		result.Ports = r.Results
+		return r.Err
+	case ModuleCertificates:
+		r := certificates.Scan(ctx, cfg.Certificates, hosts)
+		result.Certificates = r.Certificates
+		return r.Err
+	case ModuleDNS:
+		records, err := dns.Scan(ctx, cfg.DNS, hosts)
 		if err != nil {
-			errs = append(errs, err)
+			return err
 		}
-	}
-
-	// Subdomains also ensure the root domain exists for dashboard views.
-	_, err := persistence.SaveSubdomains(tx, domain, result.Subdomains)
-	collect(err)
-
-	// Ports
-	var dbPorts []database.Port
-	for _, p := range result.Ports {
-		dbPorts = append(dbPorts, database.Port{
-			Host:    p.Host,
-			Port:    p.Port,
-			State:   p.State,
-			Service: p.Service,
-			Banner:  p.Banner,
-		})
-	}
-	if _, err := persistence.SavePorts(tx, dbPorts); err != nil {
-		collect(err)
-	}
-
-	// Certificates
-	if _, err := persistence.SaveCertificates(tx, result.Certificates); err != nil {
-		collect(err)
-	}
-
-	// Technologies
-	if _, err := persistence.SaveTechnologies(tx, result.Technologies); err != nil {
-		collect(err)
-	}
-
-	// DNS records
-	var dnsResults []*dns.Result
-	for _, rset := range result.DNSRecords {
-		dnsResults = append(dnsResults, dnsRecordSetToResult(rset))
-	}
-	if err := persistence.SaveDNSResults(tx, dnsResults); err != nil {
-		collect(err)
-	}
-
-	// Takeovers
-	var takeovers []persistence.TakeoverFinding
-	for _, t := range result.Takeovers {
-		takeovers = append(takeovers, persistence.TakeoverFinding{
-			Subdomain:  t.Host,
-			Service:    t.Service,
-			Confidence: t.Confidence,
-			Evidence:   t.Evidence,
-			Vulnerable: t.Vulnerable,
-		})
-	}
-	if _, err := persistence.SaveTakeovers(tx, takeovers); err != nil {
-		collect(err)
-	}
-
-	// URLs
-	if _, err := persistence.SaveURLs(tx, result.URLs); err != nil {
-		collect(err)
-	}
-
-	// APIs
-	if _, err := persistence.SaveAPIs(tx, result.APIs); err != nil {
-		collect(err)
-	}
-
-	// Emails
-	if _, err := persistence.SaveEmails(tx, result.Emails); err != nil {
-		collect(err)
-	}
-
-	// Cloud storage
-	if _, err := persistence.SaveCloudBuckets(tx, result.CloudStorage); err != nil {
-		collect(err)
-	}
-
-	// Nuclei vulnerabilities
-	if _, err := persistence.SaveNucleiFindings(tx, result.Vulnerabilities); err != nil {
-		collect(err)
-	}
-
-	// Update last_scanned timestamp
-	if err := persistence.MarkDomainScanned(tx, domain); err != nil {
-		collect(err)
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("persisting scan results: %w", errors.Join(errs...))
-	}
-
-	return nil
-}
-
-func (r *Runner) isEnabled(module ModuleType) bool {
-	return r.EnabledModules[module]
-}
-
-func (r *Runner) reportProgress(module ModuleType, duration time.Duration, err error) {
-	if r.OnProgress != nil {
-		r.OnProgress(module, duration, err)
-	}
-}
-
-func (r *Runner) runSubdomains(ctx context.Context, domain string) ([]string, error) {
-	enum := subdomains.NewEnumeratorWithRateLimit(r.RateLimit)
-	if r.SubdomainTimeout > 0 {
-		enum.Timeout = r.SubdomainTimeout
-	}
-	result := enum.Enumerate(ctx, domain)
-	if len(result.Errors) > 0 {
-		return result.Subdomains, fmt.Errorf("subdomain errors: %v", result.Errors)
-	}
-	return result.Subdomains, nil
-}
-
-func (r *Runner) runPorts(ctx context.Context, hosts []string) ([]PortResult, error) {
-	scanner := ports.DefaultScanner()
-	scanner.Workers = r.PortWorkers
-	if r.PortTimeout > 0 {
-		scanner.Timeout = r.PortTimeout
-	}
-
-	// Use configured ports or common defaults
-	portsToScan := r.Ports
-	if len(portsToScan) == 0 {
-		portsToScan = []int{21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 8080, 8443}
-	}
-
-	results := flattenPortScanResults(scanner.ScanBatch(ctx, hosts, portsToScan))
-
-	if err := ctx.Err(); err != nil {
-		return results, err
-	}
-	return results, nil
-}
-
-func flattenPortScanResults(scanResults []*ports.Result) []PortResult {
-	var results []PortResult
-	for _, scanResult := range scanResults {
-		if scanResult == nil {
-			continue
+		result.DNSRecords = records
+		return nil
+	case ModuleTakeover:
+		r := takeover.Scan(ctx, cfg.Takeover, hosts)
+		result.Takeovers = r.Findings
+		return r.Err
+	case ModuleTechnologies:
+		results := technologies.Scan(ctx, cfg.Technologies, hosts)
+		result.Technologies = results
+		return nil
+	case ModuleURLs:
+		r := urls.Scan(ctx, cfg.URLs, cfg.Subdomains.Domain)
+		result.URLs = r.URLs
+		return r.Err
+	case ModuleAPIs:
+		r := apis.Scan(ctx, cfg.APIs, hosts)
+		result.APIs = r.APIs
+		return r.Err
+	case ModuleEmails:
+		r := emails.Scan(ctx, cfg.Emails, cfg.Subdomains.Domain)
+		result.Emails = r.Emails
+		return r.Err
+	case ModuleCloudStorage:
+		r := cloud.Scan(ctx, cfg.Cloud, cfg.Subdomains.Domain)
+		result.CloudStorage = r.Buckets
+		return r.Err
+	case ModuleNuclei:
+		results, err := nuclei.Scan(ctx, cfg.Nuclei, hosts)
+		if err != nil {
+			return err
 		}
-		for _, p := range scanResult.OpenPorts {
-			results = append(results, PortResult{
-				Host:    scanResult.Host,
-				Port:    p.Port,
-				State:   p.State,
-				Service: p.Service,
-				Banner:  p.Banner,
-			})
-		}
+		result.Vulnerabilities = results
+		return nil
+	default:
+		return nil
 	}
-	return results
 }
 
-func (r *Runner) runCertificates(ctx context.Context, hosts []string) ([]*Certificate, error) {
-	monitor := certificates.DefaultMonitor()
-	monitor.InsecureSkipVerify = r.InsecureSkipVerify
-	if r.HTTPTimeout > 0 {
-		monitor.Timeout = r.HTTPTimeout
+// runSubdomains runs the subdomain enumeration module and records
+// results on the provided ScanResult. It returns the subdomain list.
+func runSubdomains(ctx context.Context, domain string, cfg subdomains.Config, progress ProgressCallback, mod ModuleType, result *ScanResult) []string {
+	if progress != nil {
+		progress(mod, 0, nil)
 	}
-	batch := monitor.CheckBatch(ctx, hosts, 443)
-	return batch.Certificates, nil
-}
-
-func (r *Runner) runDNS(ctx context.Context, hosts []string) ([]DNSRecordSet, error) {
-	monitor := dns.DefaultMonitor()
-	if r.DNSTimeout > 0 {
-		monitor.Timeout = r.DNSTimeout
+	start := time.Now()
+	sr := subdomains.Scan(ctx, cfg, domain)
+	duration := time.Since(start)
+	result.Subdomains = sr.Subdomains
+	if sr.Err != nil {
+		result.Errors[mod] = sr.Err
 	}
-	var results []DNSRecordSet
-	for _, host := range hosts {
-		if ctx.Err() != nil {
-			return results, ctx.Err()
-		}
-		dnsResult := monitor.Lookup(ctx, host)
-		var records []dns.Record
-		for _, recList := range dnsResult.Records {
-			records = append(records, recList...)
-		}
-		results = append(results, DNSRecordSet{
-			Host:    host,
-			Records: records,
-			SOA:     dnsResult.SOA,
-			CAA:     dnsResult.CAA,
-			DNSSEC:  dnsResult.DNSSEC,
-		})
+	if progress != nil {
+		progress(mod, duration, sr.Err)
 	}
-	return results, nil
-}
-
-func (r *Runner) runTakeover(ctx context.Context, hosts []string) ([]TakeoverResult, error) {
-	detector := takeover.NewDetector(r.InsecureSkipVerify)
-	detector.Workers = r.TakeoverWorkers
-	if r.HTTPTimeout > 0 {
-		detector.Timeout = r.HTTPTimeout
-		detector.HTTPClient.Timeout = r.HTTPTimeout
-	}
-	batch := detector.CheckBatch(ctx, hosts)
-
-	var results []TakeoverResult
-	for _, f := range batch.Findings {
-		results = append(results, TakeoverResult{
-			Host:       f.Subdomain,
-			Vulnerable: f.Vulnerable,
-			Service:    f.Service,
-			Confidence: f.Confidence,
-			Evidence:   f.Evidence,
-		})
-	}
-	return results, nil
-}
-
-func (r *Runner) runTechnologies(ctx context.Context, hosts []string) ([]*TechResult, error) {
-	fp := technologies.NewFingerprinter(r.InsecureSkipVerify)
-	if r.HTTPTimeout > 0 {
-		fp.Timeout = r.HTTPTimeout
-		fp.HTTPClient.Timeout = r.HTTPTimeout
-	}
-	results := fp.FingerprintBatch(ctx, hosts)
-	return results, nil
-}
-
-func (r *Runner) runURLs(ctx context.Context, domain string) ([]urls.URL, error) {
-	enum := urls.NewEnumeratorWithRateLimit(r.RateLimit)
-	if r.URLTimeout > 0 {
-		enum.Timeout = r.URLTimeout
-	}
-	result := enum.Enumerate(ctx, domain)
-	return result.URLs, nil
-}
-
-func (r *Runner) runAPIs(ctx context.Context, hosts []string) ([]apis.API, error) {
-	discovery := apis.NewDiscovery(r.InsecureSkipVerify)
-	discovery.Workers = r.APIWorkers
-	if r.HTTPTimeout > 0 {
-		discovery.Timeout = r.HTTPTimeout
-		discovery.HTTPClient.Timeout = r.HTTPTimeout
-	}
-
-	var results []apis.API
-	batch := discovery.DiscoverBatch(ctx, hosts)
-	for _, res := range batch.Results {
-		results = append(results, res.APIs...)
-	}
-	return results, nil
-}
-
-func (r *Runner) runEmails(ctx context.Context, domain string) ([]emails.Email, error) {
-	enum := emails.DefaultEnumeratorWithHunterAPIKey(r.HunterAPIKey)
-	if r.EmailTimeout > 0 {
-		enum.Timeout = r.EmailTimeout
-	}
-	if r.HTTPTimeout > 0 {
-		enum.HTTPClient.Timeout = r.HTTPTimeout
-	}
-	result := enum.Enumerate(ctx, domain)
-	return result.Emails, nil
-}
-
-func (r *Runner) runCloudStorage(ctx context.Context, domain string) ([]cloud.Bucket, error) {
-	detector := cloud.DefaultDetector()
-	detector.Workers = r.CloudWorkers
-	result := detector.ProbeCommonBuckets(ctx, domain)
-	return result.Buckets, nil
-}
-
-func (r *Runner) runNuclei(ctx context.Context, hosts []string) ([]*nuclei.Finding, error) {
-	scanner := nuclei.DefaultScanner()
-	scanner.Severities = r.NucleiSeverities
-	scanner.RateLimit = r.NucleiRateLimit
-	scanner.Timeout = r.NucleiTimeout
-	scanner.BulkSize = r.NucleiBulkSize
-	scanner.Concurrency = r.NucleiConcurrency
-	scanner.Retries = r.NucleiRetries
-	scanner.ExcludeTags = r.NucleiExcludeTags
-
-	// Check if nuclei is installed
-	if !scanner.IsInstalled() {
-		return nil, fmt.Errorf("nuclei not installed")
-	}
-
-	// Convert hosts to URLs for scanning
-	var targets []string
-	for _, h := range hosts {
-		targets = append(targets, "https://"+h)
-		targets = append(targets, "http://"+h)
-	}
-
-	result, err := scanner.Scan(ctx, targets)
-	if err != nil {
-		return nil, err
-	}
-
-	return result.Findings, nil
-}
-
-// dnsRecordSetToResult converts a DNSRecordSet into a minimal dns.Result suitable
-// for change detection.
-func dnsRecordSetToResult(rset DNSRecordSet) *dns.Result {
-	r := &dns.Result{
-		Domain:  rset.Host,
-		Records: make(map[string][]dns.Record),
-		SOA:     rset.SOA,
-		CAA:     rset.CAA,
-		DNSSEC:  rset.DNSSEC,
-	}
-	for _, rec := range rset.Records {
-		r.Records[rec.Type] = append(r.Records[rec.Type], rec)
-	}
-	return r
+	return sr.Subdomains
 }

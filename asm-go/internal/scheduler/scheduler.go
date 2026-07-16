@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -399,13 +400,11 @@ func (s *Scheduler) executeScan(jobType JobType, domain string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Hour)
 	defer cancel()
 
-	runner := parallel.DefaultRunner(s.db)
-	s.configureRunner(runner, jobType)
+	cfg := s.buildConfig(jobType)
+	enabled := s.enabledModules(jobType)
 
-	result, err := runner.Run(ctx, domain)
-	if err != nil {
-		return err
-	}
+	runner := parallel.Runner{}
+	result := runner.Run(ctx, domain, cfg, enabled, nil)
 
 	// Log result summary
 	s.logger.Printf("  subdomains=%d ports=%d vulns=%d",
@@ -414,53 +413,94 @@ func (s *Scheduler) executeScan(jobType JobType, domain string) error {
 	return nil
 }
 
-// configureRunner sets up the runner based on job type and config.
-func (s *Scheduler) configureRunner(runner *parallel.Runner, jobType JobType) {
-	runner.Ports = s.cfg.ParsePorts()
-	runner.InsecureSkipVerify = s.cfg.Scanning.InsecureSkipVerify
-	runner.RateLimit = s.cfg.Scanning.RateLimit
-	runner.NucleiRateLimit = s.cfg.Scanning.RateLimit
-	runner.HunterAPIKey = s.cfg.Hunter.APIKey
+// buildConfig builds a RunConfig from the scheduler's config.
+func (s *Scheduler) buildConfig(jobType JobType) parallel.RunConfig {
+	cfg := parallel.DefaultRunConfig()
 
-	if s.cfg.Timeouts.Subfinder > 0 {
-		runner.SubdomainTimeout = s.cfg.Timeouts.Subfinder
-	}
+	// Port config
+	cfg.Ports.Ports = s.cfg.ParsePorts()
 	if s.cfg.Timeouts.Nmap > 0 {
-		runner.PortTimeout = s.cfg.Timeouts.Nmap
+		cfg.Ports.Timeout = s.cfg.Timeouts.Nmap
 	}
+	cfg.Ports.GrabBanner = true
+
+	// Subdomain config
+	if s.cfg.Timeouts.Subfinder > 0 {
+		cfg.Subdomains.Timeout = s.cfg.Timeouts.Subfinder
+	}
+	cfg.Subdomains.RateLimit = s.cfg.Scanning.RateLimit
+	cfg.Subdomains.Domain = "" // Will be set at call site
+
+	// HTTP timeout for all HTTP-based modules
 	if s.cfg.Timeouts.HTTP > 0 {
-		runner.HTTPTimeout = s.cfg.Timeouts.HTTP
+		cfg.ApplyHTTPTimeout(s.cfg.Timeouts.HTTP)
 	}
+	cfg.Certificates.InsecureSkipVerify = s.cfg.Scanning.InsecureSkipVerify
+
+	// DNS
 	if s.cfg.Timeouts.DNS > 0 {
-		runner.DNSTimeout = s.cfg.Timeouts.DNS
-	}
-	if s.cfg.Timeouts.Gau > 0 {
-		runner.URLTimeout = s.cfg.Timeouts.Gau
-	}
-	if s.cfg.Timeouts.Nuclei > 0 {
-		runner.NucleiTimeout = s.cfg.Timeouts.Nuclei
+		cfg.DNS.Timeout = s.cfg.Timeouts.DNS
 	}
 
+	// URL timeout
+	if s.cfg.Timeouts.Gau > 0 {
+		cfg.URLs.Timeout = s.cfg.Timeouts.Gau
+	}
+
+	// Nuclei
+	if s.cfg.Timeouts.Nuclei > 0 {
+		cfg.Nuclei.Timeout = s.cfg.Timeouts.Nuclei
+	}
 	if s.cfg.Nuclei.BatchSize > 0 {
-		runner.NucleiBulkSize = s.cfg.Nuclei.BatchSize
+		cfg.Nuclei.BulkSize = s.cfg.Nuclei.BatchSize
 	}
 	if s.cfg.Nuclei.Concurrency > 0 {
-		runner.NucleiConcurrency = s.cfg.Nuclei.Concurrency
+		cfg.Nuclei.Concurrency = s.cfg.Nuclei.Concurrency
 	}
-	runner.NucleiRetries = s.cfg.Nuclei.Retries
-
+	cfg.Nuclei.Retries = s.cfg.Nuclei.Retries
 	if s.cfg.Scanning.NucleiSeverity != "" {
-		runner.NucleiSeverities = splitCSV(s.cfg.Scanning.NucleiSeverity)
+		cfg.Nuclei.Severities = splitCSV(s.cfg.Scanning.NucleiSeverity)
+	}
+	cfg.Nuclei.RateLimit = s.cfg.Scanning.RateLimit
+	cfg.Nuclei.ExcludeTags = splitCSV(s.cfg.Nuclei.ExcludeTags)
+
+	// Email / Hunter
+	cfg.Emails.HunterAPIKey = s.cfg.Hunter.APIKey
+
+	// Cloud
+	cfg.Cloud.InsecureSkipVerify = s.cfg.Scanning.InsecureSkipVerify
+
+	// Takeover
+	cfg.Takeover.InsecureSkipVerify = s.cfg.Scanning.InsecureSkipVerify
+
+	// Technologies
+	cfg.Technologies.InsecureSkipVerify = s.cfg.Scanning.InsecureSkipVerify
+
+	return cfg
+}
+
+// enabledModules returns the map of enabled modules for the given job type.
+func (s *Scheduler) enabledModules(jobType JobType) map[parallel.ModuleType]bool {
+	enabled := make(map[parallel.ModuleType]bool)
+	for _, m := range parallel.AllModules() {
+		enabled[m] = false
 	}
 
-	// For cert_check, enable subdomains + certificates only
 	if jobType == JobCertCheck {
-		for k := range runner.EnabledModules {
-			runner.EnabledModules[k] = false
-		}
-		runner.EnabledModules[parallel.ModuleSubdomains] = true
-		runner.EnabledModules[parallel.ModuleCertificates] = true
+		enabled[parallel.ModuleSubdomains] = true
+		enabled[parallel.ModuleCertificates] = true
+		return enabled
 	}
+
+	// Full scan: everything except nuclei (disabled by default)
+	for _, m := range parallel.AllModules() {
+		if m == parallel.ModuleNuclei {
+			continue
+		}
+		enabled[m] = true
+	}
+
+	return enabled
 }
 
 // recordRun inserts a new run record and returns its ID.

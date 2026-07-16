@@ -508,3 +508,74 @@ func (r *Result) GetUniqueVulnerabilities() []*Finding {
 
 	return unique
 }
+
+// Config holds configuration for a Nuclei scan.
+type Config struct {
+	BinaryPath     string
+	Severities     []string
+	RateLimit      int
+	BulkSize       int
+	Concurrency    int
+	Retries        int
+	Timeout        time.Duration
+	ExcludeTags    []string
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		BinaryPath:  "nuclei",
+		Severities:  []string{"critical", "high", "medium"},
+		RateLimit:   150,
+		BulkSize:    25,
+		Concurrency: 25,
+		Retries:     1,
+		Timeout:     30 * time.Minute,
+	}
+}
+
+// ScanResult holds the result of a Nuclei scan.
+type ScanResult struct {
+	Findings []*Finding
+	Errors   []string
+	Err      error
+}
+
+// Scan runs Nuclei against hosts (converted to URLs) and returns findings.
+func Scan(ctx context.Context, cfg Config, hosts []string) ([]*Finding, error) {
+	if len(hosts) == 0 {
+		return nil, nil
+	}
+
+	// Apply defaults.
+	if cfg.Timeout == 0 {
+		cfg.Timeout = DefaultConfig().Timeout
+	}
+	if cfg.RateLimit == 0 {
+		cfg.RateLimit = DefaultConfig().RateLimit
+	}
+
+	// Convert hosts to URLs.
+	targets := make([]string, 0, len(hosts)*2)
+	for _, h := range hosts {
+		targets = append(targets, "https://"+h, "http://"+h)
+	}
+
+	scanner := &Scanner{
+		BinaryPath:  cfg.BinaryPath,
+		Timeout:     cfg.Timeout,
+		RateLimit:   cfg.RateLimit,
+		BulkSize:    cfg.BulkSize,
+		Concurrency: cfg.Concurrency,
+		Retries:     cfg.Retries,
+		Severities:  cfg.Severities,
+		ExcludeTags: cfg.ExcludeTags,
+		Silent:      true,
+	}
+
+	result, err := scanner.Scan(ctx, targets)
+	if err != nil {
+		return result.Findings, err
+	}
+	return result.Findings, nil
+}

@@ -480,3 +480,70 @@ func (r *Result) GetPubliclyAccessible() []Bucket {
 	}
 	return buckets
 }
+
+// Config holds configuration for cloud storage detection.
+type Config struct {
+	Workers            int
+	Timeout            time.Duration
+	InsecureSkipVerify bool
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		Workers: 20,
+		Timeout: 10 * time.Second,
+	}
+}
+
+// ScanResult holds the result of cloud storage detection.
+type ScanResult struct {
+	Buckets []Bucket
+	Errors  []string
+	Err     error
+}
+
+// Scan probes for common cloud storage bucket naming patterns.
+func Scan(ctx context.Context, cfg Config, domain string) *ScanResult {
+	// Apply defaults.
+	if cfg.Workers == 0 {
+		cfg.Workers = DefaultConfig().Workers
+	}
+	if cfg.Timeout == 0 {
+		cfg.Timeout = DefaultConfig().Timeout
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify},
+	}
+	client := &http.Client{
+		Timeout:   cfg.Timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	detector := &Detector{
+		HTTPClient:         client,
+		Timeout:            cfg.Timeout,
+		Workers:            cfg.Workers,
+		Patterns:           DefaultPatterns(),
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	}
+
+	r := detector.ProbeCommonBuckets(ctx, domain)
+	return &ScanResult{
+		Buckets: r.Buckets,
+		Errors:  r.Errors,
+		Err:     firstError(r.Errors),
+	}
+}
+
+// firstError returns a non-nil error if errs has any entries.
+func firstError(errs []string) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("detection errors: %s", strings.Join(errs, "; "))
+}

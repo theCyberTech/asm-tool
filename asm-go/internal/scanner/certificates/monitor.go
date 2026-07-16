@@ -283,6 +283,60 @@ func (c *Certificate) SANString() string {
 	return strings.Join(c.SAN, ", ")
 }
 
+// Config holds configuration for certificate checking.
+type Config struct {
+	Workers          int
+	Timeout          time.Duration
+	ExpiryWarnDays   int
+	InsecureSkipVerify bool
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		Workers:          50,
+		Timeout:          10 * time.Second,
+		ExpiryWarnDays:   30,
+	}
+}
+
+// ScanResult holds the result of a batch certificate scan.
+type ScanResult struct {
+	Certificates []*Certificate
+	Duration     time.Duration
+	Err          error
+}
+
+// Scan performs a batch certificate check over hosts and returns the
+// aggregated result. It is the deep entry point.
+func Scan(ctx context.Context, cfg Config, hosts []string) *ScanResult {
+	if len(hosts) == 0 {
+		return &ScanResult{}
+	}
+
+	// Apply defaults for zero-value fields.
+	if cfg.Workers == 0 {
+		cfg.Workers = DefaultConfig().Workers
+	}
+	if cfg.Timeout == 0 {
+		cfg.Timeout = DefaultConfig().Timeout
+	}
+
+	monitor := Monitor{
+		Workers:          cfg.Workers,
+		Timeout:          cfg.Timeout,
+		ExpiryWarnDays:   cfg.ExpiryWarnDays,
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	}
+
+	result := monitor.CheckBatch(ctx, hosts, 443)
+	return &ScanResult{
+		Certificates: result.Certificates,
+		Duration:     result.Duration,
+		Err:          nil, // CheckBatch doesn't return errors, they're in individual certs
+	}
+}
+
 // Summary represents aggregated certificate statistics
 type Summary struct {
 	Total      int

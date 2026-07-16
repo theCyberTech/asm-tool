@@ -651,3 +651,39 @@ func (r *Result) Summary() string {
 	sort.Strings(parts)
 	return strings.Join(parts, " ")
 }
+
+// Config holds configuration for DNS lookups.
+type Config struct {
+	DNSServer string
+	Timeout   time.Duration
+	Workers   int
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		DNSServer: "8.8.8.8:53",
+		Timeout:   5 * time.Second,
+		Workers:   20,
+	}
+}
+
+// Scan performs DNS lookups for all hosts and returns the results.
+func Scan(ctx context.Context, cfg Config, hosts []string) ([]Result, error) {
+	if len(hosts) == 0 {
+		return nil, nil
+	}
+
+	monitor := Monitor{
+		DNSServer: cfg.DNSServer,
+		Timeout:   cfg.Timeout,
+		Workers:   cfg.Workers,
+	}
+
+	results := monitor.LookupBatch(ctx, hosts)
+	out := make([]Result, 0, len(results))
+	for _, r := range results {
+		out = append(out, *r)
+	}
+	return out, nil
+}

@@ -3,6 +3,7 @@ package ports
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -424,4 +425,88 @@ func PortRange(start, end int) []int {
 		ports[i] = start + i
 	}
 	return ports
+}
+
+// Config holds configuration for a port scan.
+type Config struct {
+	Workers       int
+	Timeout       time.Duration
+	GrabBanner    bool
+	BannerTimeout time.Duration
+	Ports         []int // nil = use CommonPorts
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		Workers:       500,
+		Timeout:       2 * time.Second,
+		GrabBanner:    true,
+		BannerTimeout: 3 * time.Second,
+	}
+}
+
+// ScanResult holds the result of a batch port scan.
+type ScanResult struct {
+	Results  []*Result
+	Duration time.Duration
+	Err      error
+}
+
+// Scan performs a batch port scan over hosts and returns results per host.
+// It is the deep entry point — all configuration and batching happens inside.
+func Scan(ctx context.Context, cfg Config, hosts []string) *ScanResult {
+	if len(hosts) == 0 {
+		return &ScanResult{}
+	}
+
+	// Apply defaults for zero-value fields.
+	if cfg.Workers == 0 {
+		cfg.Workers = DefaultConfig().Workers
+	}
+	if cfg.Timeout == 0 {
+		cfg.Timeout = DefaultConfig().Timeout
+	}
+	portsToScan := cfg.Ports
+	if len(portsToScan) == 0 {
+		portsToScan = CommonPorts()
+	}
+
+	scanner := Scanner{
+		Workers:       cfg.Workers,
+		Timeout:       cfg.Timeout,
+		GrabBanner:    cfg.GrabBanner,
+		BannerTimeout: cfg.BannerTimeout,
+	}
+
+	start := time.Now()
+	raw := scanner.ScanBatch(ctx, hosts, portsToScan)
+
+	var errs []string
+	for _, r := range raw {
+		if r == nil {
+			continue
+		}
+		if r.Error != "" {
+			errs = append(errs, r.Error)
+		}
+	}
+
+	return &ScanResult{
+		Results:  raw,
+		Duration: time.Since(start),
+		Err:      joinErrors(errs),
+	}
+}
+
+// joinErrors returns nil for empty, otherwise an errors.Join.
+func joinErrors(errs []string) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	errs2 := make([]error, len(errs))
+	for i, e := range errs {
+		errs2[i] = fmt.Errorf("%s", e)
+	}
+	return fmt.Errorf("%w", errors.Join(errs2...))
 }

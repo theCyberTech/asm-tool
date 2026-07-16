@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/parallel"
+	"github.com/asm-tool/asm-go/internal/scanner/cloud"
+	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/asm-tool/asm-go/internal/scanner/takeover"
 	"github.com/asm-tool/asm-go/internal/target"
 )
 
@@ -212,13 +215,18 @@ func (r *Reporter) generateJSON(result *parallel.ScanResult) (string, error) {
 
 	// Convert ports
 	for _, p := range result.Ports {
-		report.Ports = append(report.Ports, PortEntry{
-			Host:    p.Host,
-			Port:    p.Port,
-			State:   p.State,
-			Service: p.Service,
-			Banner:  p.Banner,
-		})
+		if p == nil {
+			continue
+		}
+		for _, port := range p.OpenPorts {
+			report.Ports = append(report.Ports, PortEntry{
+				Host:    p.Host,
+				Port:    port.Port,
+				State:   port.State,
+				Service: port.Service,
+				Banner:  port.Banner,
+			})
+		}
 	}
 
 	// Convert certificates
@@ -235,11 +243,13 @@ func (r *Reporter) generateJSON(result *parallel.ScanResult) (string, error) {
 	// Convert DNS
 	for _, d := range result.DNSRecords {
 		entry := DNSEntry{
-			Host:    d.Host,
+			Host:    d.Domain,
 			Records: make(map[string][]string),
 		}
-		for _, rec := range d.Records {
-			entry.Records[rec.Type] = append(entry.Records[rec.Type], rec.Value)
+		for rtype, recs := range d.Records {
+			for _, rec := range recs {
+				entry.Records[rtype] = append(entry.Records[rtype], rec.Value)
+			}
 		}
 		report.DNS = append(report.DNS, entry)
 	}
@@ -247,7 +257,7 @@ func (r *Reporter) generateJSON(result *parallel.ScanResult) (string, error) {
 	// Convert takeovers
 	for _, t := range result.Takeovers {
 		report.Takeovers = append(report.Takeovers, TakeoverEntry{
-			Host:       t.Host,
+			Host:       t.Subdomain,
 			Vulnerable: t.Vulnerable,
 			Service:    t.Service,
 			Confidence: t.Confidence,
@@ -376,11 +386,16 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 		sb.WriteString("| Host | Port | Service | Banner |\n")
 		sb.WriteString("|------|------|---------|--------|\n")
 		for _, p := range result.Ports {
-			banner := p.Banner
-			if len(banner) > 50 {
-				banner = banner[:50] + "..."
+			if p == nil {
+				continue
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %d | %s | %s |\n", p.Host, p.Port, p.Service, banner))
+			for _, port := range p.OpenPorts {
+				banner := port.Banner
+				if len(banner) > 50 {
+					banner = banner[:50] + "..."
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %d | %s | %s |\n", p.Host, port.Port, port.Service, banner))
+			}
 		}
 		sb.WriteString("\n")
 	}
@@ -403,7 +418,7 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 		sb.WriteString("| Host | Service | Confidence | Evidence |\n")
 		sb.WriteString("|------|---------|------------|----------|\n")
 		for _, t := range vulnTakeovers {
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", t.Host, t.Service, t.Confidence, t.Evidence))
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", t.Subdomain, t.Service, t.Confidence, t.Evidence))
 		}
 		sb.WriteString("\n")
 	}
@@ -802,8 +817,8 @@ func countVulnerableTakeovers(result *parallel.ScanResult) int {
 	return count
 }
 
-func getVulnerableTakeovers(result *parallel.ScanResult) []parallel.TakeoverResult {
-	var vulns []parallel.TakeoverResult
+func getVulnerableTakeovers(result *parallel.ScanResult) []takeover.Finding {
+	var vulns []takeover.Finding
 	for _, t := range result.Takeovers {
 		if t.Vulnerable {
 			vulns = append(vulns, t)
@@ -830,8 +845,8 @@ func countPublicBuckets(result *parallel.ScanResult) int {
 	return count
 }
 
-func getPublicBuckets(result *parallel.ScanResult) []parallel.CloudBucket {
-	var buckets []parallel.CloudBucket
+func getPublicBuckets(result *parallel.ScanResult) []cloud.Bucket {
+	var buckets []cloud.Bucket
 	for _, b := range result.CloudStorage {
 		if b.AccessLevel == "listing_enabled" || b.AccessLevel == "public_read" {
 			buckets = append(buckets, b)
@@ -842,11 +857,11 @@ func getPublicBuckets(result *parallel.ScanResult) []parallel.CloudBucket {
 
 type groupedVulnerabilities struct {
 	Total    int
-	Critical []*parallel.VulnFinding
-	High     []*parallel.VulnFinding
-	Medium   []*parallel.VulnFinding
-	Low      []*parallel.VulnFinding
-	Info     []*parallel.VulnFinding
+	Critical []*nuclei.Finding
+	High     []*nuclei.Finding
+	Medium   []*nuclei.Finding
+	Low      []*nuclei.Finding
+	Info     []*nuclei.Finding
 }
 
 func groupVulnerabilitiesBySeverity(result *parallel.ScanResult) groupedVulnerabilities {

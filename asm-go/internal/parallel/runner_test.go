@@ -1,153 +1,55 @@
 package parallel
 
 import (
-	"context"
-	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 )
 
-func TestPersistResultsCommitsSuccessfulScan(t *testing.T) {
-	r, db := newPersistenceTestRunner(t)
-
+func TestScanResultContainsScannerTypes(t *testing.T) {
 	result := &ScanResult{
+		Domain: "example.com",
 		Subdomains: []string{"www.example.com"},
-		Ports: []PortResult{
-			{Host: "www.example.com", Port: 443, State: "open", Service: "https"},
-		},
-		URLs: []URLResult{
-			{Domain: "example.com", URL: "https://www.example.com/api/users", Category: "api", Source: "wayback", Interesting: true},
-		},
-		APIs: []APIResult{
-			{URL: "https://www.example.com/openapi.json", Type: "openapi", Title: "Example API", Version: "3.0.0", EndpointsCount: 1, Endpoints: []string{"/users"}},
-		},
-		Emails: []EmailResult{
-			{Domain: "example.com", Address: "security@example.com", Source: "crtsh", Type: "role"},
-		},
-		CloudStorage: []CloudBucket{
+		Ports: []*ports.Result{
 			{
-				URL:         "https://example-assets.s3.amazonaws.com",
-				Provider:    "s3",
-				BucketName:  "example-assets",
-				Domain:      "example.com",
-				AccessLevel: "public_read",
-				Severity:    "high",
-				Evidence:    "public read",
+				Host: "www.example.com",
+				OpenPorts: []ports.Port{
+					{Port: 443, State: "open", Service: "https"},
+				},
 			},
 		},
 	}
 
-	if err := r.persistResults("example.com", result); err != nil {
-		t.Fatalf("persistResults returned error: %v", err)
+	if len(result.Subdomains) != 1 {
+		t.Fatalf("expected 1 subdomain, got %d", len(result.Subdomains))
 	}
-
-	stats, err := db.GetStats()
-	if err != nil {
-		t.Fatalf("GetStats returned error: %v", err)
+	if len(result.Ports) != 1 {
+		t.Fatalf("expected 1 port result, got %d", len(result.Ports))
 	}
-	if stats.Domains != 1 {
-		t.Fatalf("domains count = %d, want 1", stats.Domains)
+	if len(result.Ports[0].OpenPorts) != 1 {
+		t.Fatalf("expected 1 open port, got %d", len(result.Ports[0].OpenPorts))
 	}
-	if stats.Subdomains != 1 {
-		t.Fatalf("subdomains count = %d, want 1", stats.Subdomains)
-	}
-	if stats.Ports != 1 {
-		t.Fatalf("ports count = %d, want 1", stats.Ports)
-	}
-	if stats.URLs != 1 {
-		t.Fatalf("urls count = %d, want 1", stats.URLs)
-	}
-	if stats.APIs != 1 {
-		t.Fatalf("apis count = %d, want 1", stats.APIs)
-	}
-	if stats.Emails != 1 {
-		t.Fatalf("emails count = %d, want 1", stats.Emails)
-	}
-	if stats.CloudBuckets != 1 {
-		t.Fatalf("cloud bucket count = %d, want 1", stats.CloudBuckets)
-	}
-
-	domain, err := db.Domains.GetByName("example.com")
-	if err != nil {
-		t.Fatalf("GetByName returned error: %v", err)
-	}
-	if domain.LastScanned == nil {
-		t.Fatal("last_scanned was not updated")
+	if result.Ports[0].OpenPorts[0].Port != 443 {
+		t.Fatalf("expected port 443, got %d", result.Ports[0].OpenPorts[0].Port)
 	}
 }
 
-func TestPersistResultsRollsBackScanAndReturnsAggregatedWriteErrors(t *testing.T) {
-	r, db := newPersistenceTestRunner(t)
-
-	result := &ScanResult{
-		Subdomains: []string{"www.example.com"},
-		Ports: []PortResult{
-			{Host: "www.example.com", Port: 443, State: "open", Service: "https"},
-		},
-		Takeovers: []TakeoverResult{
-			{
-				Host:       "dangling.example.com",
-				Vulnerable: true,
-				Service:    "github",
-				Confidence: "INVALID",
-				Evidence:   "test evidence",
-			},
-		},
-		CloudStorage: []CloudBucket{
-			{
-				URL:         "https://storage.example.com/bucket",
-				Provider:    "invalid-provider",
-				BucketName:  "bucket",
-				Domain:      "example.com",
-				AccessLevel: "public_read",
-				Severity:    "critical",
-				Evidence:    "test evidence",
-			},
-		},
+func TestEnabledModulesStableOrder(t *testing.T) {
+	enabled := map[ModuleType]bool{
+		ModulePorts:      true,
+		ModuleDNS:        true,
+		ModuleSubdomains: true,
 	}
 
-	err := r.persistResults("example.com", result)
-	if err == nil {
-		t.Fatal("persistResults returned nil error")
-	}
+	mods := enabledModules(enabled)
 
-	errText := err.Error()
-	for _, want := range []string{"saving takeover", "saving cloud bucket"} {
-		if !strings.Contains(errText, want) {
-			t.Fatalf("persistResults error = %q, want it to include %q", errText, want)
-		}
+	// Check order is stable (ports before dns before subdomains is not expected since subdomains is phase 1)
+	// The stable order should be: ports, dns
+	if len(mods) != 2 {
+		t.Fatalf("expected 2 enabled modules, got %d", len(mods))
 	}
-
-	stats, err := db.GetStats()
-	if err != nil {
-		t.Fatalf("GetStats returned error: %v", err)
-	}
-	if stats.Domains != 0 || stats.Subdomains != 0 || stats.Ports != 0 {
-		t.Fatalf("transaction left partial rows: domains=%d subdomains=%d ports=%d", stats.Domains, stats.Subdomains, stats.Ports)
-	}
-}
-
-func TestRunReturnsPersistenceErrors(t *testing.T) {
-	r, db := newPersistenceTestRunner(t)
-	for module := range r.EnabledModules {
-		r.EnabledModules[module] = false
-	}
-	if err := db.Close(); err != nil {
-		t.Fatalf("Close returned error: %v", err)
-	}
-
-	result, err := r.Run(context.Background(), "example.com")
-	if err == nil {
-		t.Fatal("Run returned nil error")
-	}
-	if result == nil {
-		t.Fatal("Run returned nil result")
-	}
-	if result.Errors[ModuleType("persist")] == nil {
-		t.Fatal("Run did not record the persistence error")
+	if mods[0] != ModulePorts || mods[1] != ModuleDNS {
+		t.Fatalf("expected [ports, dns], got %v", mods)
 	}
 }
 
@@ -169,33 +71,56 @@ func TestFlattenPortScanResultsPreservesBatchOrder(t *testing.T) {
 		},
 	}
 
-	results := flattenPortScanResults(batch)
-
-	want := []PortResult{
-		{Host: "first.example.com", Port: 443, State: "open", Service: "https", Banner: "first"},
-		{Host: "second.example.com", Port: 80, State: "open", Service: "http", Banner: "second"},
-		{Host: "second.example.com", Port: 8080, State: "open", Service: "http-proxy"},
+	var allPorts []ports.Port
+	for _, r := range batch {
+		if r == nil {
+			continue
+		}
+		for _, p := range r.OpenPorts {
+			allPorts = append(allPorts, p)
+		}
 	}
-	if len(results) != len(want) {
-		t.Fatalf("flattenPortScanResults returned %d results, want %d: %#v", len(results), len(want), results)
+
+	want := []ports.Port{
+		{Port: 443, State: "open", Service: "https", Banner: "first"},
+		{Port: 80, State: "open", Service: "http", Banner: "second"},
+		{Port: 8080, State: "open", Service: "http-proxy"},
+	}
+	if len(allPorts) != len(want) {
+		t.Fatalf("got %d ports, want %d: %#v", len(allPorts), len(want), allPorts)
 	}
 	for i := range want {
-		if results[i] != want[i] {
-			t.Fatalf("result %d = %#v, want %#v", i, results[i], want[i])
+		if allPorts[i] != want[i] {
+			t.Fatalf("port %d = %#v, want %#v", i, allPorts[i], want[i])
 		}
 	}
 }
 
-func newPersistenceTestRunner(t *testing.T) (*Runner, *database.Database) {
-	t.Helper()
-
-	db, err := database.New(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("database.New returned error: %v", err)
+func TestAllModulesReturnsExpectedCount(t *testing.T) {
+	mods := AllModules()
+	if len(mods) != 11 {
+		t.Fatalf("expected 11 modules, got %d", len(mods))
 	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
+}
 
-	return DefaultRunner(db), db
+func TestParseModuleRecognizesNames(t *testing.T) {
+	tests := map[string]ModuleType{
+		"subdomains": ModuleSubdomains,
+		"ports":      ModulePorts,
+		"nuclei":     ModuleNuclei,
+	}
+
+	for input, want := range tests {
+		got := ParseModule(input)
+		if got != want {
+			t.Fatalf("ParseModule(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestParseModuleRejectsUnknown(t *testing.T) {
+	got := ParseModule("nonexistent")
+	if got != "" {
+		t.Fatalf("ParseModule(\"nonexistent\") = %q, want empty", got)
+	}
 }

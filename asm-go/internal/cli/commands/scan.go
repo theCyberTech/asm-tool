@@ -12,6 +12,7 @@ import (
 	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/notifier"
+	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/parallel"
 	"github.com/asm-tool/asm-go/internal/reporter"
 	"github.com/asm-tool/asm-go/internal/target"
@@ -141,19 +142,19 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	fmt.Printf("\n%s Full Scan: %s\n", titleStyle.Render("[*]"), valueStyle.Render(domain))
 	fmt.Println(strings.Repeat("=", 60))
 
-	// Create runner
-	runner := parallel.DefaultRunner(db)
-	configureScanRunner(runner, cfg, opts)
+	// Build config and enabled modules
+	runCfg := buildScanConfig(cfg, opts)
+	enabled := buildEnabledModules(cfg, opts)
 
 	// Print enabled modules
-	var enabled []string
-	for mod, on := range runner.EnabledModules {
+	var enabledNames []string
+	for mod, on := range enabled {
 		if on {
-			enabled = append(enabled, string(mod))
+			enabledNames = append(enabledNames, string(mod))
 		}
 	}
-	fmt.Printf("%s Modules: %s\n", labelStyle.Render("   "), strings.Join(enabled, ", "))
-	fmt.Printf("%s Workers: ports=%d, api=%d\n", labelStyle.Render("   "), opts.portWorkers, opts.apiWorkers)
+	fmt.Printf("%s Modules: %s\n", labelStyle.Render("   "), strings.Join(enabledNames, ", "))
+	fmt.Printf("%s Workers: ports=%d\n", labelStyle.Render("   "), opts.portWorkers)
 	if cfg.Scanning.PassiveOnly {
 		fmt.Printf("%s Passive mode: active modules disabled\n", labelStyle.Render("   "))
 	}
@@ -161,25 +162,23 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 
 	// Progress callback
 	moduleStatus := make(map[parallel.ModuleType]string)
-	if opts.verbose {
-		runner.OnProgress = func(module parallel.ModuleType, duration time.Duration, err error) {
-			status := lowStyle.Render("OK")
+	progress := func(module parallel.ModuleType, duration time.Duration, err error) {
+		status := "."
+		if err != nil {
+			status = "!"
+		}
+		moduleStatus[module] = status
+		if opts.verbose {
+			status = lowStyle.Render("OK")
 			if err != nil {
 				status = highStyle.Render("ERR")
 			}
-			moduleStatus[module] = status
 			fmt.Printf("%s %-15s %s (%s)\n",
 				labelStyle.Render("[*]"),
 				module,
 				status,
 				duration.Round(time.Millisecond))
-		}
-	} else {
-		runner.OnProgress = func(module parallel.ModuleType, duration time.Duration, err error) {
-			status := "."
-			if err != nil {
-				status = "!"
-			}
+		} else {
 			fmt.Print(status)
 		}
 	}
@@ -187,7 +186,8 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	// Run scan
 	fmt.Printf("\n%s Scanning...\n", titleStyle.Render("[*]"))
 	startTime := time.Now()
-	result, err := runner.Run(ctx, domain)
+	r := parallel.Runner{}
+	result := r.Run(ctx, domain, runCfg, enabled, progress)
 	if !opts.verbose {
 		fmt.Println() // newline after progress dots
 	}
@@ -250,74 +250,111 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	return nil
 }
 
-func configureScanRunner(runner *parallel.Runner, cfg *config.Config, opts scanOptions) {
+// buildScanConfig builds a RunConfig from the CLI options.
+func buildScanConfig(cfg *config.Config, opts scanOptions) parallel.RunConfig {
 	if cfg == nil {
 		cfg = config.Default()
 	}
 
+	out := parallel.DefaultRunConfig()
+
+	// Port config
 	if opts.portWorkers > 0 {
-		runner.PortWorkers = opts.portWorkers
+		out.Ports.Workers = opts.portWorkers
 	}
-	runner.Ports = cfg.ParsePorts()
-	if opts.apiWorkers > 0 {
-		runner.APIWorkers = opts.apiWorkers
-	}
-	runner.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
-	runner.RateLimit = cfg.Scanning.RateLimit
-	runner.NucleiRateLimit = cfg.Scanning.RateLimit
-	runner.HunterAPIKey = cfg.Hunter.APIKey
-
-	if cfg.Timeouts.Subfinder > 0 {
-		runner.SubdomainTimeout = cfg.Timeouts.Subfinder
-	}
+	out.Ports.Ports = cfg.ParsePorts()
 	if cfg.Timeouts.Nmap > 0 {
-		runner.PortTimeout = cfg.Timeouts.Nmap
+		out.Ports.Timeout = cfg.Timeouts.Nmap
 	}
+	out.Ports.GrabBanner = true
+
+	// Subdomain
+	out.Subdomains.RateLimit = cfg.Scanning.RateLimit
+	if cfg.Timeouts.Subfinder > 0 {
+		out.Subdomains.Timeout = cfg.Timeouts.Subfinder
+	}
+
+	// HTTP timeout
 	if cfg.Timeouts.HTTP > 0 {
-		runner.HTTPTimeout = cfg.Timeouts.HTTP
+		out.ApplyHTTPTimeout(cfg.Timeouts.HTTP)
 	}
+
+	// DNS
 	if cfg.Timeouts.DNS > 0 {
-		runner.DNSTimeout = cfg.Timeouts.DNS
+		out.DNS.Timeout = cfg.Timeouts.DNS
 	}
+
+	// URL
 	if cfg.Timeouts.Gau > 0 {
-		runner.URLTimeout = cfg.Timeouts.Gau
-	}
-	if cfg.Timeouts.Nuclei > 0 {
-		runner.NucleiTimeout = cfg.Timeouts.Nuclei
+		out.URLs.Timeout = cfg.Timeouts.Gau
 	}
 
-	if cfg.Nuclei.BatchSize > 0 {
-		runner.NucleiBulkSize = cfg.Nuclei.BatchSize
-	}
-	if cfg.Nuclei.Concurrency > 0 {
-		runner.NucleiConcurrency = cfg.Nuclei.Concurrency
-	}
-	runner.NucleiRetries = cfg.Nuclei.Retries
-	runner.NucleiExcludeTags = splitCSV(cfg.Nuclei.ExcludeTags)
+	// Nuclei
+	out.ApplyNucleiConfig(
+		selectNucleiSeverities(cfg, opts),
+		cfg.Nuclei.BatchSize,
+		cfg.Nuclei.Concurrency,
+		cfg.Nuclei.Retries,
+	)
+	out.Nuclei.RateLimit = cfg.Scanning.RateLimit
+	out.Nuclei.ExcludeTags = splitCSV(cfg.Nuclei.ExcludeTags)
 
-	if opts.nucleiSeveritySet {
-		runner.NucleiSeverities = opts.nucleiSeverities
-	} else if severities := splitCSV(cfg.Scanning.NucleiSeverity); len(severities) > 0 {
-		runner.NucleiSeverities = severities
-	}
+	// Email / Hunter
+	out.Emails.HunterAPIKey = cfg.Hunter.APIKey
 
-	if opts.enableNuclei {
-		runner.EnabledModules[parallel.ModuleNuclei] = true
-	}
-	applyModuleSelection(runner, opts)
-	if cfg.Scanning.PassiveOnly {
-		applyPassiveMode(runner)
-	}
+	// Insecure
+	out.Certificates.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
+	out.Takeover.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
+	out.Technologies.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
+	out.Cloud.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
+
+	return out
 }
 
-func applyModuleSelection(runner *parallel.Runner, opts scanOptions) {
+// selectNucleiSeverities picks the severity list from CLI or config.
+func selectNucleiSeverities(cfg *config.Config, opts scanOptions) []string {
+	if opts.nucleiSeveritySet {
+		return opts.nucleiSeverities
+	}
+	return splitCSV(cfg.Scanning.NucleiSeverity)
+}
+
+// buildEnabledModules builds the enabled module map from CLI options.
+func buildEnabledModules(cfg *config.Config, opts scanOptions) map[parallel.ModuleType]bool {
+	enabled := make(map[parallel.ModuleType]bool)
+	// Start with all enabled
+	for _, m := range parallel.AllModules() {
+		enabled[m] = true
+	}
+	// Nuclei disabled by default
+	enabled[parallel.ModuleNuclei] = false
+
+	// Enable nuclei if flag set
+	if opts.enableNuclei {
+		enabled[parallel.ModuleNuclei] = true
+	}
+
+	// Apply --skip/--only
+	parallel.ApplyModuleSelection(enabled, opts.onlyModules, opts.skipModules)
+
+	// Passive mode disables active modules
+	if cfg.Scanning.PassiveOnly {
+		parallel.ApplyPassiveMode(enabled)
+	}
+
+	return enabled
+}
+
+// applyModuleSelection enables/disables modules based on CLI options.
+// Deprecated: use parallel.ApplyModuleSelection instead.
+func applyModuleSelection(enabled map[parallel.ModuleType]bool, opts scanOptions) {
 	if len(opts.onlyModules) > 0 {
-		for k := range runner.EnabledModules {
-			runner.EnabledModules[k] = false
+		for k := range enabled {
+			enabled[k] = false
 		}
 		for _, m := range opts.onlyModules {
 			if mod, ok := parseModule(m); ok {
-				runner.EnabledModules[mod] = true
+				enabled[mod] = true
 			}
 		}
 		return
@@ -325,23 +362,15 @@ func applyModuleSelection(runner *parallel.Runner, opts scanOptions) {
 
 	for _, m := range opts.skipModules {
 		if mod, ok := parseModule(m); ok {
-			runner.EnabledModules[mod] = false
+			enabled[mod] = false
 		}
 	}
 }
 
-func applyPassiveMode(runner *parallel.Runner) {
-	for _, mod := range []parallel.ModuleType{
-		parallel.ModulePorts,
-		parallel.ModuleCertificates,
-		parallel.ModuleTakeover,
-		parallel.ModuleTechnologies,
-		parallel.ModuleAPIs,
-		parallel.ModuleCloudStorage,
-		parallel.ModuleNuclei,
-	} {
-		runner.EnabledModules[mod] = false
-	}
+// applyPassiveMode disables active scanning modules.
+// Deprecated: use parallel.ApplyPassiveMode instead.
+func applyPassiveMode(enabled map[parallel.ModuleType]bool) {
+	parallel.ApplyPassiveMode(enabled)
 }
 
 func scanNotifier(cfg *config.Config, opts scanOptions) *notifier.Notifier {
@@ -474,7 +503,7 @@ func printScanSummary(result *parallel.ScanResult) {
 			vulnTakeovers)
 		for _, t := range result.Takeovers {
 			if t.Vulnerable {
-				fmt.Printf("      %s (%s - %s)\n", t.Host, t.Service, t.Confidence)
+				fmt.Printf("      %s (%s - %s)\n", t.Subdomain, t.Service, t.Confidence)
 			}
 		}
 	}
@@ -495,7 +524,7 @@ func printScanSummary(result *parallel.ScanResult) {
 
 	// Show critical/high vulnerabilities from nuclei
 	if len(result.Vulnerabilities) > 0 {
-		var criticalFindings, highFindings []*parallel.VulnFinding
+		var criticalFindings, highFindings []*nuclei.Finding
 		for _, v := range result.Vulnerabilities {
 			switch strings.ToLower(v.Info.Severity) {
 			case "critical":

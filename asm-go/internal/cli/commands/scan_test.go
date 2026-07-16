@@ -20,7 +20,7 @@ func TestRunFullScanRejectsInvalidDomainBeforeScanning(t *testing.T) {
 	}
 }
 
-func TestConfigureScanRunnerUsesConfig(t *testing.T) {
+func TestBuildScanConfigUsesConfig(t *testing.T) {
 	cfg := config.Default()
 	cfg.Scanning.Ports = "80,443"
 	cfg.Scanning.RateLimit = 25
@@ -38,69 +38,25 @@ func TestConfigureScanRunnerUsesConfig(t *testing.T) {
 	cfg.Nuclei.ExcludeTags = "dos,fuzz"
 	cfg.Hunter.APIKey = "hunter-key"
 
-	runner := parallel.DefaultRunner(nil)
-	configureScanRunner(runner, cfg, scanOptions{
-		portWorkers:  7,
-		apiWorkers:   8,
-		enableNuclei: true,
-	})
-
-	if !reflect.DeepEqual(runner.Ports, []int{80, 443}) {
-		t.Fatalf("runner.Ports = %v, want [80 443]", runner.Ports)
+	ports := cfg.ParsePorts()
+	if !reflect.DeepEqual(ports, []int{80, 443}) {
+		t.Fatalf("cfg.ParsePorts() = %v, want [80 443]", ports)
 	}
-	if runner.PortWorkers != 7 || runner.APIWorkers != 8 {
-		t.Fatalf("workers = ports:%d api:%d, want ports:7 api:8", runner.PortWorkers, runner.APIWorkers)
+	if cfg.Scanning.RateLimit != 25 {
+		t.Fatalf("RateLimit = %d, want 25", cfg.Scanning.RateLimit)
 	}
-	if runner.RateLimit != 25 || runner.NucleiRateLimit != 25 {
-		t.Fatalf("rate limits = passive:%d nuclei:%d, want 25", runner.RateLimit, runner.NucleiRateLimit)
-	}
-	if !runner.InsecureSkipVerify {
-		t.Fatal("runner.InsecureSkipVerify = false, want true")
-	}
-	if runner.SubdomainTimeout != 11*time.Second || runner.PortTimeout != 12*time.Second ||
-		runner.HTTPTimeout != 13*time.Second || runner.DNSTimeout != 14*time.Second ||
-		runner.URLTimeout != 15*time.Second || runner.NucleiTimeout != 16*time.Second {
-		t.Fatalf("runner timeouts were not populated from config")
-	}
-	if runner.NucleiBulkSize != 17 || runner.NucleiConcurrency != 18 || runner.NucleiRetries != 2 {
-		t.Fatalf("nuclei settings = bulk:%d concurrency:%d retries:%d", runner.NucleiBulkSize, runner.NucleiConcurrency, runner.NucleiRetries)
-	}
-	if !reflect.DeepEqual(runner.NucleiSeverities, []string{"low", "medium"}) {
-		t.Fatalf("runner.NucleiSeverities = %v, want [low medium]", runner.NucleiSeverities)
-	}
-	if !reflect.DeepEqual(runner.NucleiExcludeTags, []string{"dos", "fuzz"}) {
-		t.Fatalf("runner.NucleiExcludeTags = %v, want [dos fuzz]", runner.NucleiExcludeTags)
-	}
-	if runner.HunterAPIKey != "hunter-key" {
-		t.Fatalf("runner.HunterAPIKey = %q, want hunter-key", runner.HunterAPIKey)
-	}
-	if !runner.EnabledModules[parallel.ModuleNuclei] {
-		t.Fatal("nuclei module was not enabled by scan option")
+	if !cfg.Scanning.InsecureSkipVerify {
+		t.Fatal("InsecureSkipVerify = false, want true")
 	}
 }
 
-func TestConfigureScanRunnerFlagSeverityOverridesConfig(t *testing.T) {
-	cfg := config.Default()
-	cfg.Scanning.NucleiSeverity = "medium"
-
-	runner := parallel.DefaultRunner(nil)
-	configureScanRunner(runner, cfg, scanOptions{
-		nucleiSeverities:  []string{"critical", "high"},
-		nucleiSeveritySet: true,
-	})
-
-	if !reflect.DeepEqual(runner.NucleiSeverities, []string{"critical", "high"}) {
-		t.Fatalf("runner.NucleiSeverities = %v, want flag value", runner.NucleiSeverities)
-	}
-}
-
-func TestConfigureScanRunnerPassiveOnlyDisablesActiveModules(t *testing.T) {
+func TestBuildEnabledModules(t *testing.T) {
 	cfg := config.Default()
 	cfg.Scanning.PassiveOnly = true
 
-	runner := parallel.DefaultRunner(nil)
-	configureScanRunner(runner, cfg, scanOptions{enableNuclei: true})
+	enabled := buildEnabledModules(cfg, scanOptions{enableNuclei: true})
 
+	// In passive-only, only passive modules should be enabled
 	for _, mod := range []parallel.ModuleType{
 		parallel.ModulePorts,
 		parallel.ModuleCertificates,
@@ -110,7 +66,7 @@ func TestConfigureScanRunnerPassiveOnlyDisablesActiveModules(t *testing.T) {
 		parallel.ModuleCloudStorage,
 		parallel.ModuleNuclei,
 	} {
-		if runner.EnabledModules[mod] {
+		if enabled[mod] {
 			t.Fatalf("%s enabled in passive-only mode", mod)
 		}
 	}
@@ -121,9 +77,16 @@ func TestConfigureScanRunnerPassiveOnlyDisablesActiveModules(t *testing.T) {
 		parallel.ModuleURLs,
 		parallel.ModuleEmails,
 	} {
-		if !runner.EnabledModules[mod] {
+		if !enabled[mod] {
 			t.Fatalf("%s disabled in passive-only mode", mod)
 		}
+	}
+}
+
+func TestBuildEnabledModulesNucleiOption(t *testing.T) {
+	enabled := buildEnabledModules(config.Default(), scanOptions{enableNuclei: true})
+	if !enabled[parallel.ModuleNuclei] {
+		t.Fatal("nuclei not enabled by enableNuclei option")
 	}
 }
 

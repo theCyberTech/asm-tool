@@ -498,3 +498,75 @@ func DefaultWordlist() []string {
 func ValidateDomain(domain string) bool {
 	return target.ValidateDomain(domain)
 }
+
+// Config holds configuration for subdomain enumeration.
+type Config struct {
+	Domain       string
+	RateLimit    int // rps, 0 = unlimited
+	Timeout      time.Duration
+	CustomSources []Source
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		Timeout: 120 * time.Second,
+	}
+}
+
+// ScanResult holds the result of subdomain enumeration.
+type ScanResult struct {
+	Subdomains []string
+	Sources    map[string]int
+	Duration   time.Duration
+	Errors     []string
+	Err        error
+}
+
+// Scan enumerates subdomains from all configured sources.
+func Scan(ctx context.Context, cfg Config, domain string) *ScanResult {
+	// Use custom sources if provided, otherwise use defaults.
+	sources := cfg.CustomSources
+	if len(sources) == 0 {
+		// Build default sources with rate limiting
+		var transport http.RoundTripper = &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		}
+		transport = ratelimit.NewTransport(transport, cfg.RateLimit)
+		client := &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: transport,
+		}
+
+		sources = []Source{
+			&CertSpotterSource{client: client},
+			&HackerTargetSource{client: client},
+			&URLScanSource{client: client},
+			&RapidDNSSource{client: client},
+		}
+	}
+
+	enum := &Enumerator{
+		Sources: sources,
+		Timeout: cfg.Timeout,
+	}
+
+	r := enum.Enumerate(ctx, domain)
+	return &ScanResult{
+		Subdomains: r.Subdomains,
+		Sources:    r.Sources,
+		Duration:   r.Duration,
+		Errors:     r.Errors,
+		Err:        r.firstError(),
+	}
+}
+
+// firstError returns the first non-nil error from the errors slice.
+func (r *Result) firstError() error {
+	if len(r.Errors) == 0 {
+		return nil
+	}
+	return fmt.Errorf("enumeration errors: %s", strings.Join(r.Errors, "; "))
+}

@@ -476,3 +476,61 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// Config holds configuration for technology fingerprinting.
+type Config struct {
+	Timeout            time.Duration
+	HTTPClientTimeout  time.Duration
+	Workers            int
+	InsecureSkipVerify bool
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+func DefaultConfig() Config {
+	return Config{
+		Timeout:            10 * time.Second,
+		HTTPClientTimeout:  10 * time.Second,
+		Workers:            30,
+	}
+}
+
+// Scan performs technology fingerprinting over hosts and returns results.
+func Scan(ctx context.Context, cfg Config, hosts []string) []*Result {
+	if len(hosts) == 0 {
+		return nil
+	}
+
+	// Apply defaults.
+	if cfg.Timeout == 0 {
+		cfg.Timeout = DefaultConfig().Timeout
+	}
+	if cfg.Workers == 0 {
+		cfg.Workers = DefaultConfig().Workers
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify},
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+	}
+	client := &http.Client{
+		Timeout:   cfg.Timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	fp := &Fingerprinter{
+		HTTPClient:         client,
+		Timeout:            cfg.Timeout,
+		Workers:            cfg.Workers,
+		Signatures:         DefaultSignatures(),
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	}
+
+	return fp.FingerprintBatch(ctx, hosts)
+}
