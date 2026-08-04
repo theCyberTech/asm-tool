@@ -65,6 +65,12 @@ Results are saved to the database for future reference.`,
 }
 
 func runDiscover(db *database.Database, domains []string, rateLimit int) error {
+	normalizedDomains, err := normalizeDomainList(domains)
+	if err != nil {
+		return err
+	}
+	domains = normalizedDomains
+
 	// Set up signal handling for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -62,6 +62,12 @@ Note: Some sources require API keys for full functionality.`,
 }
 
 func runEmails(db *database.Database, domains []string) error {
+	normalizedDomains, err := normalizeDomainList(domains)
+	if err != nil {
+		return err
+	}
+	domains = normalizedDomains
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

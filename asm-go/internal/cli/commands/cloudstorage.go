@@ -69,6 +69,12 @@ Checks bucket access levels:
 }
 
 func runCloudStorage(db *database.Database, domains []string, probe bool, workers int) error {
+	normalizedDomains, err := normalizeDomainList(domains)
+	if err != nil {
+		return err
+	}
+	domains = normalizedDomains
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

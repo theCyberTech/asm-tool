@@ -79,6 +79,12 @@ Use --probe-all to probe every URL (not just interesting ones).`,
 }
 
 func runURLs(db *database.Database, domains []string, showAll, interesting, probe, probeAll bool, rateLimit int) error {
+	normalizedDomains, err := normalizeDomainList(domains)
+	if err != nil {
+		return err
+	}
+	domains = normalizedDomains
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
