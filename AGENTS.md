@@ -5,22 +5,30 @@
 ASM Tool is a Go-based attack surface management tool. It monitors domains for
 subdomains, open ports, certificates, technologies, DNS records, vulnerabilities,
 URLs, subdomain takeovers, API endpoints, email addresses, and cloud storage
-buckets.
+buckets. It also provides a local web dashboard and cron-based scheduled scans
+with Slack/email notifications.
 
 ## Repository Layout
 
+- `asm.sh` - Shell wrapper around the Go CLI (preferred entry point)
 - `asm-go/cmd/asm/` - CLI entry point
 - `asm-go/internal/config/` - YAML configuration
 - `asm-go/internal/database/` - SQLite database facade and migrations
+- `asm-go/internal/persistence/` - Transactional save of scan results
 - `asm-go/internal/scanner/` - Discovery and security scanning modules
 - `asm-go/internal/cli/commands/` - Cobra command implementations
+- `asm-go/internal/dashboard/` - Embedded HTML dashboard and ops UI
+- `asm-go/internal/scheduler/` - Cron-based scheduled scan jobs
 - `asm-go/internal/reporter/` - JSON, Markdown, and HTML reports
 - `asm-go/internal/notifier/` - Slack and email notifications
 - `asm-go/internal/parallel/` - Concurrent scan orchestration
+- `asm-go/internal/target/` - Domain normalization and validation
+- `asm-go/internal/httpclient/` - Shared HTTP client construction
+- `asm-go/internal/ratelimit/` - Outbound HTTP rate limiting
 
 ## Development Commands
 
-Run these commands from `asm-go/` unless noted otherwise:
+Run Go commands from `asm-go/` unless noted otherwise:
 
 ```bash
 # Build the binary
@@ -28,6 +36,12 @@ go build -o asm-go ./cmd/asm
 
 # Run tests
 go test ./... -v
+
+# Init, scan, and status via wrapper (repo root)
+../asm.sh init
+../asm.sh scan example.com
+../asm.sh status
+../asm.sh dashboard
 ```
 
 ## Coding Guidelines
@@ -36,7 +50,9 @@ go test ./... -v
 - Keep scanner modules self-contained and use their existing `Scan()` or
   `Enumerate()` interfaces.
 - Preserve the database facade and repository boundaries when changing
-  persistence behavior.
+  persistence behavior; prefer `internal/persistence` for saving scan results.
+- Normalize and validate domains via `internal/target` before scanner requests.
+- Prefer `internal/httpclient` over ad-hoc `http.Client` construction in scanners.
 - Add or update tests for behavior changes.
 - Do not commit generated databases, build artifacts, or secrets.
 
