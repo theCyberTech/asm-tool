@@ -1,10 +1,13 @@
 package commands
 
 import (
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -162,6 +165,47 @@ func TestDomainsRouteRendersDomainsPage(t *testing.T) {
 	if strings.Contains(body, "Attack Surface Overview") {
 		t.Fatalf("/domains rendered the overview page instead of the domains page")
 	}
+}
+
+func TestFindAvailableAddrReturnsRequestedPortWhenFree(t *testing.T) {
+	addr, err := findAvailableAddr("127.0.0.1", 0)
+	if err != nil {
+		t.Fatalf("findAvailableAddr: %v", err)
+	}
+	if !strings.HasPrefix(addr, "127.0.0.1:") {
+		t.Fatalf("addr = %q, want 127.0.0.1 prefix", addr)
+	}
+}
+
+func TestFindAvailableAddrSkipsInUsePort(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listening: %v", err)
+	}
+	defer ln.Close()
+
+	inUsePort := portFromAddr(t, ln.Addr().String())
+
+	addr, err := findAvailableAddr("127.0.0.1", inUsePort)
+	if err != nil {
+		t.Fatalf("findAvailableAddr: %v", err)
+	}
+	if strings.HasSuffix(addr, fmt.Sprintf(":%d", inUsePort)) {
+		t.Fatalf("addr = %q, should not reuse in-use port %d", addr, inUsePort)
+	}
+}
+
+func portFromAddr(t *testing.T, addr string) int {
+	t.Helper()
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("splitting addr %q: %v", addr, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("parsing port %q: %v", portStr, err)
+	}
+	return port
 }
 
 func TestDashboardOverviewStatCardsLinkToAssetPages(t *testing.T) {
