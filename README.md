@@ -1,24 +1,24 @@
 # ASM Tool
 
-A fast, local-first attack surface management toolkit for security practitioners. Discover and monitor your external attack surface — subdomains, open ports, certificates, vulnerabilities, and more — all from a single tool.
+A fast, local-first attack surface management tool for security teams. Find and monitor your external attack surface: subdomains, open ports, certificates, vulnerabilities, and more.
 
 ![Go 1.21+](https://img.shields.io/badge/go-1.21+-00ADD8.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
 ## Features
 
-- **Subdomain Enumeration** — Multi-source discovery (crt.sh, Google Transparency, HackerTarget, urlscan.io, Alienvault OTX, and more)
-- **Port Scanning** — Native TCP scanning with service detection — 10-20x faster than nmap
-- **Certificate Monitoring** — TLS cert tracking with expiry alerts
-- **Vulnerability Scanning** — Nuclei integration for automated vuln detection
-- **URL & API Discovery** — Historical URL enumeration and OpenAPI/Swagger/GraphQL detection
+- **Subdomain Enumeration** — Find subdomains from many sources (crt.sh, Google Transparency, HackerTarget, urlscan.io, AlienVault OTX, and more)
+- **Port Scanning** — Fast native TCP scanning with service detection. 10–20x faster than nmap
+- **Certificate Monitoring** — Track TLS certificates and get alerts before they expire
+- **Vulnerability Scanning** — Find vulnerabilities automatically with Nuclei
+- **URL & API Discovery** — Find historical URLs and detect OpenAPI, Swagger, and GraphQL endpoints
 - **Technology Fingerprinting** — Identify frameworks, CDNs, libraries, and servers
-- **DNS Monitoring** — Track record changes and audit email security (SPF/DKIM/DMARC)
-- **Subdomain Takeover Detection** — Spot misconfigured DNS pointing to vulnerable services
+- **DNS Monitoring** — Track DNS record changes and check email security (SPF, DKIM, DMARC)
+- **Subdomain Takeover Detection** — Find DNS records that point to unclaimed services
 - **Email & Cloud Enumeration** — Find exposed email addresses and public cloud buckets (S3, Azure, GCS)
 - **Reporting** — Export findings as JSON, Markdown, or HTML
-- **Scheduled Scans** — Cron-based recurring scans with Slack/email notifications
-- **Dashboard** — Lightweight web UI for browsing findings
+- **Scheduled Scans** — Run scans on a cron schedule, with Slack or email notifications
+- **Dashboard** — Browse findings in a lightweight web UI
 
 ## Installation
 
@@ -221,13 +221,13 @@ asm-go/
 
 ## Data Storage
 
-All findings are stored in a local SQLite database at `asm-go/data/asm.db` with WAL mode for safe concurrent access. Reports are written to the `./reports/` directory.
+All findings are stored in a local SQLite database at `asm-go/data/asm.db`. The database uses WAL mode, so multiple processes can access it safely at the same time. Reports are written to the `./reports/` directory.
 
 ## Security Considerations
 
-- **Only scan domains you own or have explicit permission to test**
-- Keep API keys out of version control — use environment variables or a separate `.env` file
-- Respect rate limits to avoid overwhelming target infrastructure
+- **Only scan domains you own or have permission to test**
+- Keep API keys out of version control. Use environment variables or a separate `.env` file
+- Respect rate limits so you do not overload target systems
 
 ## License
 
