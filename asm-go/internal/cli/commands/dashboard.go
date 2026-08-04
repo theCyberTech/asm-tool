@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,7 +41,10 @@ func DashboardCmd(deps *Deps) *cobra.Command {
 }
 
 func runDashboard(deps *Deps, host string, port int) error {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr, err := findAvailableAddr(host, port)
+	if err != nil {
+		return err
+	}
 
 	// Create router
 	mux := http.NewServeMux()
@@ -98,6 +102,11 @@ func runDashboard(deps *Deps, host string, port int) error {
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Server:"),
 		valueStyle.Render(fmt.Sprintf("http://%s", addr)))
+	if addr != fmt.Sprintf("%s:%d", host, port) {
+		fmt.Printf("  %s %s\n",
+			labelStyle.Render("Note:"),
+			valueStyle.Render(fmt.Sprintf("Port %d was in use, using %s instead", port, addr)))
+	}
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Status:"),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("40")).Render("Running"))
@@ -131,6 +140,22 @@ func runDashboard(deps *Deps, host string, port int) error {
 
 	fmt.Println(labelStyle.Render("Server stopped"))
 	return nil
+}
+
+// findAvailableAddr returns the address for the requested host and port.
+// If the requested port is already in use, it scans upward for the next
+// available port.
+func findAvailableAddr(host string, port int) (string, error) {
+	for p := port; p <= port+100; p++ {
+		addr := fmt.Sprintf("%s:%d", host, p)
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			continue
+		}
+		ln.Close()
+		return addr, nil
+	}
+	return "", fmt.Errorf("no available port found starting from %d", port)
 }
 
 // getPageData fetches data from the database and returns PageData for templates

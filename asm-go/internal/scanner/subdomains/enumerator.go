@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/ratelimit"
+	"github.com/asm-tool/asm-go/internal/httpclient"
 	"github.com/asm-tool/asm-go/internal/target"
 )
 
@@ -47,17 +47,10 @@ func DefaultEnumerator() *Enumerator {
 // NewEnumeratorWithRateLimit returns an enumerator that caps outbound HTTP
 // requests to rps requests per second across all sources. rps <= 0 means unlimited.
 func NewEnumeratorWithRateLimit(rps int) *Enumerator {
-	var transport http.RoundTripper = &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
-	}
-	transport = ratelimit.NewTransport(transport, rps)
-
-	client := &http.Client{
+	client := httpclient.New(httpclient.Options{
 		Timeout:   30 * time.Second,
-		Transport: transport,
-	}
+		RateLimit: rps,
+	})
 
 	return &Enumerator{
 		Sources: []Source{
@@ -501,9 +494,9 @@ func ValidateDomain(domain string) bool {
 
 // Config holds configuration for subdomain enumeration.
 type Config struct {
-	Domain       string
-	RateLimit    int // rps, 0 = unlimited
-	Timeout      time.Duration
+	Domain        string
+	RateLimit     int // rps, 0 = unlimited
+	Timeout       time.Duration
 	CustomSources []Source
 }
 
@@ -528,17 +521,10 @@ func Scan(ctx context.Context, cfg Config, domain string) *ScanResult {
 	// Use custom sources if provided, otherwise use defaults.
 	sources := cfg.CustomSources
 	if len(sources) == 0 {
-		// Build default sources with rate limiting
-		var transport http.RoundTripper = &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-		}
-		transport = ratelimit.NewTransport(transport, cfg.RateLimit)
-		client := &http.Client{
+		client := httpclient.New(httpclient.Options{
 			Timeout:   30 * time.Second,
-			Transport: transport,
-		}
+			RateLimit: cfg.RateLimit,
+		})
 
 		sources = []Source{
 			&CertSpotterSource{client: client},

@@ -2,7 +2,6 @@ package apis
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/asm-tool/asm-go/internal/httpclient"
 )
 
 // API represents a discovered API endpoint
@@ -57,19 +58,11 @@ func DefaultDiscovery() *Discovery {
 // NewDiscovery returns a discovery with configurable TLS verification.
 func NewDiscovery(insecureSkipVerify bool) *Discovery {
 	return &Discovery{
-		HTTPClient: &http.Client{
-			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
-				MaxIdleConns:    100,
-			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 2 {
-					return http.ErrUseLastResponse
-				}
-				return nil
-			},
-		},
+		HTTPClient: httpclient.New(httpclient.Options{
+			Timeout:            10 * time.Second,
+			InsecureSkipVerify: insecureSkipVerify,
+			MaxRedirects:       2,
+		}),
 		Timeout: 10 * time.Second,
 		Workers: 30,
 		Paths:   DefaultAPIPaths(),
@@ -473,16 +466,16 @@ func DefaultAPIPaths() []string {
 
 // Config holds configuration for API discovery.
 type Config struct {
-	Workers   int
-	Timeout   time.Duration
+	Workers           int
+	Timeout           time.Duration
 	HTTPClientTimeout time.Duration
 }
 
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Workers:  30,
-		Timeout:  10 * time.Second,
+		Workers: 30,
+		Timeout: 10 * time.Second,
 	}
 }
 
@@ -504,19 +497,10 @@ func Scan(ctx context.Context, cfg Config, hosts []string) *ScanResult {
 		cfg.Timeout = DefaultConfig().Timeout
 	}
 
-	transport := &http.Transport{
-		MaxIdleConns: 100,
-	}
-	client := &http.Client{
-		Timeout:   cfg.Timeout,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 2 {
-				return http.ErrUseLastResponse
-			}
-			return nil
-		},
-	}
+	client := httpclient.New(httpclient.Options{
+		Timeout:      cfg.Timeout,
+		MaxRedirects: 2,
+	})
 
 	disc := &Discovery{
 		HTTPClient: client,
