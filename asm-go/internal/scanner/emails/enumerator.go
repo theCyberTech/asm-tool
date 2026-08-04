@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/asm-tool/asm-go/internal/httpclient"
 	"github.com/asm-tool/asm-go/internal/target"
 )
 
@@ -51,14 +52,7 @@ type Enumerator struct {
 
 // DefaultEnumerator returns an enumerator with built-in sources
 func DefaultEnumerator() *Enumerator {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
+	client := httpclient.New(httpclient.Options{Timeout: 30 * time.Second})
 
 	hunter := &HunterSource{client: client}
 
@@ -465,21 +459,14 @@ func DefaultConfig() Config {
 
 // ScanResult holds the result of email enumeration.
 type ScanResult struct {
-	Emails   []Email
-	Errors   []string
-	Err      error
+	Emails []Email
+	Errors []string
+	Err    error
 }
 
 // Scan enumerates emails from passive sources.
 func Scan(ctx context.Context, cfg Config, domain string) *ScanResult {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
+	client := httpclient.New(httpclient.Options{Timeout: 30 * time.Second})
 
 	hunter := &HunterSource{client: client, APIKey: cfg.HunterAPIKey}
 	sources := []Source{
@@ -498,9 +485,9 @@ func Scan(ctx context.Context, cfg Config, domain string) *ScanResult {
 
 	r := enum.Enumerate(ctx, domain)
 	return &ScanResult{
-		Emails:   r.Emails,
-		Errors:   r.Errors,
-		Err:      firstError(r.Errors),
+		Emails: r.Emails,
+		Errors: r.Errors,
+		Err:    firstError(r.Errors),
 	}
 }
 

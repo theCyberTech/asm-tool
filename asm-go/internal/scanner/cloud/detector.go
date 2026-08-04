@@ -2,7 +2,6 @@ package cloud
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/asm-tool/asm-go/internal/httpclient"
 )
 
 // Bucket represents a discovered cloud storage bucket
@@ -50,15 +51,7 @@ func DefaultDetector() *Detector {
 // NewDetector returns a detector with configurable TLS verification
 func NewDetector(insecureSkipVerify bool) *Detector {
 	return &Detector{
-		HTTPClient: &http.Client{
-			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
-			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
+		HTTPClient:         httpclient.New(httpclient.Options{Timeout: 10 * time.Second, InsecureSkipVerify: insecureSkipVerify}),
 		Timeout:            10 * time.Second,
 		Workers:            20,
 		Patterns:           DefaultPatterns(),
@@ -513,16 +506,10 @@ func Scan(ctx context.Context, cfg Config, domain string) *ScanResult {
 		cfg.Timeout = DefaultConfig().Timeout
 	}
 
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify},
-	}
-	client := &http.Client{
-		Timeout:   cfg.Timeout,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	client := httpclient.New(httpclient.Options{
+		Timeout:            cfg.Timeout,
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	})
 
 	detector := &Detector{
 		HTTPClient:         client,

@@ -2,7 +2,6 @@ package takeover
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -10,18 +9,20 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/asm-tool/asm-go/internal/httpclient"
 )
 
 // Finding represents a potential subdomain takeover
 type Finding struct {
-	Subdomain    string
-	CNAME        string
-	Service      string
-	Type         string
-	Confidence   string // HIGH, MEDIUM, LOW
-	Evidence     string
+	Subdomain     string
+	CNAME         string
+	Service       string
+	Type          string
+	Confidence    string // HIGH, MEDIUM, LOW
+	Evidence      string
 	Documentation string
-	Vulnerable   bool
+	Vulnerable    bool
 }
 
 // Result represents takeover detection results
@@ -60,15 +61,10 @@ func DefaultDetector() *Detector {
 // NewDetector returns a detector with configurable TLS verification
 func NewDetector(insecureSkipVerify bool) *Detector {
 	return &Detector{
-		HTTPClient: &http.Client{
-			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
-			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
+		HTTPClient: httpclient.New(httpclient.Options{
+			Timeout:            10 * time.Second,
+			InsecureSkipVerify: insecureSkipVerify,
+		}),
 		Timeout:            10 * time.Second,
 		Workers:            20,
 		Fingerprints:       DefaultFingerprints(),
@@ -545,9 +541,9 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Workers:            50,
-		Timeout:            10 * time.Second,
-		HTTPClientTimeout:  10 * time.Second,
+		Workers:           50,
+		Timeout:           10 * time.Second,
+		HTTPClientTimeout: 10 * time.Second,
 	}
 }
 
@@ -572,16 +568,10 @@ func Scan(ctx context.Context, cfg Config, hosts []string) *ScanResult {
 		cfg.Timeout = DefaultConfig().Timeout
 	}
 
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify},
-	}
-	client := &http.Client{
-		Timeout:   cfg.Timeout,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	client := httpclient.New(httpclient.Options{
+		Timeout:            cfg.Timeout,
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	})
 
 	detector := &Detector{
 		HTTPClient:         client,

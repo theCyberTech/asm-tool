@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/ratelimit"
+	"github.com/asm-tool/asm-go/internal/httpclient"
 	"github.com/asm-tool/asm-go/internal/target"
 )
 
@@ -66,16 +66,10 @@ func DefaultEnumerator() *Enumerator {
 // NewEnumeratorWithRateLimit returns an enumerator that caps outbound HTTP
 // requests to rps requests per second across all sources. rps <= 0 means unlimited.
 func NewEnumeratorWithRateLimit(rps int) *Enumerator {
-	var transport http.RoundTripper = &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-	}
-	transport = ratelimit.NewTransport(transport, rps)
-
-	client := &http.Client{
+	client := httpclient.New(httpclient.Options{
 		Timeout:   60 * time.Second,
-		Transport: transport,
-	}
+		RateLimit: rps,
+	})
 
 	return &Enumerator{
 		Sources: []Source{
@@ -714,7 +708,7 @@ func ExtractFromJS(content, baseURL string) []string {
 
 // Config holds configuration for URL enumeration.
 type Config struct {
-	RateLimit int           // rps, 0 = unlimited
+	RateLimit int // rps, 0 = unlimited
 	Timeout   time.Duration
 }
 
@@ -727,23 +721,17 @@ func DefaultConfig() Config {
 
 // ScanResult holds the result of URL enumeration.
 type ScanResult struct {
-	URLs  []URL
+	URLs   []URL
 	Errors []string
-	Err   error
+	Err    error
 }
 
 // Scan enumerates URLs from passive sources.
 func Scan(ctx context.Context, cfg Config, domain string) *ScanResult {
-	var transport http.RoundTripper = &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-	}
-	transport = ratelimit.NewTransport(transport, cfg.RateLimit)
-
-	client := &http.Client{
+	client := httpclient.New(httpclient.Options{
 		Timeout:   60 * time.Second,
-		Transport: transport,
-	}
+		RateLimit: cfg.RateLimit,
+	})
 
 	enum := &Enumerator{
 		Sources: []Source{

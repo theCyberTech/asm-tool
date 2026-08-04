@@ -2,8 +2,8 @@ package technologies
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
+	"github.com/asm-tool/asm-go/internal/httpclient"
 	"io"
 	"net/http"
 	"regexp"
@@ -15,16 +15,16 @@ import (
 
 // Result represents technology fingerprinting results for a host
 type Result struct {
-	Host           string
-	StatusCode     int
-	Title          string
-	Server         string
-	Technologies   []Technology
-	Headers        map[string]string
-	ContentLength  int64
-	RedirectURL    string
-	ResponseTime   time.Duration
-	Error          string
+	Host          string
+	StatusCode    int
+	Title         string
+	Server        string
+	Technologies  []Technology
+	Headers       map[string]string
+	ContentLength int64
+	RedirectURL   string
+	ResponseTime  time.Duration
+	Error         string
 }
 
 // Technology represents a detected technology
@@ -46,14 +46,14 @@ type Fingerprinter struct {
 
 // Signature represents a technology detection signature
 type Signature struct {
-	Name       string
-	Category   string
-	Headers    map[string]*regexp.Regexp
-	Cookies    map[string]*regexp.Regexp
-	Meta       map[string]*regexp.Regexp
-	HTML       []*regexp.Regexp
-	Scripts    []*regexp.Regexp
-	Implies    []string
+	Name     string
+	Category string
+	Headers  map[string]*regexp.Regexp
+	Cookies  map[string]*regexp.Regexp
+	Meta     map[string]*regexp.Regexp
+	HTML     []*regexp.Regexp
+	Scripts  []*regexp.Regexp
+	Implies  []string
 }
 
 // DefaultFingerprinter returns a fingerprinter with built-in signatures and TLS verification enabled.
@@ -64,20 +64,11 @@ func DefaultFingerprinter() *Fingerprinter {
 // NewFingerprinter returns a fingerprinter with configurable TLS verification.
 func NewFingerprinter(insecureSkipVerify bool) *Fingerprinter {
 	return &Fingerprinter{
-		HTTPClient: &http.Client{
-			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig:     &tls.Config{InsecureSkipVerify: insecureSkipVerify},
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 3 {
-					return http.ErrUseLastResponse
-				}
-				return nil
-			},
-		},
+		HTTPClient: httpclient.New(httpclient.Options{
+			Timeout:            10 * time.Second,
+			InsecureSkipVerify: insecureSkipVerify,
+			MaxRedirects:       3,
+		}),
 		Timeout:            10 * time.Second,
 		Workers:            30,
 		Signatures:         DefaultSignatures(),
@@ -263,16 +254,16 @@ func (f *Fingerprinter) detectFromHeaders(headers http.Header, detected map[stri
 	poweredBy := strings.ToLower(headers.Get("X-Powered-By"))
 	if poweredBy != "" {
 		poweredByTechs := map[string]string{
-			"php":         "PHP",
-			"asp.net":     "ASP.NET",
-			"express":     "Express.js",
-			"next.js":     "Next.js",
-			"nuxt":        "Nuxt.js",
-			"django":      "Django",
-			"flask":       "Flask",
-			"rails":       "Ruby on Rails",
-			"laravel":     "Laravel",
-			"symfony":     "Symfony",
+			"php":     "PHP",
+			"asp.net": "ASP.NET",
+			"express": "Express.js",
+			"next.js": "Next.js",
+			"nuxt":    "Nuxt.js",
+			"django":  "Django",
+			"flask":   "Flask",
+			"rails":   "Ruby on Rails",
+			"laravel": "Laravel",
+			"symfony": "Symfony",
 		}
 		for pattern, name := range poweredByTechs {
 			if strings.Contains(poweredBy, pattern) {
@@ -488,9 +479,9 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Timeout:            10 * time.Second,
-		HTTPClientTimeout:  10 * time.Second,
-		Workers:            30,
+		Timeout:           10 * time.Second,
+		HTTPClientTimeout: 10 * time.Second,
+		Workers:           30,
 	}
 }
 
@@ -508,21 +499,11 @@ func Scan(ctx context.Context, cfg Config, hosts []string) []*Result {
 		cfg.Workers = DefaultConfig().Workers
 	}
 
-	transport := &http.Transport{
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify},
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-	}
-	client := &http.Client{
-		Timeout:   cfg.Timeout,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 3 {
-				return http.ErrUseLastResponse
-			}
-			return nil
-		},
-	}
+	client := httpclient.New(httpclient.Options{
+		Timeout:            cfg.Timeout,
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+		MaxRedirects:       3,
+	})
 
 	fp := &Fingerprinter{
 		HTTPClient:         client,
