@@ -67,6 +67,12 @@ Results are saved to the database and changes are logged automatically.`,
 }
 
 func runDNS(db *database.Database, domains []string, timeout time.Duration) error {
+	normalizedDomains, err := normalizeDomainList(domains)
+	if err != nil {
+		return err
+	}
+	domains = normalizedDomains
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
