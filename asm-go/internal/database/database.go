@@ -385,16 +385,16 @@ type DomainRepository struct {
 
 // Add adds a new domain
 func (r *DomainRepository) Add(domain string) (*Domain, error) {
-	_, err := r.db.Exec(`
+	var d Domain
+	err := r.db.Get(&d, `
 		INSERT INTO domains (domain) VALUES (?)
 		ON CONFLICT(domain) DO UPDATE SET active = 1
+		RETURNING *
 	`, domain)
 	if err != nil {
 		return nil, err
 	}
-
-	// ON CONFLICT doesn't return LastInsertId, so fetch by name
-	return r.GetByName(domain)
+	return &d, nil
 }
 
 // GetByID retrieves a domain by ID
@@ -426,11 +426,7 @@ func (r *DomainRepository) List() ([]Domain, error) {
 
 // AddSubdomain adds a subdomain to a domain
 func (r *DomainRepository) AddSubdomain(domainID int64, subdomain string) error {
-	_, err := r.db.Exec(`
-		INSERT INTO subdomains (domain_id, subdomain) VALUES (?, ?)
-		ON CONFLICT(domain_id, subdomain) DO UPDATE SET last_seen = CURRENT_TIMESTAMP, active = 1
-	`, domainID, subdomain)
-	return err
+	return r.AddSubdomains(domainID, []string{subdomain})
 }
 
 // GetSubdomains returns all subdomains for a domain
@@ -461,18 +457,10 @@ type PortRepository struct {
 
 // Add adds or updates a port
 func (r *PortRepository) Add(p *Port) error {
-	_, err := r.db.Exec(`
-		INSERT INTO ports (host, port, protocol, service, version, product, state, banner)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(host, port, protocol) DO UPDATE SET
-			service = excluded.service,
-			version = excluded.version,
-			product = excluded.product,
-			state = excluded.state,
-			banner = excluded.banner,
-			last_seen = CURRENT_TIMESTAMP
-	`, p.Host, p.Port, p.Protocol, p.Service, p.Version, p.Product, p.State, p.Banner)
-	return err
+	if p == nil {
+		return nil
+	}
+	return r.AddAll([]Port{*p})
 }
 
 // GetByHost returns all open ports for a host
@@ -1093,15 +1081,13 @@ func (tx *Transaction) SaveURL(domain, url, category, source string, interesting
 }
 
 func saveURL(db queryExecutor, domain, url, category, source string, interesting int) error {
-	_, err := db.Exec(`
-		INSERT INTO urls (domain, url, category, interesting, source)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(url) DO UPDATE SET
-			category = excluded.category,
-			interesting = excluded.interesting,
-			source = excluded.source
-	`, domain, url, category, interesting, source)
-	return err
+	return saveURLs(db, []URLRecord{{
+		Domain:      domain,
+		URL:         url,
+		Category:    category,
+		Source:      source,
+		Interesting: interesting,
+	}})
 }
 
 // SaveAPI upserts a discovered API endpoint
@@ -1139,12 +1125,11 @@ func (tx *Transaction) SaveEmail(domain, email, source string) error {
 }
 
 func saveEmail(db queryExecutor, domain, email, source string) error {
-	_, err := db.Exec(`
-		INSERT INTO emails (domain, email, source)
-		VALUES (?, ?, ?)
-		ON CONFLICT(email) DO NOTHING
-	`, domain, email, source)
-	return err
+	return saveEmails(db, []EmailRecord{{
+		Domain:  domain,
+		Address: email,
+		Source:  source,
+	}})
 }
 
 // SaveCloudBucket upserts a cloud storage bucket
@@ -1355,20 +1340,20 @@ func (d *Database) GetAllTakeovers() ([]Takeover, error) {
 
 // Snapshot represents a point-in-time capture of domain scan state.
 type Snapshot struct {
-	ID              int64     `db:"id"`
-	SnapshotID      string    `db:"snapshot_id"`
-	Domain          string    `db:"domain"`
-	ScanType        string    `db:"scan_type"`
-	Timestamp       time.Time `db:"timestamp"`
-	SubdomainCount  int       `db:"subdomain_count"`
-	PortCount       int       `db:"port_count"`
-	CertificateCount int     `db:"certificate_count"`
-	FindingCounts   string    `db:"finding_counts"`
-	RiskScore       int       `db:"risk_score"`
-	Subdomains      string    `db:"subdomains"`
-	Ports           string    `db:"ports"`
-	Certificates    string    `db:"certificates"`
-	Vulnerabilities string    `db:"vulnerabilities"`
+	ID               int64     `db:"id"`
+	SnapshotID       string    `db:"snapshot_id"`
+	Domain           string    `db:"domain"`
+	ScanType         string    `db:"scan_type"`
+	Timestamp        time.Time `db:"timestamp"`
+	SubdomainCount   int       `db:"subdomain_count"`
+	PortCount        int       `db:"port_count"`
+	CertificateCount int       `db:"certificate_count"`
+	FindingCounts    string    `db:"finding_counts"`
+	RiskScore        int       `db:"risk_score"`
+	Subdomains       string    `db:"subdomains"`
+	Ports            string    `db:"ports"`
+	Certificates     string    `db:"certificates"`
+	Vulnerabilities  string    `db:"vulnerabilities"`
 }
 
 // SaveSnapshot stores a point-in-time snapshot of a domain's scan state.

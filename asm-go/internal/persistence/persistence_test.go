@@ -1,14 +1,17 @@
 package persistence
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/parallel"
 	"github.com/asm-tool/asm-go/internal/scanner/apis"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
 	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/asm-tool/asm-go/internal/scanner/ports"
 	"github.com/asm-tool/asm-go/internal/scanner/technologies"
 	"github.com/asm-tool/asm-go/internal/scanner/urls"
 )
@@ -130,6 +133,54 @@ func TestScannerHelpersWorkInsideTransaction(t *testing.T) {
 	}
 	if stats.Domains != 1 || stats.URLs != 1 {
 		t.Fatalf("stats = %+v, want one domain and one URL", stats)
+	}
+}
+
+func TestSaveAllBatchesHighVolumeResults(t *testing.T) {
+	db := newTestDB(t)
+	store := NewStore(db)
+
+	const n = 250
+	subs := make([]string, n)
+	urlList := make([]urls.URL, n)
+	emailList := make([]emails.Email, n)
+	for i := 0; i < n; i++ {
+		subs[i] = fmt.Sprintf("s%d.example.com", i)
+		urlList[i] = urls.URL{
+			Domain: "example.com",
+			URL:    fmt.Sprintf("https://example.com/p/%d", i),
+			Source: "wayback",
+		}
+		emailList[i] = emails.Email{
+			Domain:  "example.com",
+			Address: fmt.Sprintf("u%d@example.com", i),
+			Source:  "hunter",
+		}
+	}
+
+	err := store.SaveAll(&parallel.ScanResult{
+		Domain:     "example.com",
+		Subdomains: subs,
+		Ports: []*ports.Result{{
+			Host: "www.example.com",
+			OpenPorts: []ports.Port{
+				{Port: 80, State: "open", Service: "http"},
+				{Port: 443, State: "open", Service: "https"},
+			},
+		}},
+		URLs:   urlList,
+		Emails: emailList,
+	})
+	if err != nil {
+		t.Fatalf("SaveAll: %v", err)
+	}
+
+	stats, err := db.GetStats()
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if stats.Subdomains != n || stats.URLs != n || stats.Emails != n || stats.Ports != 2 {
+		t.Fatalf("stats = %+v, want %d subdomains/urls/emails and 2 ports", stats, n)
 	}
 }
 
