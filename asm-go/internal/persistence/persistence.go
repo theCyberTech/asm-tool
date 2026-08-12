@@ -65,195 +65,224 @@ func saveTx(tx *database.Transaction, result *parallel.ScanResult) error {
 		}
 	}
 
-		// Subdomains
-		if len(result.Subdomains) > 0 {
-			domain, err := tx.Domains.Add(result.Domain)
-			if err != nil {
-				collect(err, "saving domain %q", result.Domain)
-			} else {
-				for _, sub := range result.Subdomains {
-					if err := tx.Domains.AddSubdomain(domain.ID, sub); err != nil {
-						collect(err, "saving subdomain %q", sub)
+	ensuredDomains := make(map[string]struct{})
+	ensureDomain := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		if _, ok := ensuredDomains[name]; ok {
+			return
+		}
+		ensuredDomains[name] = struct{}{}
+		if _, err := tx.Domains.Add(name); err != nil {
+			collect(err, "saving domain %q", name)
+		}
+	}
+
+	// Subdomains
+	if len(result.Subdomains) > 0 {
+		domain, err := tx.Domains.Add(result.Domain)
+		if err != nil {
+			collect(err, "saving domain %q", result.Domain)
+		} else {
+			ensuredDomains[strings.TrimSpace(result.Domain)] = struct{}{}
+			if err := tx.Domains.AddSubdomains(domain.ID, result.Subdomains); err != nil {
+				collect(err, "saving subdomains for %q", result.Domain)
+			}
+		}
+	}
+
+	// Ports
+	dbPorts := make([]database.Port, 0)
+	for _, r := range result.Ports {
+		if r == nil {
+			continue
+		}
+		for _, p := range r.OpenPorts {
+			dbPorts = append(dbPorts, database.Port{
+				Host:    r.Host,
+				Port:    p.Port,
+				State:   p.State,
+				Service: p.Service,
+				Banner:  p.Banner,
+			})
+		}
+	}
+	if err := tx.Ports.AddAll(dbPorts); err != nil {
+		collect(err, "saving ports")
+	}
+
+	// Certificates
+	for _, cert := range result.Certificates {
+		if cert == nil || cert.Error != "" {
+			continue
+		}
+		dbCert := &database.Certificate{
+			Host:               cert.Host,
+			Port:               cert.Port,
+			Subject:            cert.Subject,
+			Issuer:             cert.Issuer,
+			SerialNumber:       cert.SerialNumber,
+			NotBefore:          cert.NotBefore,
+			NotAfter:           cert.NotAfter,
+			DaysUntilExpiry:    cert.DaysUntilExpiry,
+			Fingerprint:        cert.Fingerprint,
+			SAN:                cert.SANString(),
+			SignatureAlgorithm: cert.SignatureAlgorithm,
+		}
+		if err := tx.Certificates.Add(dbCert); err != nil {
+			collect(err, "saving certificate %s:%d", cert.Host, cert.Port)
+		}
+	}
+
+	// DNS
+	for _, r := range result.DNSRecords {
+		if r.Domain == "" {
+			continue
+		}
+		prev, err := tx.GetLatestDNSRecord(r.Domain)
+		if err != nil {
+			collect(err, "loading DNS record %q", r.Domain)
+		}
+
+		resultJSON, err := json.Marshal(r)
+		if err != nil {
+			collect(err, "encoding DNS records %q", r.Domain)
+		} else {
+			if err := tx.SaveDNSRecords(r.Domain, string(resultJSON)); err != nil {
+				collect(err, "saving DNS records %q", r.Domain)
+			}
+		}
+
+		if prev != nil && prev.Records != "" {
+			var prevResult dns.Result
+			if err := json.Unmarshal([]byte(prev.Records), &prevResult); err == nil {
+				for _, ch := range dns.DetectChanges(&r, &prevResult) {
+					sev := dnsSeverity(ch.RecordType)
+					if err := tx.SaveChangeEvent(r.Domain, ch.Type, sev, ch.Description, ch.OldValue, ch.NewValue); err != nil {
+						collect(err, "saving DNS change event %q", r.Domain)
 					}
 				}
 			}
 		}
+	}
 
-		// Ports
-		for _, r := range result.Ports {
-			if r == nil {
-				continue
-			}
-			for _, p := range r.OpenPorts {
-				dbPort := database.Port{
-					Host:    r.Host,
-					Port:    p.Port,
-					State:   p.State,
-					Service: p.Service,
-					Banner:  p.Banner,
-				}
-				if err := tx.Ports.Add(&dbPort); err != nil {
-					collect(err, "saving port %s:%d", r.Host, p.Port)
-				}
-			}
+	// Takeovers
+	for _, f := range result.Takeovers {
+		if !f.Vulnerable {
+			continue
 		}
-
-		// Certificates
-		for _, cert := range result.Certificates {
-			if cert == nil || cert.Error != "" {
-				continue
-			}
-			dbCert := &database.Certificate{
-				Host:               cert.Host,
-				Port:               cert.Port,
-				Subject:            cert.Subject,
-				Issuer:             cert.Issuer,
-				SerialNumber:       cert.SerialNumber,
-				NotBefore:          cert.NotBefore,
-				NotAfter:           cert.NotAfter,
-				DaysUntilExpiry:    cert.DaysUntilExpiry,
-				Fingerprint:        cert.Fingerprint,
-				SAN:                cert.SANString(),
-				SignatureAlgorithm: cert.SignatureAlgorithm,
-			}
-			if err := tx.Certificates.Add(dbCert); err != nil {
-				collect(err, "saving certificate %s:%d", cert.Host, cert.Port)
-			}
+		if err := tx.SaveTakeover(f.Subdomain, f.CNAME, f.Service, f.Confidence, f.Evidence); err != nil {
+			collect(err, "saving takeover %q", f.Subdomain)
 		}
+	}
 
-		// DNS
-		for _, r := range result.DNSRecords {
-			if r.Domain == "" {
-				continue
-			}
-			prev, err := tx.GetLatestDNSRecord(r.Domain)
-			if err != nil {
-				collect(err, "loading DNS record %q", r.Domain)
-			}
-
-			resultJSON, err := json.Marshal(r)
-			if err != nil {
-				collect(err, "encoding DNS records %q", r.Domain)
-			} else {
-				if err := tx.SaveDNSRecords(r.Domain, string(resultJSON)); err != nil {
-					collect(err, "saving DNS records %q", r.Domain)
-				}
-			}
-
-			if prev != nil && prev.Records != "" {
-				var prevResult dns.Result
-				if err := json.Unmarshal([]byte(prev.Records), &prevResult); err == nil {
-					for _, ch := range dns.DetectChanges(&r, &prevResult) {
-						sev := dnsSeverity(ch.RecordType)
-						if err := tx.SaveChangeEvent(r.Domain, ch.Type, sev, ch.Description, ch.OldValue, ch.NewValue); err != nil {
-							collect(err, "saving DNS change event %q", r.Domain)
-						}
-					}
-				}
-			}
+	// Technologies
+	for _, r := range result.Technologies {
+		if r == nil || r.Error != "" {
+			continue
 		}
-
-		// Takeovers
-		for _, f := range result.Takeovers {
-			if !f.Vulnerable {
-				continue
-			}
-			if err := tx.SaveTakeover(f.Subdomain, f.CNAME, f.Service, f.Confidence, f.Evidence); err != nil {
-				collect(err, "saving takeover %q", f.Subdomain)
-			}
+		techJSON, err := json.Marshal(r.Technologies)
+		if err != nil {
+			collect(err, "encoding technologies for %q", r.Host)
 		}
-
-		// Technologies
-		for _, r := range result.Technologies {
-			if r == nil || r.Error != "" {
-				continue
-			}
-			techJSON, err := json.Marshal(r.Technologies)
-			if err != nil {
-				collect(err, "encoding technologies for %q", r.Host)
-			}
-			headersJSON, err := json.Marshal(r.Headers)
-			if err != nil {
-				collect(err, "encoding technology headers for %q", r.Host)
-			}
-			if err := tx.SaveTechnology(r.Host, r.StatusCode, r.Title, r.Server,
-				string(techJSON), string(headersJSON), r.ContentLength, r.RedirectURL); err != nil {
-				collect(err, "saving technology %q", r.Host)
-			}
+		headersJSON, err := json.Marshal(r.Headers)
+		if err != nil {
+			collect(err, "encoding technology headers for %q", r.Host)
 		}
-
-		// URLs
-		for _, u := range result.URLs {
-			tx.Domains.Add(u.Domain)
-			interesting := 0
-			if u.Interesting {
-				interesting = 1
-			}
-			if err := tx.SaveURL(u.Domain, u.URL, u.Category, u.Source, interesting); err != nil {
-				collect(err, "saving URL %q", u.URL)
-			}
+		if err := tx.SaveTechnology(r.Host, r.StatusCode, r.Title, r.Server,
+			string(techJSON), string(headersJSON), r.ContentLength, r.RedirectURL); err != nil {
+			collect(err, "saving technology %q", r.Host)
 		}
+	}
 
-		// APIs
-		for _, a := range result.APIs {
-			endpointsJSON, err := json.Marshal(a.Endpoints)
-			if err != nil {
-				collect(err, "encoding API endpoints for %q", a.URL)
-			}
-			if err := tx.SaveAPI(a.URL, a.Type, a.Title, a.Version, a.EndpointsCount, string(endpointsJSON)); err != nil {
-				collect(err, "saving API %q", a.URL)
-			}
+	// URLs
+	urlRecords := make([]database.URLRecord, 0, len(result.URLs))
+	for _, u := range result.URLs {
+		ensureDomain(u.Domain)
+		interesting := 0
+		if u.Interesting {
+			interesting = 1
 		}
+		urlRecords = append(urlRecords, database.URLRecord{
+			Domain:      u.Domain,
+			URL:         u.URL,
+			Category:    u.Category,
+			Source:      u.Source,
+			Interesting: interesting,
+		})
+	}
+	if err := tx.SaveURLs(urlRecords); err != nil {
+		collect(err, "saving URLs")
+	}
 
-		// Emails
-		for _, e := range result.Emails {
-			tx.Domains.Add(e.Domain)
-			if err := tx.SaveEmail(e.Domain, e.Address, e.Source); err != nil {
-				collect(err, "saving email %q", e.Address)
-			}
+	// APIs
+	for _, a := range result.APIs {
+		endpointsJSON, err := json.Marshal(a.Endpoints)
+		if err != nil {
+			collect(err, "encoding API endpoints for %q", a.URL)
 		}
+		if err := tx.SaveAPI(a.URL, a.Type, a.Title, a.Version, a.EndpointsCount, string(endpointsJSON)); err != nil {
+			collect(err, "saving API %q", a.URL)
+		}
+	}
 
-		// Cloud storage
-		for _, b := range result.CloudStorage {
-			tx.Domains.Add(b.Domain)
-			if err := tx.SaveCloudBucket(b.Provider, b.BucketName, b.URL, b.Domain, b.AccessLevel, b.Severity, b.Evidence); err != nil {
-				collect(err, "saving cloud bucket %q", b.URL)
-			}
-		}
+	// Emails
+	emailRecords := make([]database.EmailRecord, 0, len(result.Emails))
+	for _, e := range result.Emails {
+		ensureDomain(e.Domain)
+		emailRecords = append(emailRecords, database.EmailRecord{
+			Domain:  e.Domain,
+			Address: e.Address,
+			Source:  e.Source,
+		})
+	}
+	if err := tx.SaveEmails(emailRecords); err != nil {
+		collect(err, "saving emails")
+	}
 
-		// Nuclei findings
-		for _, f := range result.Vulnerabilities {
-			if f == nil {
-				continue
-			}
-			dbFinding := &database.Finding{
-				TemplateID:  f.TemplateID,
-				Name:        f.Info.Name,
-				Severity:    normalizeSeverity(f.Info.Severity),
-				Description: f.Info.Description,
-				Host:        f.Host,
-				MatchedAt:   f.Matched,
-				MatcherName: f.MatcherName,
-				Evidence:    strings.Join(f.ExtractedResults, ", "),
-				Refs:        strings.Join(f.Info.Reference, "\n"),
-				Tags:        f.Info.Tags,
-				Type:        f.Type,
-				Status:      "open",
-			}
-			if err := tx.Findings.Add(dbFinding); err != nil {
-				collect(err, "saving finding %q for %q", f.TemplateID, f.Host)
-			}
+	// Cloud storage
+	for _, b := range result.CloudStorage {
+		ensureDomain(b.Domain)
+		if err := tx.SaveCloudBucket(b.Provider, b.BucketName, b.URL, b.Domain, b.AccessLevel, b.Severity, b.Evidence); err != nil {
+			collect(err, "saving cloud bucket %q", b.URL)
 		}
+	}
 
-		// Update last_scanned timestamp
-		if err := tx.UpdateDomainLastScanned(result.Domain); err != nil {
-			collect(err, "updating last scanned for %q", result.Domain)
+	// Nuclei findings
+	for _, f := range result.Vulnerabilities {
+		if f == nil {
+			continue
 		}
+		dbFinding := &database.Finding{
+			TemplateID:  f.TemplateID,
+			Name:        f.Info.Name,
+			Severity:    normalizeSeverity(f.Info.Severity),
+			Description: f.Info.Description,
+			Host:        f.Host,
+			MatchedAt:   f.Matched,
+			MatcherName: f.MatcherName,
+			Evidence:    strings.Join(f.ExtractedResults, ", "),
+			Refs:        strings.Join(f.Info.Reference, "\n"),
+			Tags:        f.Info.Tags,
+			Type:        f.Type,
+			Status:      "open",
+		}
+		if err := tx.Findings.Add(dbFinding); err != nil {
+			collect(err, "saving finding %q for %q", f.TemplateID, f.Host)
+		}
+	}
 
-		if len(errs) > 0 {
-			return fmt.Errorf("saving scan results: %w", errs[0])
-		}
-		return nil
+	// Update last_scanned timestamp
+	if err := tx.UpdateDomainLastScanned(result.Domain); err != nil {
+		collect(err, "updating last scanned for %q", result.Domain)
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("saving scan results: %w", errs[0])
+	}
+	return nil
 }
 
 // EnsureDomain creates or reactivates a domain and updates last_scanned.
