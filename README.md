@@ -2,7 +2,7 @@
 
 A fast, local-first attack surface management tool for security teams. Find and monitor your external attack surface: subdomains, open ports, certificates, vulnerabilities, and more.
 
-![Go 1.21+](https://img.shields.io/badge/go-1.21+-00ADD8.svg)
+![Go 1.25+](https://img.shields.io/badge/go-1.25+-00ADD8.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
 ## Features
@@ -24,7 +24,7 @@ A fast, local-first attack surface management tool for security teams. Find and 
 
 ### Prerequisites
 
-- **Go 1.21+**
+- **Go 1.25+** (see `asm-go/go.mod`)
 - Optional: [Nuclei](https://github.com/projectdiscovery/nuclei) for vulnerability scanning
 
 ### Linux / macOS
@@ -34,9 +34,9 @@ A fast, local-first attack surface management tool for security teams. Find and 
 git clone https://github.com/theCyberTech/asm-tool.git
 cd asm-tool
 
-# Build the CLI binary
+# Build the CLI binary (asm.sh expects asm-go/asm-go)
 cd asm-go
-go build -o ../asm ./cmd/asm
+go build -o asm-go ./cmd/asm
 cd ..
 
 # Initialize the project (creates config, data dirs)
@@ -47,7 +47,8 @@ chmod +x asm.sh
 ### Using Go Install (CLI only)
 
 ```bash
-go install github.com/theCyberTech/asm-tool/asm-go/cmd/asm@latest
+# Module path is github.com/asm-tool/asm-go (repository: theCyberTech/asm-tool)
+go install github.com/asm-tool/asm-go/cmd/asm@latest
 ```
 
 ### Install Nuclei (optional)
@@ -142,6 +143,9 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 # View schedule and history
 ./asm.sh schedule
 ./asm.sh schedule history
+
+# Compare the last two persisted scans
+./asm.sh diff example.com
 ```
 
 ## Configuration
@@ -168,6 +172,8 @@ nuclei:
   retries: 1
 
 # Notifications
+# SMTP credentials prefer env vars ASM_SMTP_USER / ASM_SMTP_PASSWORD
+# (fallbacks: SMTP_USER / SMTP_PASSWORD). Slack webhook can use ASM_SLACK_WEBHOOK.
 notifications:
   slack:
     enabled: false

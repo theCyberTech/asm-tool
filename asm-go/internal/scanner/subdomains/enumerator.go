@@ -157,6 +157,13 @@ func normalizeSubdomain(sub, domain string) string {
 	return target.NormalizeSubdomain(sub, domain)
 }
 
+// rapidDNSHostname accepts a RapidDNS table cell only when it is a real
+// subdomain of domain. HasSuffix matching is not used because it treats
+// "notexample.com" as belonging to "example.com".
+func rapidDNSHostname(val, domain string) string {
+	return target.NormalizeSubdomain(val, domain)
+}
+
 // isValidSubdomain checks if a subdomain contains only valid characters
 func isValidSubdomain(s string) bool {
 	if len(s) > 253 {
@@ -398,9 +405,10 @@ func (s *RapidDNSSource) Enumerate(ctx context.Context, domain string) ([]string
 					end := strings.Index(line, "</td>")
 					if start >= 0 && end > start {
 						val := strings.TrimSpace(line[start+4 : end])
-						if val != "" && strings.HasSuffix(val, domain) && !seen[val] {
-							seen[val] = true
-							subs = append(subs, val)
+						host := rapidDNSHostname(val, domain)
+						if host != "" && !seen[host] {
+							seen[host] = true
+							subs = append(subs, host)
 						}
 					}
 				}

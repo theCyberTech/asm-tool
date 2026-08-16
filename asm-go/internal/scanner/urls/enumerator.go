@@ -202,15 +202,10 @@ func (e *Enumerator) ProbeURLs(ctx context.Context, urlList []URL, concurrency i
 	}
 
 	// Probe client: short timeout, follow redirects, record final URL.
-	probeClient := &http.Client{
-		Timeout: 10 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return http.ErrUseLastResponse
-			}
-			return nil
-		},
-	}
+	probeClient := httpclient.New(httpclient.Options{
+		Timeout:      10 * time.Second,
+		MaxRedirects: 5,
+	})
 
 	sem := make(chan struct{}, concurrency)
 	var mu sync.Mutex
@@ -222,6 +217,8 @@ func (e *Enumerator) ProbeURLs(ctx context.Context, urlList []URL, concurrency i
 	for i := range result {
 		select {
 		case <-ctx.Done():
+			// Stop launching new work; wait for in-flight probes before return.
+			wg.Wait()
 			return result
 		case sem <- struct{}{}:
 		}

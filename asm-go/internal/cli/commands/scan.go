@@ -12,9 +12,10 @@ import (
 	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/notifier"
-	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/parallel"
+	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/reporter"
+	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/target"
 	"github.com/spf13/cobra"
 )
@@ -192,13 +193,25 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 		fmt.Println() // newline after progress dots
 	}
 
-	if err != nil && err != context.Canceled {
-		fmt.Printf("%s Scan error: %v\n", highStyle.Render("[!]"), err)
+	if err := ctx.Err(); err == context.Canceled {
+		fmt.Printf("%s Scan cancelled\n", highStyle.Render("[!]"))
+	}
+	if len(result.Errors) > 0 {
+		for mod, modErr := range result.Errors {
+			fmt.Printf("%s %s: %v\n", highStyle.Render("[!]"), mod, modErr)
+		}
 	}
 
 	// Print results summary
 	fmt.Println(strings.Repeat("-", 60))
 	printScanSummary(result)
+
+	if err := persistScanResult(db, result, "full"); err != nil {
+		return fmt.Errorf("saving scan results: %w", err)
+	}
+	if db != nil {
+		fmt.Printf("%s Results saved to database\n", lowStyle.Render("[+]"))
+	}
 
 	// Generate report if requested
 	if opts.outputFormat != "" {
@@ -381,6 +394,8 @@ func scanNotifier(cfg *config.Config, opts scanOptions) *notifier.Notifier {
 	n := notifier.DefaultNotifier()
 	n.SMTPHost = cfg.Notifications.Email.SMTPHost
 	n.SMTPPort = cfg.Notifications.Email.SMTPPort
+	n.SMTPUser = cfg.Notifications.Email.SMTPUser
+	n.SMTPPassword = cfg.Notifications.Email.SMTPPassword
 	n.EmailFrom = cfg.Notifications.Email.FromAddr
 	if cfg.Timeouts.HTTP > 0 && n.HTTPClient != nil {
 		n.HTTPClient.Timeout = cfg.Timeouts.HTTP
@@ -401,6 +416,25 @@ func scanNotifier(cfg *config.Config, opts scanOptions) *notifier.Notifier {
 	n.EmailTo = splitCSV(emailRecipient)
 
 	return n
+}
+
+// persistScanResult writes scan findings and a diff snapshot. A nil database
+// is a no-op so validation-only tests can call runFullScan without SQLite.
+func persistScanResult(db *database.Database, result *parallel.ScanResult, scanType string) error {
+	if db == nil || result == nil {
+		return nil
+	}
+	store := persistence.NewStore(db)
+	if err := store.EnsureDomain(result.Domain); err != nil {
+		return fmt.Errorf("ensuring domain: %w", err)
+	}
+	if err := store.SaveAll(result); err != nil {
+		return fmt.Errorf("persisting findings: %w", err)
+	}
+	if err := store.SaveSnapshot(result, scanType); err != nil {
+		return fmt.Errorf("saving snapshot: %w", err)
+	}
+	return nil
 }
 
 func splitCSV(value string) []string {

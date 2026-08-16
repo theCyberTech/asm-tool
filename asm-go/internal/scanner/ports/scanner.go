@@ -93,7 +93,11 @@ func (s *Scanner) Scan(ctx context.Context, host string, ports []int) *Result {
 					return
 				default:
 					if p := s.scanPort(ctx, host, port); p != nil {
-						results <- *p
+						select {
+						case results <- *p:
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
 			}

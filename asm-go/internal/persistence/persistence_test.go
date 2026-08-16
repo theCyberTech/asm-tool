@@ -1,17 +1,21 @@
 package persistence
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/parallel"
 	"github.com/asm-tool/asm-go/internal/scanner/apis"
+	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
 	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
+	"github.com/asm-tool/asm-go/internal/scanner/takeover"
 	"github.com/asm-tool/asm-go/internal/scanner/technologies"
 	"github.com/asm-tool/asm-go/internal/scanner/urls"
 )
@@ -181,6 +185,143 @@ func TestSaveAllBatchesHighVolumeResults(t *testing.T) {
 	}
 	if stats.Subdomains != n || stats.URLs != n || stats.Emails != n || stats.Ports != 2 {
 		t.Fatalf("stats = %+v, want %d subdomains/urls/emails and 2 ports", stats, n)
+	}
+}
+
+func TestSaveSnapshotJSONMatchesDiffShapes(t *testing.T) {
+	db := newTestDB(t)
+	store := NewStore(db)
+
+	expiry := time.Date(2027, 1, 15, 0, 0, 0, 0, time.UTC)
+	result := &parallel.ScanResult{
+		Domain:     "example.com",
+		Subdomains: []string{"www.example.com", "api.example.com"},
+		Ports: []*ports.Result{
+			nil,
+			{
+				Host: "www.example.com",
+				OpenPorts: []ports.Port{
+					{Port: 80, State: "open", Service: "http"},
+					{Port: 443, State: "open", Service: "https"},
+				},
+			},
+		},
+		Certificates: []*certificates.Certificate{
+			{Host: "www.example.com", Subject: "CN=www.example.com", NotAfter: expiry},
+		},
+		Vulnerabilities: []*nuclei.Finding{
+			{TemplateID: "cve-2024-0001", Info: nuclei.TemplateInfo{Name: "Critical RCE", Severity: "CRITICAL"}, Host: "www.example.com"},
+			{TemplateID: "exposed-panel", Info: nuclei.TemplateInfo{Name: "Exposed admin", Severity: "high"}, Host: "api.example.com"},
+		},
+		Takeovers: []takeover.Finding{
+			{Subdomain: "dangling.example.com", Vulnerable: true},
+			{Subdomain: "ok.example.com", Vulnerable: false},
+		},
+		CloudStorage: []cloud.Bucket{
+			{AccessLevel: "public_read"},
+			{AccessLevel: "authenticated_only"},
+		},
+	}
+
+	if err := store.SaveSnapshot(result, "full"); err != nil {
+		t.Fatalf("SaveSnapshot: %v", err)
+	}
+
+	snapshots, err := db.GetLatestSnapshots("example.com", 1)
+	if err != nil {
+		t.Fatalf("GetLatestSnapshots: %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("got %d snapshots, want 1", len(snapshots))
+	}
+	snap := snapshots[0]
+	if snap.ScanType != "full" {
+		t.Fatalf("scan_type = %q, want full", snap.ScanType)
+	}
+	if snap.SubdomainCount != 2 {
+		t.Fatalf("subdomain_count = %d, want 2", snap.SubdomainCount)
+	}
+	if snap.PortCount != 2 {
+		t.Fatalf("port_count = %d, want 2 open ports (not per-host results)", snap.PortCount)
+	}
+	if snap.CertificateCount != 1 {
+		t.Fatalf("certificate_count = %d, want 1", snap.CertificateCount)
+	}
+	if snap.RiskScore != 29 {
+		t.Fatalf("risk_score = %d, want 29 (10+5+8+6)", snap.RiskScore)
+	}
+
+	var subs []string
+	if err := json.Unmarshal([]byte(snap.Subdomains), &subs); err != nil {
+		t.Fatalf("unmarshal subdomains: %v", err)
+	}
+	if len(subs) != 2 || subs[0] != "www.example.com" || subs[1] != "api.example.com" {
+		t.Fatalf("subdomains JSON = %#v, want [www.example.com api.example.com]", subs)
+	}
+
+	var portsJSON []snapshotPort
+	if err := json.Unmarshal([]byte(snap.Ports), &portsJSON); err != nil {
+		t.Fatalf("unmarshal ports: %v", err)
+	}
+	if len(portsJSON) != 2 {
+		t.Fatalf("ports JSON len = %d, want 2", len(portsJSON))
+	}
+	if portsJSON[0] != (snapshotPort{Host: "www.example.com", Port: 80, Service: "http", State: "open"}) {
+		t.Fatalf("ports[0] = %#v", portsJSON[0])
+	}
+	if portsJSON[1] != (snapshotPort{Host: "www.example.com", Port: 443, Service: "https", State: "open"}) {
+		t.Fatalf("ports[1] = %#v", portsJSON[1])
+	}
+
+	var vulnsJSON []snapshotVuln
+	if err := json.Unmarshal([]byte(snap.Vulnerabilities), &vulnsJSON); err != nil {
+		t.Fatalf("unmarshal vulns: %v", err)
+	}
+	if len(vulnsJSON) != 2 {
+		t.Fatalf("vulns JSON len = %d, want 2", len(vulnsJSON))
+	}
+	if vulnsJSON[0] != (snapshotVuln{TemplateID: "cve-2024-0001", Name: "Critical RCE", Severity: "critical", Host: "www.example.com"}) {
+		t.Fatalf("vulns[0] = %#v", vulnsJSON[0])
+	}
+	if vulnsJSON[1] != (snapshotVuln{TemplateID: "exposed-panel", Name: "Exposed admin", Severity: "high", Host: "api.example.com"}) {
+		t.Fatalf("vulns[1] = %#v", vulnsJSON[1])
+	}
+
+	var counts snapshotFindingCounts
+	if err := json.Unmarshal([]byte(snap.FindingCounts), &counts); err != nil {
+		t.Fatalf("unmarshal finding_counts: %v", err)
+	}
+	if counts.Vulnerabilities != 2 || counts.Takeovers != 1 || counts.Critical != 1 {
+		t.Fatalf("finding_counts = %+v, want vulnerabilities=2 takeovers=1 critical=1", counts)
+	}
+}
+
+func TestSaveSnapshotRejectsNilOrEmptyDomain(t *testing.T) {
+	db := newTestDB(t)
+	store := NewStore(db)
+
+	if err := store.SaveSnapshot(nil, "full"); err == nil {
+		t.Fatal("SaveSnapshot(nil) = nil, want error")
+	}
+	if err := store.SaveSnapshot(&parallel.ScanResult{}, "full"); err == nil {
+		t.Fatal("SaveSnapshot(empty domain) = nil, want error")
+	}
+	if err := SaveScanSnapshot(nil, &parallel.ScanResult{Domain: "example.com"}, "full"); err == nil {
+		t.Fatal("SaveScanSnapshot(nil db) = nil, want error")
+	}
+}
+
+func TestSaveSnapshotRejectedInsideTransaction(t *testing.T) {
+	db := newTestDB(t)
+	err := db.WithTransaction(func(tx *database.Transaction) error {
+		s, err := newStore(tx)
+		if err != nil {
+			return err
+		}
+		return s.SaveSnapshot(&parallel.ScanResult{Domain: "example.com"}, "full")
+	})
+	if err == nil {
+		t.Fatal("expected error for SaveSnapshot inside a transaction")
 	}
 }
 

@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/asm-tool/asm-go/internal/target"
 )
 
 // Finding represents a vulnerability finding from Nuclei
@@ -363,15 +366,28 @@ func (s *Scanner) ScanWithCallback(ctx context.Context, targets []string, callba
 	return result, nil
 }
 
-// writeTargetFile writes targets to a temp file and returns its path.
-// The caller is responsible for removing the file via defer os.Remove(path).
+// writeTargetFile writes sanitized targets to a temp file and returns its path.
+// Empty targets and values containing CR, LF, or NUL are skipped. If every
+// target is rejected, an error is returned. The caller is responsible for
+// removing the file via defer os.Remove(path).
 func writeTargetFile(targets []string) (string, error) {
+	valid := make([]string, 0, len(targets))
+	for _, t := range targets {
+		sanitized, ok := sanitizeNucleiTarget(t)
+		if ok {
+			valid = append(valid, sanitized)
+		}
+	}
+	if len(valid) == 0 {
+		return "", fmt.Errorf("no valid nuclei targets")
+	}
+
 	f, err := os.CreateTemp("", "nuclei-targets-*.txt")
 	if err != nil {
 		return "", fmt.Errorf("creating target file: %w", err)
 	}
 
-	for _, t := range targets {
+	for _, t := range valid {
 		if _, err := f.WriteString(t + "\n"); err != nil {
 			f.Close()
 			os.Remove(f.Name())
@@ -385,6 +401,47 @@ func writeTargetFile(targets []string) (string, error) {
 	}
 
 	return f.Name(), nil
+}
+
+// sanitizeNucleiTarget validates a single nuclei target. Hosts without a
+// scheme are canonicalized via target.NormalizeTarget. http(s) URLs are
+// parsed and must have a host without CR/LF/NUL.
+func sanitizeNucleiTarget(raw string) (string, bool) {
+	t := strings.TrimSpace(raw)
+	if t == "" {
+		return "", false
+	}
+	if strings.ContainsAny(t, "\n\r\x00") {
+		return "", false
+	}
+
+	lower := strings.ToLower(t)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		u, err := url.Parse(t)
+		if err != nil {
+			return "", false
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return "", false
+		}
+		if u.Host == "" {
+			return "", false
+		}
+		if strings.ContainsAny(u.Host, "\n\r\x00") {
+			return "", false
+		}
+		return t, true
+	}
+
+	normalized, err := target.NormalizeTarget(t)
+	if err != nil {
+		return "", false
+	}
+	return normalized, true
+}
+
+func validNucleiHeader(key, value string) bool {
+	return !strings.ContainsAny(key, "\r\n") && !strings.ContainsAny(value, "\r\n")
 }
 
 func (s *Scanner) buildArgs(targetFile string) []string {
@@ -433,8 +490,11 @@ func (s *Scanner) buildArgs(targetFile string) []string {
 		args = append(args, "-t", s.TemplatesPath)
 	}
 
-	// Add custom headers
+	// Add custom headers (reject CR/LF to prevent argument injection)
 	for k, v := range s.Headers {
+		if !validNucleiHeader(k, v) {
+			continue
+		}
 		args = append(args, "-H", fmt.Sprintf("%s: %s", k, v))
 	}
 
@@ -511,14 +571,14 @@ func (r *Result) GetUniqueVulnerabilities() []*Finding {
 
 // Config holds configuration for a Nuclei scan.
 type Config struct {
-	BinaryPath     string
-	Severities     []string
-	RateLimit      int
-	BulkSize       int
-	Concurrency    int
-	Retries        int
-	Timeout        time.Duration
-	ExcludeTags    []string
+	BinaryPath  string
+	Severities  []string
+	RateLimit   int
+	BulkSize    int
+	Concurrency int
+	Retries     int
+	Timeout     time.Duration
+	ExcludeTags []string
 }
 
 // DefaultConfig returns a Config with sensible defaults.

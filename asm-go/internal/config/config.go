@@ -50,11 +50,13 @@ type SlackConfig struct {
 }
 
 type EmailConfig struct {
-	Enabled  bool   `mapstructure:"enabled"`
-	SMTPHost string `mapstructure:"smtp_host"`
-	SMTPPort int    `mapstructure:"smtp_port"`
-	FromAddr string `mapstructure:"from_addr"`
-	ToAddr   string `mapstructure:"to_addr"`
+	Enabled      bool   `mapstructure:"enabled"`
+	SMTPHost     string `mapstructure:"smtp_host"`
+	SMTPPort     int    `mapstructure:"smtp_port"`
+	SMTPUser     string `mapstructure:"smtp_user"`
+	SMTPPassword string `mapstructure:"smtp_password"`
+	FromAddr     string `mapstructure:"from_addr"`
+	ToAddr       string `mapstructure:"to_addr"`
 }
 
 type ScanningConfig struct {
@@ -153,6 +155,7 @@ func Load(path string) (*Config, error) {
 	cfg := Default()
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
+		applyEnvOverrides(cfg)
 		return cfg, nil
 	}
 
@@ -213,7 +216,39 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	applyEnvOverrides(cfg)
 	return cfg, nil
+}
+
+// ApplyEnvOverrides overlays environment variables onto cfg. Non-empty env
+// values win over YAML so secrets can stay out of the config file.
+func ApplyEnvOverrides(cfg *Config) {
+	applyEnvOverrides(cfg)
+}
+
+func applyEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	if v := firstNonEmptyEnv("ASM_SMTP_USER", "SMTP_USER"); v != "" {
+		cfg.Notifications.Email.SMTPUser = v
+	}
+	if v := firstNonEmptyEnv("ASM_SMTP_PASSWORD", "SMTP_PASSWORD"); v != "" {
+		cfg.Notifications.Email.SMTPPassword = v
+	}
+	if v := firstNonEmptyEnv("ASM_SLACK_WEBHOOK", "SLACK_WEBHOOK_URL"); v != "" {
+		cfg.Notifications.Slack.WebhookURL = v
+	}
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, key := range keys {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // ParsePorts converts the comma-separated ports string to a slice of ints

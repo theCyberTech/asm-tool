@@ -3,7 +3,19 @@ package emails
 import (
 	"context"
 	"testing"
+	"time"
 )
+
+type stubEmailSource struct {
+	name   string
+	emails []string
+}
+
+func (s *stubEmailSource) Name() string { return s.name }
+
+func (s *stubEmailSource) Enumerate(context.Context, string) ([]string, error) {
+	return s.emails, nil
+}
 
 func TestDefaultEnumeratorIncludesHunterSource(t *testing.T) {
 	enum := DefaultEnumerator()
@@ -63,6 +75,51 @@ func TestClassifyEmail(t *testing.T) {
 				t.Fatalf("classifyEmail(%q) = %q, want %q", tt.email, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestEmailFromSourceLabelsPermutatorAsGuessed(t *testing.T) {
+	got := emailFromSource("support@example.com", "example.com", "permutator")
+	if got.Type != "guessed" {
+		t.Fatalf("Type = %q, want guessed", got.Type)
+	}
+	if got.Verified {
+		t.Fatal("permutator emails must not be marked verified")
+	}
+	if got.Source != "permutator" {
+		t.Fatalf("Source = %q, want permutator", got.Source)
+	}
+
+	other := emailFromSource("support@example.com", "example.com", "github")
+	if other.Type != "role" {
+		t.Fatalf("non-permutator Type = %q, want role", other.Type)
+	}
+	if other.Verified {
+		t.Fatal("Verified should default to false")
+	}
+}
+
+func TestEnumeratePermutatorLabeledGuessed(t *testing.T) {
+	enum := &Enumerator{
+		Sources: []Source{
+			&stubEmailSource{name: "permutator", emails: []string{"support@example.com", "jane.doe@example.com"}},
+		},
+		Timeout: 5 * time.Second,
+	}
+	result := enum.Enumerate(context.Background(), "example.com")
+	if len(result.Emails) != 2 {
+		t.Fatalf("got %d emails, want 2: %+v", len(result.Emails), result.Emails)
+	}
+	for _, email := range result.Emails {
+		if email.Type != "guessed" {
+			t.Fatalf("%s Type = %q, want guessed", email.Address, email.Type)
+		}
+		if email.Verified {
+			t.Fatalf("%s should not be verified", email.Address)
+		}
+		if email.Source != "permutator" {
+			t.Fatalf("%s Source = %q, want permutator", email.Address, email.Source)
+		}
 	}
 }
 

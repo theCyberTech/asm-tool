@@ -76,6 +76,9 @@ func (r *Runner) Run(ctx context.Context, domain string, cfg RunConfig, enabled 
 		Errors:    make(map[ModuleType]error),
 	}
 
+	// URLs, emails, and cloud modules read the domain from cfg.Subdomains.Domain.
+	applyRunDomain(&cfg, domain)
+
 	// Phase 1: Subdomain enumeration (sequential — results feed Phase 2).
 	if enabled[ModuleSubdomains] {
 		runSubdomains(ctx, domain, cfg.Subdomains, progress, ModuleSubdomains, result)
@@ -124,6 +127,15 @@ func (r *Runner) Run(ctx context.Context, domain string, cfg RunConfig, enabled 
 	result.Duration = result.EndTime.Sub(result.StartTime)
 
 	return result
+}
+
+// applyRunDomain copies the scan target onto RunConfig so modules that
+// read cfg.Subdomains.Domain (urls, emails, cloud) receive the domain.
+func applyRunDomain(cfg *RunConfig, domain string) {
+	if cfg == nil {
+		return
+	}
+	cfg.Subdomains.Domain = domain
 }
 
 // enabledModules returns the list of enabled module types in a stable order.
