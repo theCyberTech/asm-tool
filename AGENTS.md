@@ -59,3 +59,26 @@ go test ./... -v
 ## External Dependencies
 
 `nuclei` is an optional external dependency used for vulnerability scanning.
+
+## Cursor Cloud specific instructions
+
+- Go toolchain: `asm-go/go.mod` requires Go 1.25+. The Cloud VM's default
+  `/usr/bin/go` is older (1.22), so this environment provides Go 1.25 at
+  `/usr/local/go` (symlinked into `/usr/local/bin`, which precedes `/usr/bin` on
+  PATH). Run `go version` to confirm 1.25 before building; do not fall back to
+  `/usr/bin/go`.
+- The `asm.sh` wrapper runs a pre-built binary at `asm-go/asm-go` and does NOT
+  build on demand. After any Go source change, rebuild with
+  `cd asm-go && go build -o asm-go ./cmd/asm` (or run `./asm.sh init`) before the
+  wrapper reflects your change. There is no hot reload.
+- Standard build/vet/test commands are in the "Development Commands" section
+  above. CI (`.github/workflows/ci.yml`) runs `go vet ./...` and `go test ./...`
+  from `asm-go/`.
+- Scans (`discover`, `dns`, `urls`, `emails`, etc.) call live external services
+  (crt.sh, HackerTarget, urlscan.io, DNS resolvers, ...), so results vary and
+  depend on network egress. `./asm.sh dns example.com` and
+  `./asm.sh discover example.com` are reliable smoke tests that also persist data
+  to the SQLite DB at `asm-go/data/asm.db`.
+- The dashboard (`./asm.sh dashboard`) runs in the foreground and binds
+  `127.0.0.1:8080` by default (override with `--port`); start it in a background
+  session (e.g. tmux) when you need the shell back.
