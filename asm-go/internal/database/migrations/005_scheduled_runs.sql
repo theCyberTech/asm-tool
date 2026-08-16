@@ -13,3 +13,5 @@ CREATE TABLE IF NOT EXISTS scheduled_runs (
 CREATE INDEX IF NOT EXISTS idx_scheduled_runs_job_type ON scheduled_runs(job_type);
 CREATE INDEX IF NOT EXISTS idx_scheduled_runs_domain ON scheduled_runs(domain);
 CREATE INDEX IF NOT EXISTS idx_scheduled_runs_started_at ON scheduled_runs(started_at);
+
+INSERT OR IGNORE INTO schema_migrations (version) VALUES (5);

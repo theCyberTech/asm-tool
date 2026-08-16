@@ -1,7 +1,11 @@
 package urls
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestNormalizeURL(t *testing.T) {
@@ -81,6 +85,71 @@ func TestCategorizeURL_SensitiveParams(t *testing.T) {
 	u := categorizeURL("https://example.com/page?api_key=secret123", "example.com", "test")
 	if !u.Interesting {
 		t.Error("URL with api_key param should be interesting")
+	}
+}
+
+func TestProbeURLs_CancelledContextReturnsPromptly(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	e := &Enumerator{}
+	urls := []URL{{URL: "http://127.0.0.1:1/"}}
+
+	done := make(chan struct{})
+	var got []URL
+	go func() {
+		defer close(done)
+		got = e.ProbeURLs(ctx, urls, 2)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ProbeURLs did not return promptly with a cancelled context")
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(got))
+	}
+}
+
+func TestProbeURLs_CancelWaitsForInFlight(t *testing.T) {
+	started := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	e := &Enumerator{}
+	urlList := []URL{
+		{URL: srv.URL + "/a"},
+		{URL: srv.URL + "/b"},
+		{URL: srv.URL + "/c"},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = e.ProbeURLs(ctx, urlList, 2)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("probe did not start")
+	}
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ProbeURLs did not return after cancel; in-flight WaitGroup may have leaked")
 	}
 }
 

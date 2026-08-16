@@ -23,7 +23,7 @@ type Email struct {
 	Address  string
 	Domain   string
 	Source   string
-	Type     string // personal, generic, role
+	Type     string // personal, generic, role, guessed
 	Verified bool
 }
 
@@ -160,12 +160,7 @@ func (e *Enumerator) Enumerate(ctx context.Context, domain string) *Result {
 			seen[email] = true
 			count++
 
-			result.Emails = append(result.Emails, Email{
-				Address: email,
-				Domain:  domain,
-				Source:  sr.source,
-				Type:    classifyEmail(email),
-			})
+			result.Emails = append(result.Emails, emailFromSource(email, domain, sr.source))
 		}
 		result.Sources[sr.source] = count
 	}
@@ -218,6 +213,23 @@ var roleEmailLocalParts = [...]string{
 
 var genericEmailLocalPatterns = [...]string{
 	"noreply", "no-reply", "donotreply", "mailer", "newsletter", "notification",
+}
+
+// emailFromSource builds an Email record for a discovered address.
+// Permutator results are labeled as guesses: MX only means the domain
+// accepts mail, not that the mailbox exists.
+func emailFromSource(address, domain, source string) Email {
+	email := Email{
+		Address:  address,
+		Domain:   domain,
+		Source:   source,
+		Verified: false,
+		Type:     classifyEmail(address),
+	}
+	if source == "permutator" || source == (&EmailPermutatorSource{}).Name() {
+		email.Type = "guessed"
+	}
+	return email
 }
 
 func classifyEmail(email string) string {
@@ -320,8 +332,8 @@ func (s *SkymemSource) Enumerate(ctx context.Context, domain string) ([]string, 
 }
 
 // EmailPermutatorSource generates common email permutations for domains with
-// valid MX records. It verifies the domain accepts mail before returning
-// addresses to avoid polluting results with non-existent domains.
+// valid MX records. MX only means the domain accepts mail; the addresses
+// themselves are guesses, not verified mailboxes.
 type EmailPermutatorSource struct {
 	client *http.Client
 }

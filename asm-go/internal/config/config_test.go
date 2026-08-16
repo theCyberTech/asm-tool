@@ -182,6 +182,67 @@ notifications:
 	}
 }
 
+func TestApplyEnvOverridesPrefersEnv(t *testing.T) {
+	cfg := Default()
+	cfg.Notifications.Email.SMTPUser = "yaml-user"
+	cfg.Notifications.Email.SMTPPassword = "yaml-pass"
+	cfg.Notifications.Slack.WebhookURL = "https://hooks.slack.com/yaml"
+
+	t.Setenv("ASM_SMTP_USER", "env-user")
+	t.Setenv("ASM_SMTP_PASSWORD", "env-pass")
+	t.Setenv("ASM_SLACK_WEBHOOK", "https://hooks.slack.com/env")
+
+	ApplyEnvOverrides(cfg)
+
+	if cfg.Notifications.Email.SMTPUser != "env-user" {
+		t.Errorf("SMTPUser = %q, want env-user", cfg.Notifications.Email.SMTPUser)
+	}
+	if cfg.Notifications.Email.SMTPPassword != "env-pass" {
+		t.Errorf("SMTPPassword = %q, want env-pass", cfg.Notifications.Email.SMTPPassword)
+	}
+	if cfg.Notifications.Slack.WebhookURL != "https://hooks.slack.com/env" {
+		t.Errorf("WebhookURL = %q, want env webhook", cfg.Notifications.Slack.WebhookURL)
+	}
+}
+
+func TestLoadReadsSMTPFromYAML(t *testing.T) {
+	t.Setenv("ASM_SMTP_USER", "")
+	t.Setenv("SMTP_USER", "")
+	t.Setenv("ASM_SMTP_PASSWORD", "")
+	t.Setenv("SMTP_PASSWORD", "")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+notifications:
+  email:
+    enabled: true
+    smtp_host: "smtp.example.com"
+    smtp_port: 465
+    smtp_user: "yaml-user"
+    smtp_password: "yaml-pass"
+    from_addr: "alerts@example.com"
+    to_addr: "security@example.com"
+`
+
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.Notifications.Email.SMTPUser != "yaml-user" {
+		t.Errorf("SMTPUser = %q, want yaml-user", cfg.Notifications.Email.SMTPUser)
+	}
+	if cfg.Notifications.Email.SMTPPassword != "yaml-pass" {
+		t.Errorf("SMTPPassword = %q, want yaml-pass", cfg.Notifications.Email.SMTPPassword)
+	}
+}
+
 func TestConfigParsePorts(t *testing.T) {
 	cfg := Default()
 	cfg.Scanning.Ports = "22,80,443"

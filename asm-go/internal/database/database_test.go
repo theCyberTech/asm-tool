@@ -53,6 +53,37 @@ func TestNewCreatesDirectory(t *testing.T) {
 	}
 }
 
+func TestNewRecordsSchemaVersion5(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	var version int
+	if err := db.Raw().Get(&version, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"); err != nil {
+		t.Fatalf("querying schema version: %v", err)
+	}
+	if version != 5 {
+		t.Fatalf("schema version = %d, want 5", version)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	reopened, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("reopen failed: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.Raw().Get(&version, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"); err != nil {
+		t.Fatalf("querying schema version after reopen: %v", err)
+	}
+	if version != 5 {
+		t.Fatalf("schema version after reopen = %d, want 5", version)
+	}
+}
+
 func TestGetStats(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")

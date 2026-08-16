@@ -15,6 +15,9 @@ notifications:
     enabled: false
     smtp_host: "smtp.gmail.com"
     smtp_port: 587
+    # Prefer ASM_SMTP_USER / ASM_SMTP_PASSWORD (or SMTP_USER / SMTP_PASSWORD) over file values.
+    # smtp_user: ""
+    # smtp_password: ""
     from_addr: "alerts@yourdomain.com"
     to_addr: "security@yourdomain.com"
 

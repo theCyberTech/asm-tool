@@ -197,9 +197,10 @@ type Scheduler struct {
 	db     *database.Database
 	store  persistence.Store
 	logger *log.Logger
-	execute func(JobType, string) error
-	mu     sync.Mutex
-	jobs   []job
+	execute func(JobType, string) (*parallel.ScanResult, error)
+	mu      sync.Mutex
+	jobs    []job
+	running map[string]struct{}
 }
 
 type job struct {
@@ -212,10 +213,11 @@ type job struct {
 // New creates a new Scheduler.
 func New(cfg *config.Config, db *database.Database, store persistence.Store, logger *log.Logger) *Scheduler {
 	s := &Scheduler{
-		cfg:    cfg,
-		db:     db,
-		store:  store,
-		logger: logger,
+		cfg:     cfg,
+		db:      db,
+		store:   store,
+		logger:  logger,
+		running: make(map[string]struct{}),
 	}
 	s.execute = s.executeScan
 	return s
@@ -356,6 +358,24 @@ func (s *Scheduler) runJob(jobType JobType, domains []string) error {
 
 // runDomain executes a scheduled job for a single domain.
 func (s *Scheduler) runDomain(jobType JobType, domain string) error {
+	key := string(jobType) + ":" + domain
+	s.mu.Lock()
+	if s.running == nil {
+		s.running = make(map[string]struct{})
+	}
+	if _, busy := s.running[key]; busy {
+		s.mu.Unlock()
+		s.logger.Printf("skipping %s for %s — already running", jobType, domain)
+		return nil
+	}
+	s.running[key] = struct{}{}
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.running, key)
+		s.mu.Unlock()
+	}()
+
 	started := time.Now()
 	run := ScheduledRun{
 		JobType:   string(jobType),
@@ -373,7 +393,7 @@ func (s *Scheduler) runDomain(jobType JobType, domain string) error {
 	s.logger.Printf("starting %s for %s", jobType, domain)
 
 	// Execute the scan
-	scanErr := s.execute(jobType, domain)
+	result, scanErr := s.execute(jobType, domain)
 
 	// Update the run record
 	ended := time.Now()
@@ -392,14 +412,13 @@ func (s *Scheduler) runDomain(jobType JobType, domain string) error {
 		s.logger.Printf("ERROR updating run: %v", err)
 	}
 
-	// Send notification
-	s.notify(jobType, domain, &run)
+	s.notify(jobType, domain, &run, result)
 
 	return scanErr
 }
 
 // executeScan runs the appropriate scan for the job type.
-func (s *Scheduler) executeScan(jobType JobType, domain string) error {
+func (s *Scheduler) executeScan(jobType JobType, domain string) (*parallel.ScanResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Hour)
 	defer cancel()
 
@@ -413,17 +432,24 @@ func (s *Scheduler) executeScan(jobType JobType, domain string) error {
 	s.logger.Printf("  subdomains=%d ports=%d vulns=%d",
 		len(result.Subdomains), len(result.Ports), len(result.Vulnerabilities))
 
-	// Persist scan results
+	// Persist scan results and a diff snapshot
 	if s.store != nil {
 		if err := s.store.EnsureDomain(domain); err != nil {
-			return fmt.Errorf("ensuring domain: %w", err)
+			return result, fmt.Errorf("ensuring domain: %w", err)
 		}
 		if err := s.store.SaveAll(result); err != nil {
-			return fmt.Errorf("persisting scan results: %w", err)
+			return result, fmt.Errorf("persisting scan results: %w", err)
+		}
+		scanType := "full"
+		if jobType == JobCertCheck {
+			scanType = "cert_check"
+		}
+		if err := s.store.SaveSnapshot(result, scanType); err != nil {
+			return result, fmt.Errorf("saving snapshot: %w", err)
 		}
 	}
 
-	return nil
+	return result, nil
 }
 
 // buildConfig builds a RunConfig from the scheduler's config.
@@ -442,7 +468,7 @@ func (s *Scheduler) buildConfig(jobType JobType) parallel.RunConfig {
 		cfg.Subdomains.Timeout = s.cfg.Timeouts.Subfinder
 	}
 	cfg.Subdomains.RateLimit = s.cfg.Scanning.RateLimit
-	cfg.Subdomains.Domain = "" // Will be set at call site
+	// Domain is applied by parallel.Runner.Run via applyRunDomain.
 
 	// HTTP timeout for all HTTP-based modules
 	if s.cfg.Timeouts.HTTP > 0 {
@@ -536,35 +562,59 @@ func (s *Scheduler) updateRun(id int64, run *ScheduledRun) error {
 	return err
 }
 
-// notify sends notifications for completed scans.
-func (s *Scheduler) notify(jobType JobType, domain string, run *ScheduledRun) {
+// notify sends Slack/email notifications for completed scans.
+func (s *Scheduler) notify(jobType JobType, domain string, run *ScheduledRun, result *parallel.ScanResult) {
+	if s.cfg == nil {
+		return
+	}
+
 	n := notifier.DefaultNotifier()
 	n.SMTPHost = s.cfg.Notifications.Email.SMTPHost
 	n.SMTPPort = s.cfg.Notifications.Email.SMTPPort
+	n.SMTPUser = s.cfg.Notifications.Email.SMTPUser
+	n.SMTPPassword = s.cfg.Notifications.Email.SMTPPassword
 	n.EmailFrom = s.cfg.Notifications.Email.FromAddr
 
 	if s.cfg.Notifications.Slack.Enabled {
 		n.SlackWebhook = s.cfg.Notifications.Slack.WebhookURL
 	}
 	if s.cfg.Notifications.Email.Enabled {
-		n.EmailTo = []string{s.cfg.Notifications.Email.ToAddr}
+		n.EmailTo = splitCSV(s.cfg.Notifications.Email.ToAddr)
 	}
 
 	if n.SlackWebhook == "" && len(n.EmailTo) == 0 {
 		return
 	}
 
+	if result == nil {
+		result = &parallel.ScanResult{
+			Domain:    domain,
+			StartTime: run.StartedAt,
+			Duration:  time.Duration(run.Duration) * time.Millisecond,
+			Errors:    make(map[parallel.ModuleType]error),
+		}
+		if run.Error != "" {
+			result.Errors[parallel.ModuleType(jobType)] = errors.New(run.Error)
+		}
+	}
+
 	status := "✅"
 	if run.Status == "failed" {
 		status = "❌"
 	}
-	msg := fmt.Sprintf("%s Scheduled %s for %s — %s (took %dms)",
+	s.logger.Printf("notification: %s Scheduled %s for %s — %s (took %dms)",
 		status, jobType, domain, run.Status, run.Duration)
-	if run.Error != "" {
-		msg += fmt.Sprintf("\nError: %s", run.Error)
-	}
 
-	s.logger.Printf("notification: %s", msg)
+	if n.SlackWebhook != "" {
+		if err := n.NotifySlack(result); err != nil {
+			s.logger.Printf("slack notification failed: %v", err)
+		}
+	}
+	if len(n.EmailTo) > 0 {
+		if err := n.NotifyEmail(result); err != nil {
+			s.logger.Printf("email notification failed: %v", err)
+		}
+	}
 }
 
 func splitCSV(s string) []string {

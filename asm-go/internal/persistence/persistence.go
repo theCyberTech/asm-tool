@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/parallel"
@@ -32,6 +33,8 @@ type Store interface {
 	// EnsureDomain creates or reactivates a domain row and marks it as
 	// just scanned so the dashboard shows the result.
 	EnsureDomain(domain string) error
+	// SaveSnapshot stores a point-in-time snapshot used by `asm diff`.
+	SaveSnapshot(result *parallel.ScanResult, scanType string) error
 }
 
 // storeImpl is the concrete implementation behind the Store interface.
@@ -54,6 +57,11 @@ func (s *storeImpl) SaveAll(result *parallel.ScanResult) error {
 	return s.db.WithTransaction(func(tx *database.Transaction) error {
 		return saveTx(tx, result)
 	})
+}
+
+// SaveSnapshot stores a point-in-time snapshot of the scan result.
+func (s *storeImpl) SaveSnapshot(result *parallel.ScanResult, scanType string) error {
+	return SaveScanSnapshot(s.db, result, scanType)
 }
 
 // saveTx saves a scan result within an existing transaction.
@@ -312,6 +320,12 @@ func (s *storeTxImpl) SaveAll(result *parallel.ScanResult) error {
 	return saveTx(s.tx, result)
 }
 
+// SaveSnapshot is not available on a transactional store; snapshots are
+// written through the top-level Database connection.
+func (s *storeTxImpl) SaveSnapshot(result *parallel.ScanResult, scanType string) error {
+	return fmt.Errorf("SaveSnapshot is not supported inside a transaction")
+}
+
 // ensureDomainTx creates or reactivates a domain within an existing transaction.
 func ensureDomainTx(tx *database.Transaction, domain string) error {
 	domain = strings.TrimSpace(domain)
@@ -349,6 +363,218 @@ func dnsSeverity(recordType string) string {
 	default:
 		return "low"
 	}
+}
+
+// snapshotPort is the JSON shape expected by `asm diff` for open ports.
+type snapshotPort struct {
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	Service string `json:"service"`
+	State   string `json:"state"`
+}
+
+// snapshotVuln is the JSON shape expected by `asm diff` for vulnerabilities.
+type snapshotVuln struct {
+	TemplateID string `json:"template_id"`
+	Name       string `json:"name"`
+	Severity   string `json:"severity"`
+	Host       string `json:"host"`
+}
+
+// snapshotCert encodes useful certificate fields for a snapshot.
+type snapshotCert struct {
+	Host    string `json:"host"`
+	Subject string `json:"subject"`
+	Expiry  string `json:"expiry"`
+}
+
+// snapshotFindingCounts is stored as JSON on the snapshot row.
+type snapshotFindingCounts struct {
+	Vulnerabilities int `json:"vulnerabilities"`
+	Takeovers       int `json:"takeovers"`
+	Critical        int `json:"critical"`
+}
+
+// SaveScanSnapshot encodes a scan result and writes it via Database.SaveSnapshot.
+func SaveScanSnapshot(db *database.Database, result *parallel.ScanResult, scanType string) error {
+	if db == nil {
+		return fmt.Errorf("cannot save snapshot: database is nil")
+	}
+	if result == nil {
+		return fmt.Errorf("cannot save snapshot: result is nil")
+	}
+	domain := strings.TrimSpace(result.Domain)
+	if domain == "" {
+		return fmt.Errorf("cannot save snapshot: domain is empty")
+	}
+
+	subs := result.Subdomains
+	if subs == nil {
+		subs = []string{}
+	}
+	portsJSON := flattenSnapshotPorts(result.Ports)
+	certsJSON := encodeSnapshotCerts(result.Certificates)
+	vulnsJSON := encodeSnapshotVulns(result.Vulnerabilities)
+
+	subBytes, err := json.Marshal(subs)
+	if err != nil {
+		return fmt.Errorf("encoding snapshot subdomains: %w", err)
+	}
+	portBytes, err := json.Marshal(portsJSON)
+	if err != nil {
+		return fmt.Errorf("encoding snapshot ports: %w", err)
+	}
+	certBytes, err := json.Marshal(certsJSON)
+	if err != nil {
+		return fmt.Errorf("encoding snapshot certificates: %w", err)
+	}
+	vulnBytes, err := json.Marshal(vulnsJSON)
+	if err != nil {
+		return fmt.Errorf("encoding snapshot vulnerabilities: %w", err)
+	}
+
+	counts := snapshotFindingCounts{
+		Vulnerabilities: countVulnerabilities(result.Vulnerabilities),
+		Takeovers:       countVulnerableTakeovers(result.Takeovers),
+		Critical:        countCriticalVulns(result.Vulnerabilities),
+	}
+	countBytes, err := json.Marshal(counts)
+	if err != nil {
+		return fmt.Errorf("encoding snapshot finding counts: %w", err)
+	}
+
+	return db.SaveSnapshot(
+		domain,
+		scanType,
+		len(result.Subdomains),
+		len(portsJSON),
+		len(result.Certificates),
+		snapshotRiskScore(result),
+		string(countBytes),
+		string(subBytes),
+		string(portBytes),
+		string(certBytes),
+		string(vulnBytes),
+	)
+}
+
+func flattenSnapshotPorts(results []*ports.Result) []snapshotPort {
+	out := make([]snapshotPort, 0)
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		for _, p := range r.OpenPorts {
+			out = append(out, snapshotPort{
+				Host:    r.Host,
+				Port:    p.Port,
+				Service: p.Service,
+				State:   p.State,
+			})
+		}
+	}
+	return out
+}
+
+func encodeSnapshotCerts(certs []*certificates.Certificate) []snapshotCert {
+	out := make([]snapshotCert, 0)
+	for _, cert := range certs {
+		if cert == nil {
+			continue
+		}
+		out = append(out, snapshotCert{
+			Host:    cert.Host,
+			Subject: cert.Subject,
+			Expiry:  cert.NotAfter.UTC().Format(time.RFC3339),
+		})
+	}
+	return out
+}
+
+func encodeSnapshotVulns(findings []*nuclei.Finding) []snapshotVuln {
+	out := make([]snapshotVuln, 0)
+	for _, f := range findings {
+		if f == nil {
+			continue
+		}
+		out = append(out, snapshotVuln{
+			TemplateID: f.TemplateID,
+			Name:       f.Info.Name,
+			Severity:   normalizeSeverity(f.Info.Severity),
+			Host:       f.Host,
+		})
+	}
+	return out
+}
+
+func countVulnerabilities(findings []*nuclei.Finding) int {
+	n := 0
+	for _, f := range findings {
+		if f != nil {
+			n++
+		}
+	}
+	return n
+}
+
+func countCriticalVulns(findings []*nuclei.Finding) int {
+	n := 0
+	for _, f := range findings {
+		if f != nil && normalizeSeverity(f.Info.Severity) == "critical" {
+			n++
+		}
+	}
+	return n
+}
+
+func countVulnerableTakeovers(findings []takeover.Finding) int {
+	n := 0
+	for _, f := range findings {
+		if f.Vulnerable {
+			n++
+		}
+	}
+	return n
+}
+
+func snapshotRiskScore(result *parallel.ScanResult) int {
+	if result == nil {
+		return 0
+	}
+	score := 0
+	for _, f := range result.Vulnerabilities {
+		if f == nil {
+			continue
+		}
+		switch normalizeSeverity(f.Info.Severity) {
+		case "critical":
+			score += 10
+		case "high":
+			score += 5
+		case "medium":
+			score += 2
+		case "low":
+			score += 1
+		}
+	}
+	for _, finding := range result.Takeovers {
+		if finding.Vulnerable {
+			score += 8
+		}
+	}
+	for _, b := range result.CloudStorage {
+		switch b.AccessLevel {
+		case "listing_enabled", "public_read":
+			score += 6
+		}
+	}
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+	return score
 }
 
 // ── Convenience functions ────────────────────────────────────────────────

@@ -1,7 +1,9 @@
 package ports
 
 import (
+	"context"
 	"testing"
+	"time"
 )
 
 func TestGuessService(t *testing.T) {
@@ -85,6 +87,26 @@ func TestPortRange_Invalid(t *testing.T) {
 	}
 	if PortRange(0, 80) != nil {
 		t.Error("PortRange with start < 1 should return nil")
+	}
+}
+
+func TestScan_CancelledContextReturnsPromptly(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	s := NewScanner(4, 50*time.Millisecond)
+	s.GrabBanner = false
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = s.Scan(ctx, "127.0.0.1", []int{1, 2, 3, 4, 5})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Scan did not return promptly with a cancelled context")
 	}
 }
 

@@ -1,6 +1,9 @@
 package takeover
 
 import (
+	"errors"
+	"fmt"
+	"net"
 	"testing"
 	"time"
 )
@@ -197,6 +200,11 @@ func TestMatchesCNAME(t *testing.T) {
 	}{
 		{"mybucket.s3.amazonaws.com", []string{".s3.amazonaws.com"}, true},
 		{"myapp.github.io", []string{".github.io"}, true},
+		{"x.github.io", []string{".github.io"}, true},
+		{"foo.unbouncepages.com", []string{"unbouncepages.com"}, true},
+		{"unbouncepages.com", []string{"unbouncepages.com"}, true},
+		{"notunbouncepages.com", []string{"unbouncepages.com"}, false},
+		{"notgithub.io", []string{".github.io"}, false},
 		{"example.com", []string{".github.io", ".s3.amazonaws.com"}, false},
 		{"", []string{".github.io"}, false},
 	}
@@ -204,6 +212,41 @@ func TestMatchesCNAME(t *testing.T) {
 		got := d.matchesCNAME(tt.cname, tt.patterns)
 		if got != tt.want {
 			t.Errorf("matchesCNAME(%q, %v) = %v, want %v", tt.cname, tt.patterns, got, tt.want)
+		}
+	}
+}
+
+func TestIsDNSNotFound(t *testing.T) {
+	if isDNSNotFound(nil) {
+		t.Fatal("nil should not be NXDOMAIN")
+	}
+	if !isDNSNotFound(&net.DNSError{Err: "no such host", Name: "missing.example", IsNotFound: true}) {
+		t.Fatal("IsNotFound DNSError should be NXDOMAIN")
+	}
+	wrapped := fmt.Errorf("lookup: %w", &net.DNSError{Err: "no such host", IsNotFound: true})
+	if !isDNSNotFound(wrapped) {
+		t.Fatal("wrapped IsNotFound should be NXDOMAIN")
+	}
+	if isDNSNotFound(&net.DNSError{Err: "i/o timeout", IsTimeout: true}) {
+		t.Fatal("timeout should not be treated as NXDOMAIN")
+	}
+	if isDNSNotFound(&net.DNSError{Err: "server failure", IsTemporary: true}) {
+		t.Fatal("temporary error should not be treated as NXDOMAIN")
+	}
+	if isDNSNotFound(errors.New("lookup timed out")) {
+		t.Fatal("generic error should not be treated as NXDOMAIN")
+	}
+}
+
+func TestFlyAndCargoFingerprintsNotGeneric404(t *testing.T) {
+	for _, fp := range DefaultFingerprints() {
+		if fp.Service != "Fly.io" && fp.Service != "Cargo Collective" {
+			continue
+		}
+		for _, body := range fp.Fingerprints {
+			if body == "404 Not Found" {
+				t.Errorf("%s still uses generic body fingerprint %q", fp.Service, body)
+			}
 		}
 	}
 }

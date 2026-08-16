@@ -2,6 +2,7 @@ package takeover
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -86,7 +87,7 @@ func (d *Detector) Check(ctx context.Context, subdomain string) (*Finding, error
 	if err != nil {
 		// NXDOMAIN means no CNAME record — not an error, just not applicable.
 		// Context cancellation is also not worth reporting per-subdomain.
-		if dnsErr, ok := err.(*net.DNSError); ok && dnsErr.IsNotFound {
+		if isDNSNotFound(err) {
 			return nil, nil
 		}
 		if ctx.Err() != nil {
@@ -102,9 +103,34 @@ func (d *Detector) Check(ctx context.Context, subdomain string) (*Finding, error
 
 	finding.CNAME = cname
 
-	// Check if CNAME resolves
+	// Check if CNAME resolves. Only NXDOMAIN (IsNotFound) is a dangling
+	// CNAME. Timeouts and temporary resolver errors must not be treated
+	// as HIGH-confidence takeovers.
 	_, err = net.DefaultResolver.LookupHost(ctx, cname)
-	cnameResolvable := err == nil
+	if err != nil {
+		if !isDNSNotFound(err) {
+			if ctx.Err() != nil {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("host lookup for CNAME %s: %w", cname, err)
+		}
+
+		for _, fp := range d.Fingerprints {
+			if !d.matchesCNAME(cname, fp.CNAMEPatterns) {
+				continue
+			}
+			finding.Service = fp.Service
+			finding.Documentation = fp.Documentation
+			finding.Vulnerable = fp.Vulnerable
+			if fp.Vulnerable {
+				finding.Confidence = "HIGH"
+			}
+			finding.Type = "NXDOMAIN"
+			finding.Evidence = fmt.Sprintf("CNAME %s does not resolve", cname)
+			return finding, nil
+		}
+		return nil, nil
+	}
 
 	// Match against fingerprints
 	for _, fp := range d.Fingerprints {
@@ -114,16 +140,6 @@ func (d *Detector) Check(ctx context.Context, subdomain string) (*Finding, error
 
 		finding.Service = fp.Service
 		finding.Documentation = fp.Documentation
-
-		// If CNAME doesn't resolve, check if the service is actually vulnerable
-		// (some services like Shopify, Netlify, Vercel have protections and are not takeover-able)
-		if !cnameResolvable {
-			finding.Vulnerable = fp.Vulnerable
-			finding.Confidence = "HIGH"
-			finding.Type = "NXDOMAIN"
-			finding.Evidence = fmt.Sprintf("CNAME %s does not resolve", cname)
-			return finding, nil
-		}
 
 		// Check HTTP response for fingerprints
 		if len(fp.Fingerprints) > 0 {
@@ -149,6 +165,13 @@ func (d *Detector) Check(ctx context.Context, subdomain string) (*Finding, error
 	}
 
 	return nil, nil
+}
+
+// isDNSNotFound reports whether err is a DNS NXDOMAIN / name-not-found
+// error, including when wrapped. Timeouts and temporary failures are false.
+func isDNSNotFound(err error) bool {
+	var dnsErr *net.DNSError
+	return errors.As(err, &dnsErr) && dnsErr.IsNotFound
 }
 
 // CheckBatch checks multiple subdomains for takeover vulnerabilities
@@ -205,9 +228,25 @@ func (d *Detector) CheckBatch(ctx context.Context, subdomains []string) *Result 
 }
 
 func (d *Detector) matchesCNAME(cname string, patterns []string) bool {
-	cname = strings.ToLower(cname)
+	cname = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(cname), "."))
+	if cname == "" {
+		return false
+	}
 	for _, pattern := range patterns {
-		if strings.Contains(cname, strings.ToLower(pattern)) {
+		pattern = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(pattern), "."))
+		if pattern == "" {
+			continue
+		}
+		if cname == pattern {
+			return true
+		}
+		if strings.HasPrefix(pattern, ".") {
+			if strings.HasSuffix(cname, pattern) {
+				return true
+			}
+			continue
+		}
+		if strings.HasSuffix(cname, "."+pattern) {
 			return true
 		}
 	}
@@ -377,11 +416,12 @@ func DefaultFingerprints() []Fingerprint {
 			Vulnerable:    false, // Vercel has protections
 			Documentation: "https://github.com/EdOverflow/can-i-take-over-xyz/issues/183",
 		},
-		// Fly.io
+		// Fly.io — no generic body fingerprint; a bare "404 Not Found"
+		// matches unrelated sites. Rely on CNAME + NXDOMAIN only.
 		{
 			Service:       "Fly.io",
 			CNAMEPatterns: []string{".fly.dev"},
-			Fingerprints:  []string{"404 Not Found"},
+			Fingerprints:  []string{},
 			Vulnerable:    true,
 			Documentation: "https://github.com/EdOverflow/can-i-take-over-xyz",
 		},
@@ -389,7 +429,7 @@ func DefaultFingerprints() []Fingerprint {
 		{
 			Service:       "Cargo Collective",
 			CNAMEPatterns: []string{".cargocollective.com", "subdomain.cargocollective.com"},
-			Fingerprints:  []string{"404 Not Found"},
+			Fingerprints:  []string{"If you're moving your domain away from Cargo", "Connect it by adding it to your Settings."},
 			Vulnerable:    true,
 			Documentation: "https://github.com/EdOverflow/can-i-take-over-xyz/issues/152",
 		},

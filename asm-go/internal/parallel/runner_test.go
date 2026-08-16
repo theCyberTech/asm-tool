@@ -6,6 +6,18 @@ import (
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 )
 
+func TestApplyRunDomainSetsSubdomainsDomain(t *testing.T) {
+	cfg := RunConfig{}
+	applyRunDomain(&cfg, "example.com")
+	if cfg.Subdomains.Domain != "example.com" {
+		t.Fatalf("Subdomains.Domain = %q, want %q", cfg.Subdomains.Domain, "example.com")
+	}
+}
+
+func TestApplyRunDomainNilConfig(t *testing.T) {
+	applyRunDomain(nil, "example.com")
+}
+
 func TestScanResultContainsScannerTypes(t *testing.T) {
 	result := &ScanResult{
 		Domain: "example.com",

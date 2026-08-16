@@ -4,12 +4,16 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/config"
 	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/asm-tool/asm-go/internal/parallel"
 )
 
 func TestParseCron(t *testing.T) {
@@ -151,10 +155,82 @@ func TestRunOnceReturnsScanError(t *testing.T) {
 
 	s := New(config.Default(), db, nil, log.New(io.Discard, "", 0))
 	want := errors.New("scan failed")
-	s.execute = func(JobType, string) error { return want }
+	s.execute = func(JobType, string) (*parallel.ScanResult, error) { return nil, want }
 
 	err = s.RunOnce(JobFullScan, []string{"example.com"})
 	if !errors.Is(err, want) {
 		t.Fatalf("RunOnce() error = %v, want wrapped %v", err, want)
+	}
+}
+
+func TestRunDomainSkipsWhenAlreadyRunning(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	s := New(config.Default(), db, nil, log.New(io.Discard, "", 0))
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var executions atomic.Int32
+	s.execute = func(JobType, string) (*parallel.ScanResult, error) {
+		executions.Add(1)
+		close(started)
+		<-release
+		return &parallel.ScanResult{Domain: "example.com"}, nil
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.runDomain(JobFullScan, "example.com")
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first run did not start")
+	}
+
+	if err := s.runDomain(JobFullScan, "example.com"); err != nil {
+		t.Fatalf("overlapping runDomain() error = %v", err)
+	}
+	if got := executions.Load(); got != 1 {
+		t.Fatalf("execute called %d times, want 1", got)
+	}
+
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("first runDomain() error = %v", err)
+	}
+}
+
+func TestNotifyPostsToSlack(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	var got atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := config.Default()
+	cfg.Notifications.Slack.Enabled = true
+	cfg.Notifications.Slack.WebhookURL = srv.URL
+
+	s := New(cfg, db, nil, log.New(io.Discard, "", 0))
+	s.notify(JobFullScan, "example.com", &ScheduledRun{
+		Status:    "success",
+		StartedAt: time.Now(),
+		Duration:  10,
+	}, &parallel.ScanResult{Domain: "example.com"})
+
+	if got.Load() != 1 {
+		t.Fatalf("slack webhook hits = %d, want 1", got.Load())
 	}
 }

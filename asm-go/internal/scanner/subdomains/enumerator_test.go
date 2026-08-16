@@ -48,6 +48,57 @@ func TestNormalizeSubdomainRequiresLabelBoundary(t *testing.T) {
 	}
 }
 
+func TestRapidDNSHostnameRejectsSuffixCollision(t *testing.T) {
+	tests := []struct {
+		name   string
+		val    string
+		domain string
+		want   string
+	}{
+		{name: "subdomain accepted", val: "www.example.com", domain: "example.com", want: "www.example.com"},
+		{name: "suffix without label boundary rejected", val: "notexample.com", domain: "example.com", want: ""},
+		{name: "empty rejected", val: "", domain: "example.com", want: ""},
+		{name: "outside domain rejected", val: "www.example.com.attacker.net", domain: "example.com", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rapidDNSHostname(tt.val, tt.domain)
+			if got != tt.want {
+				t.Fatalf("rapidDNSHostname(%q, %q) = %q, want %q", tt.val, tt.domain, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRapidDNSParseRejectsSuffixCollision(t *testing.T) {
+	html := strings.Join([]string{
+		"<td>www.example.com</td>",
+		"<td>notexample.com</td>",
+		"<td>api.example.com</td>",
+	}, "\n")
+	transport := &captureTransport{body: html}
+	client := &http.Client{Transport: transport}
+	subs, err := (&RapidDNSSource{client: client}).Enumerate(context.Background(), "example.com")
+	if err != nil {
+		t.Fatalf("Enumerate returned error: %v", err)
+	}
+
+	found := make(map[string]bool, len(subs))
+	for _, sub := range subs {
+		found[sub] = true
+	}
+	if !found["www.example.com"] {
+		t.Fatalf("expected www.example.com, got %v", subs)
+	}
+	if !found["api.example.com"] {
+		t.Fatalf("expected api.example.com, got %v", subs)
+	}
+	if found["notexample.com"] {
+		t.Fatalf("notexample.com should be rejected, got %v", subs)
+	}
+}
+
 func TestPassiveSourceRequestsEscapeQueryValues(t *testing.T) {
 	tests := []struct {
 		name         string

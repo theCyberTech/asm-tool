@@ -50,6 +50,9 @@ print_help() {
     echo "  cloudstorage       Detect cloud storage buckets"
     echo "  nuclei             Run Nuclei vulnerability scan"
     echo "  report             Generate a report"
+    echo "  diff <domain>      Compare the last two scan snapshots"
+    echo "  schedule           View or run scheduled scans"
+    echo "  migrate            Run database migrations"
     echo ""
     echo "Examples:"
     echo "  ./asm.sh status"
@@ -59,6 +62,8 @@ print_help() {
     echo "  ./asm.sh portscan example.com --ports 80,443,8080"
     echo "  ./asm.sh nuclei --all-known --tags cve"
     echo "  ./asm.sh report --format html"
+    echo "  ./asm.sh diff example.com"
+    echo "  ./asm.sh schedule start"
 }
 
 init() {
@@ -94,7 +99,7 @@ case "${1:-help}" in
     help|--help|-h)
         print_help
         ;;
-    status|dashboard|scan|discover|portscan|ports|certificates|certs|dns|takeover|fingerprint|urls|apis|emails|cloudstorage|cloud|nuclei|report|migrate)
+    status|dashboard|scan|discover|portscan|ports|certificates|certs|dns|takeover|fingerprint|urls|apis|emails|cloudstorage|cloud|nuclei|report|migrate|diff|schedule)
         cmd="$1"
         shift
         # Normalize command aliases

@@ -1,14 +1,69 @@
 package commands
 
 import (
+	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/config"
+	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/parallel"
+	"github.com/asm-tool/asm-go/internal/scanner/ports"
 )
+
+func TestPersistScanResultWritesFindingsAndSnapshot(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	result := &parallel.ScanResult{
+		Domain:     "example.com",
+		Subdomains: []string{"www.example.com"},
+		Ports: []*ports.Result{{
+			Host: "www.example.com",
+			OpenPorts: []ports.Port{{
+				Port: 443, State: "open", Service: "https",
+			}},
+		}},
+	}
+	if err := persistScanResult(db, result, "full"); err != nil {
+		t.Fatalf("persistScanResult: %v", err)
+	}
+
+	domain, err := db.Domains.GetByName("example.com")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	if domain == nil {
+		t.Fatal("expected domain row after persist")
+	}
+
+	snapshots, err := db.GetLatestSnapshots("example.com", 2)
+	if err != nil {
+		t.Fatalf("GetLatestSnapshots: %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("snapshots = %d, want 1", len(snapshots))
+	}
+	var subs []string
+	if err := json.Unmarshal([]byte(snapshots[0].Subdomains), &subs); err != nil {
+		t.Fatalf("unmarshal subdomains: %v", err)
+	}
+	if len(subs) != 1 || subs[0] != "www.example.com" {
+		t.Fatalf("snapshot subdomains = %v", subs)
+	}
+}
+
+func TestPersistScanResultNilDatabaseIsNoop(t *testing.T) {
+	if err := persistScanResult(nil, &parallel.ScanResult{Domain: "example.com"}, "full"); err != nil {
+		t.Fatalf("persistScanResult(nil) = %v", err)
+	}
+}
 
 func TestRunFullScanRejectsInvalidDomainBeforeScanning(t *testing.T) {
 	err := runFullScan(nil, nil, "example.com/path", scanOptions{})
@@ -100,6 +155,8 @@ func TestScanNotifierUsesConfigAndFlagOverrides(t *testing.T) {
 	cfg.Notifications.Email.SMTPPort = 2525
 	cfg.Notifications.Email.FromAddr = "alerts@example.com"
 	cfg.Notifications.Email.ToAddr = "security@example.com,ops@example.com"
+	cfg.Notifications.Email.SMTPUser = "smtp-user"
+	cfg.Notifications.Email.SMTPPassword = "smtp-pass"
 
 	fromConfig := scanNotifier(cfg, scanOptions{})
 	if fromConfig.SlackWebhook != "https://hooks.slack.com/services/config" {
@@ -110,6 +167,9 @@ func TestScanNotifierUsesConfigAndFlagOverrides(t *testing.T) {
 	}
 	if fromConfig.SMTPHost != "smtp.example.com" || fromConfig.SMTPPort != 2525 || fromConfig.EmailFrom != "alerts@example.com" {
 		t.Fatalf("SMTP settings were not populated from config")
+	}
+	if fromConfig.SMTPUser != "smtp-user" || fromConfig.SMTPPassword != "smtp-pass" {
+		t.Fatalf("SMTP credentials were not populated from config")
 	}
 	if fromConfig.HTTPClient.Timeout != 3*time.Second {
 		t.Fatalf("notifier HTTP timeout = %v, want 3s", fromConfig.HTTPClient.Timeout)
