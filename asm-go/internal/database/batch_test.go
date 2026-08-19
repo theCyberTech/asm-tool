@@ -141,6 +141,14 @@ func TestSaveURLsBatch(t *testing.T) {
 		t.Fatalf("got %d URLs, want 250", len(got))
 	}
 
+	limited, err := db.GetURLsForDomainLimit("example.com", 10)
+	if err != nil {
+		t.Fatalf("GetURLsForDomainLimit: %v", err)
+	}
+	if len(limited) != 10 {
+		t.Fatalf("GetURLsForDomainLimit = %d, want 10", len(limited))
+	}
+
 	var found bool
 	for _, u := range got {
 		if u.URL == "https://example.com/p/0" {

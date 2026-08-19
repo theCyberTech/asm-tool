@@ -376,6 +376,106 @@ func TestDomainDetailRejectsInvalidPath(t *testing.T) {
 	}
 }
 
+func TestParseDomainDetailPath(t *testing.T) {
+	cases := []struct {
+		path   string
+		domain string
+		action string
+		ok     bool
+	}{
+		{"/domains/example.com", "example.com", "", true},
+		{"/domains/example.com/", "example.com", "", true},
+		{"/domains/example.com/refresh", "example.com", "refresh", true},
+		{"/domains/example.com/modal/ports", "example.com", "ports", true},
+		{"/domains/example.com/modal/certificates", "example.com", "certificates", true},
+		{"/domains/example.com/modal/technologies", "example.com", "technologies", true},
+		{"/domains/example.com/modal/dns", "example.com", "dns", true},
+		{"/domains/example.com/not-a-domain", "", "", false},
+		{"/domains/example.com/modal/nope", "", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := parseDomainDetailPath(tc.path)
+		if ok != tc.ok {
+			t.Fatalf("parseDomainDetailPath(%q) ok=%v, want %v", tc.path, ok, tc.ok)
+		}
+		if !ok {
+			continue
+		}
+		if got.domain != tc.domain || got.action != tc.action {
+			t.Fatalf("parseDomainDetailPath(%q) = %+v, want domain=%s action=%s", tc.path, got, tc.domain, tc.action)
+		}
+	}
+}
+
+func TestDomainDetailAssetModalsLoadHostRecords(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Domains.Add("example.com"); err != nil {
+		t.Fatalf("Add domain: %v", err)
+	}
+	if err := db.Ports.Add(&database.Port{
+		Host: "api.example.com", Port: 443, Protocol: "tcp", State: "open", Service: "https",
+	}); err != nil {
+		t.Fatalf("Add port: %v", err)
+	}
+	now := time.Now()
+	if err := db.Certificates.Add(&database.Certificate{
+		Host: "api.example.com", Port: 443, Subject: "api.example.com",
+		Issuer: "test-ca", NotBefore: now, NotAfter: now.Add(24 * time.Hour),
+		DaysUntilExpiry: 1, SAN: "api.example.com",
+	}); err != nil {
+		t.Fatalf("Add cert: %v", err)
+	}
+	if _, err := db.Raw().Exec(`
+		INSERT INTO technologies (host, status_code, title, server, technologies)
+		VALUES ('api.example.com', 200, 'API', 'nginx', 'Go')
+	`); err != nil {
+		t.Fatalf("insert technology: %v", err)
+	}
+	if _, err := db.Raw().Exec(`
+		INSERT INTO dns_records (domain, records)
+		VALUES ('api.example.com', 'A 1.2.3.4')
+	`); err != nil {
+		t.Fatalf("insert dns: %v", err)
+	}
+
+	handler := makeDomainDetailHandler(&Deps{DB: db, Cfg: config.Default()})
+
+	pageReq := httptest.NewRequest(http.MethodGet, "/domains/example.com", nil)
+	pageRec := httptest.NewRecorder()
+	handler(pageRec, pageReq)
+	if pageRec.Code != http.StatusOK {
+		t.Fatalf("page status = %d, body = %s", pageRec.Code, pageRec.Body.String())
+	}
+	page := pageRec.Body.String()
+	if strings.Contains(page, `x-data="{ activeModal: null }"`) {
+		t.Fatal("domain page still uses Alpine activeModal for asset dialogs")
+	}
+	if !strings.Contains(page, `id="modal-ports"`) || !strings.Contains(page, "openAssetModal('ports')") {
+		t.Fatal("domain page missing vanilla ports modal")
+	}
+
+	for _, kind := range []string{"ports", "certificates", "technologies", "dns"} {
+		req := httptest.NewRequest(http.MethodGet, "/domains/example.com/modal/"+kind, nil)
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s modal status = %d, body = %s", kind, rec.Code, rec.Body.String())
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, "api.example.com") {
+			t.Fatalf("%s modal missing subdomain host, body = %s", kind, body)
+		}
+		if !strings.Contains(body, `data-search="`) {
+			t.Fatalf("%s modal missing data-search filter attribute", kind)
+		}
+	}
+}
+
 func TestStatsHandlerJSONIncludesStatus(t *testing.T) {
 	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
 	if err != nil {

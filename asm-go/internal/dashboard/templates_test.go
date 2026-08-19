@@ -89,13 +89,34 @@ func TestDomainDetailRenderEscapesScanDataOutsideJSStrings(t *testing.T) {
 	if strings.Contains(out, quotedJS) {
 		t.Fatalf("rendered page still embeds payload as a JS string literal: %q", quotedJS)
 	}
-	if !strings.Contains(out, `data-search="`) {
-		t.Fatal("expected data-search attributes for Alpine filtering")
+	if !strings.Contains(out, "openAssetModal('ports')") {
+		t.Fatal("expected domain detail page to open asset modals without Alpine activeModal")
 	}
-	if !strings.Contains(out, "$el.dataset.search") {
-		t.Fatal("expected Alpine x-show to read dataset.search")
+	if !strings.Contains(out, `id="modal-body-ports"`) {
+		t.Fatal("expected lazy-loaded ports modal body target")
+	}
+	if strings.Contains(out, `x-data="{ activeModal: null }"`) {
+		t.Fatal("domain detail page still binds all modals to a single Alpine activeModal tree")
 	}
 	if !strings.Contains(out, "xss&#39;);alert(1);//") {
 		t.Fatal("expected HTML-escaped payload in attributes")
+	}
+
+	var modal bytes.Buffer
+	if err := RenderPartial(&modal, "ports-modal-body", data); err != nil {
+		t.Fatalf("RenderPartial ports-modal-body: %v", err)
+	}
+	modalOut := modal.String()
+	if strings.Contains(modalOut, quotedJS) {
+		t.Fatalf("ports modal still embeds payload as a JS string literal: %q", quotedJS)
+	}
+	if !strings.Contains(modalOut, `data-search="`) {
+		t.Fatal("expected data-search attributes for Alpine filtering")
+	}
+	if !strings.Contains(modalOut, "$el.dataset.search") {
+		t.Fatal("expected Alpine x-show to read dataset.search")
+	}
+	if !strings.Contains(modalOut, "xss&#39;);alert(1);//") {
+		t.Fatal("expected HTML-escaped payload in modal attributes")
 	}
 }

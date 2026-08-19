@@ -747,7 +747,19 @@ type CloudStorage struct {
 func (d *Database) GetCertificatesForDomain(domain string) ([]Certificate, error) {
 	var certs []Certificate
 	err := d.db.Select(&certs, `
-		SELECT * FROM certificates
+		SELECT
+			id, host, port,
+			COALESCE(subject, '') AS subject,
+			COALESCE(issuer, '') AS issuer,
+			COALESCE(serial_number, '') AS serial_number,
+			not_before,
+			not_after,
+			COALESCE(days_until_expiry, 0) AS days_until_expiry,
+			COALESCE(fingerprint, '') AS fingerprint,
+			COALESCE(san, '') AS san,
+			COALESCE(signature_algorithm, '') AS signature_algorithm,
+			checked_at
+		FROM certificates
 		WHERE host = ? OR host LIKE ?
 		ORDER BY days_until_expiry
 	`, domain, "%."+domain)
@@ -770,12 +782,23 @@ func (d *Database) GetTakeoversForDomain(domain string) ([]Takeover, error) {
 
 // GetURLsForDomain returns all URLs for a domain
 func (d *Database) GetURLsForDomain(domain string) ([]URL, error) {
+	return d.GetURLsForDomainLimit(domain, 0)
+}
+
+// GetURLsForDomainLimit returns URLs for a domain, optionally capped by limit (0 = no cap).
+func (d *Database) GetURLsForDomainLimit(domain string, limit int) ([]URL, error) {
 	var urls []URL
-	err := d.db.Select(&urls, `
+	query := `
 		SELECT * FROM urls
 		WHERE domain = ? OR domain LIKE ?
 		ORDER BY url
-	`, domain, "%."+domain)
+	`
+	args := []interface{}{domain, "%." + domain}
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+	err := d.db.Select(&urls, query, args...)
 	return urls, err
 }
 
@@ -924,10 +947,20 @@ type DNSRecord struct {
 func (d *Database) GetTechnologiesForDomain(domain string) ([]Technology, error) {
 	var techs []Technology
 	err := d.db.Select(&techs, `
-		SELECT * FROM technologies
-		WHERE host LIKE ? OR host = ?
+		SELECT
+			id, host,
+			COALESCE(status_code, 0) AS status_code,
+			COALESCE(title, '') AS title,
+			COALESCE(server, '') AS server,
+			COALESCE(technologies, '') AS technologies,
+			COALESCE(headers, '') AS headers,
+			COALESCE(content_length, 0) AS content_length,
+			COALESCE(redirect_url, '') AS redirect_url,
+			checked_at
+		FROM technologies
+		WHERE host = ? OR host LIKE ?
 		ORDER BY host
-	`, "%."+domain, domain)
+	`, domain, "%."+domain)
 	if err != nil && isTableNotExistsError(err) {
 		return []Technology{}, nil
 	}
@@ -938,10 +971,14 @@ func (d *Database) GetTechnologiesForDomain(domain string) ([]Technology, error)
 func (d *Database) GetDNSRecordsForDomain(domain string) ([]DNSRecord, error) {
 	var records []DNSRecord
 	err := d.db.Select(&records, `
-		SELECT * FROM dns_records
-		WHERE domain LIKE ? OR domain = ?
+		SELECT
+			id, domain,
+			COALESCE(records, '') AS records,
+			checked_at
+		FROM dns_records
+		WHERE domain = ? OR domain LIKE ?
 		ORDER BY domain
-	`, "%."+domain, domain)
+	`, domain, "%."+domain)
 	if err != nil && isTableNotExistsError(err) {
 		return []DNSRecord{}, nil
 	}
@@ -952,10 +989,20 @@ func (d *Database) GetDNSRecordsForDomain(domain string) ([]DNSRecord, error) {
 func (d *Database) GetPortsForDomain(domain string) ([]Port, error) {
 	var ports []Port
 	err := d.db.Select(&ports, `
-		SELECT * FROM ports
-		WHERE (host LIKE ? OR host = ?) AND state = 'open'
+		SELECT
+			id, host, port,
+			COALESCE(protocol, 'tcp') AS protocol,
+			COALESCE(service, '') AS service,
+			COALESCE(version, '') AS version,
+			COALESCE(product, '') AS product,
+			COALESCE(state, 'open') AS state,
+			COALESCE(banner, '') AS banner,
+			discovered_at,
+			last_seen
+		FROM ports
+		WHERE (host = ? OR host LIKE ?) AND state = 'open'
 		ORDER BY host, port
-	`, "%."+domain, domain)
+	`, domain, "%."+domain)
 	if err != nil && isTableNotExistsError(err) {
 		return []Port{}, nil
 	}

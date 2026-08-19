@@ -156,7 +156,7 @@
                 <tbody>
                     {{range .ChangeEvents}}
                     <tr>
-                        <td><a href="/domains/{{.Domain}}" class="text-mono">{{.Domain}}</a></td>
+                        <td><a href="/domains/{{.Domain}}" class="text-mono" hx-boost="false">{{.Domain}}</a></td>
                         <td>
                             {{if eq .Severity "critical"}}<span class="severity severity-critical">critical</span>
                             {{else if eq .Severity "high"}}<span class="severity severity-high">high</span>
@@ -269,7 +269,7 @@
 {{range .Domains}}
 <tr class="domain-row" style="cursor: pointer;" onclick="window.location='/domains/{{.Domain}}'">
     <td>
-        <a href="/domains/{{.Domain}}" class="domain-link">
+        <a href="/domains/{{.Domain}}" class="domain-link" hx-boost="false">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px; color: var(--accent-blue);">
                 <circle cx="12" cy="12" r="10"/>
                 <line x1="2" y1="12" x2="22" y2="12"/>

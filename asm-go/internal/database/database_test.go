@@ -476,3 +476,51 @@ func TestDomainScopedQueriesRejectSuffixCollision(t *testing.T) {
 	}
 }
 
+func TestDomainAssetQueriesTolerateNullColumns(t *testing.T) {
+	db, err := New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Raw().Exec(`
+		INSERT INTO ports (host, port, protocol, state, discovered_at, last_seen)
+		VALUES ('www.example.com', 443, 'tcp', 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+		INSERT INTO certificates (host, port, subject, issuer, not_before, not_after, days_until_expiry)
+		VALUES ('www.example.com', 443, '', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
+		INSERT INTO technologies (host, title, server, technologies, headers, redirect_url)
+		VALUES ('www.example.com', NULL, NULL, NULL, NULL, NULL);
+		INSERT INTO dns_records (domain, records) VALUES ('www.example.com', '');
+	`); err != nil {
+		t.Fatalf("insert sparse rows: %v", err)
+	}
+
+	ports, err := db.GetPortsForDomain("example.com")
+	if err != nil {
+		t.Fatalf("GetPortsForDomain: %v", err)
+	}
+	if len(ports) != 1 {
+		t.Fatalf("ports = %d, want 1", len(ports))
+	}
+	certs, err := db.GetCertificatesForDomain("example.com")
+	if err != nil {
+		t.Fatalf("GetCertificatesForDomain: %v", err)
+	}
+	if len(certs) != 1 {
+		t.Fatalf("certs = %d, want 1", len(certs))
+	}
+	techs, err := db.GetTechnologiesForDomain("example.com")
+	if err != nil {
+		t.Fatalf("GetTechnologiesForDomain: %v", err)
+	}
+	if len(techs) != 1 {
+		t.Fatalf("techs = %d, want 1", len(techs))
+	}
+	dns, err := db.GetDNSRecordsForDomain("example.com")
+	if err != nil {
+		t.Fatalf("GetDNSRecordsForDomain: %v", err)
+	}
+	if len(dns) != 1 {
+		t.Fatalf("dns = %d, want 1", len(dns))
+	}
+}
