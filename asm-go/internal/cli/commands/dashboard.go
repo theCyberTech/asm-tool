@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -16,12 +17,22 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/asm-tool/asm-go/internal/dashboard"
+	"github.com/asm-tool/asm-go/internal/target"
 )
 
 var (
-	dashboardPort int
-	dashboardHost string
+	dashboardPort      int
+	dashboardHost      string
+	dashboardEnableOps bool
+	dashboardOpsToken  string
 )
+
+type dashboardOptions struct {
+	host      string
+	port      int
+	enableOps bool
+	token     string
+}
 
 // DashboardCmd creates the dashboard command
 func DashboardCmd(deps *Deps) *cobra.Command {
@@ -30,18 +41,68 @@ func DashboardCmd(deps *Deps) *cobra.Command {
 		Short: "Start the web dashboard server",
 		Long:  "Start an HTTP server that serves the ASM dashboard for visualizing attack surface data.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDashboard(deps, dashboardHost, dashboardPort)
+			opts, err := resolveDashboardOptions(cmd, deps)
+			if err != nil {
+				return err
+			}
+			return runDashboard(deps, opts)
 		},
 	}
 
 	cmd.Flags().IntVarP(&dashboardPort, "port", "p", 8080, "port to listen on")
 	cmd.Flags().StringVar(&dashboardHost, "host", "127.0.0.1", "host to bind to")
+	cmd.Flags().BoolVar(&dashboardEnableOps, "enable-ops", false, "Enable the Operations page and run API (disabled by default)")
+	cmd.Flags().StringVar(&dashboardOpsToken, "ops-token", "", "Shared secret for Operations (ASM_DASHBOARD_TOKEN preferred)")
 
 	return cmd
 }
 
-func runDashboard(deps *Deps, host string, port int) error {
-	addr, err := findAvailableAddr(host, port)
+func resolveDashboardOptions(cmd *cobra.Command, deps *Deps) (dashboardOptions, error) {
+	opts := dashboardOptions{
+		host:      dashboardHost,
+		port:      dashboardPort,
+		enableOps: dashboardEnableOps,
+		token:     dashboardOpsToken,
+	}
+	if deps != nil && deps.Cfg != nil {
+		if !cmd.Flags().Changed("host") && deps.Cfg.Dashboard.Host != "" {
+			opts.host = deps.Cfg.Dashboard.Host
+		}
+		if !cmd.Flags().Changed("port") && deps.Cfg.Dashboard.Port > 0 {
+			opts.port = deps.Cfg.Dashboard.Port
+		}
+		if !cmd.Flags().Changed("enable-ops") {
+			opts.enableOps = deps.Cfg.Dashboard.EnableOps
+		}
+		if !cmd.Flags().Changed("ops-token") && strings.TrimSpace(opts.token) == "" {
+			opts.token = deps.Cfg.Dashboard.Token
+		}
+	}
+	opts.token = strings.TrimSpace(opts.token)
+
+	if opts.enableOps && !isLoopbackHost(opts.host) && opts.token == "" {
+		return opts, fmt.Errorf("operations require a token when binding to %s; set ASM_DASHBOARD_TOKEN or --ops-token", opts.host)
+	}
+	return opts, nil
+}
+
+func isLoopbackHost(host string) bool {
+	h := strings.TrimSpace(host)
+	if h == "" {
+		return false
+	}
+	if strings.HasPrefix(h, "[") && strings.HasSuffix(h, "]") {
+		h = strings.TrimSuffix(strings.TrimPrefix(h, "["), "]")
+	}
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
+func runDashboard(deps *Deps, opts dashboardOptions) error {
+	addr, err := findAvailableAddr(opts.host, opts.port)
 	if err != nil {
 		return err
 	}
@@ -49,6 +110,8 @@ func runDashboard(deps *Deps, host string, port int) error {
 	// Create router
 	mux := http.NewServeMux()
 	ops := newDashboardOps(deps)
+	ops.enabled = opts.enableOps
+	ops.token = opts.token
 
 	// Register routes
 	mux.HandleFunc("/", makeIndexHandler(deps))
@@ -102,11 +165,21 @@ func runDashboard(deps *Deps, host string, port int) error {
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Server:"),
 		valueStyle.Render(fmt.Sprintf("http://%s", addr)))
-	if addr != fmt.Sprintf("%s:%d", host, port) {
+	if addr != fmt.Sprintf("%s:%d", opts.host, opts.port) {
 		fmt.Printf("  %s %s\n",
 			labelStyle.Render("Note:"),
-			valueStyle.Render(fmt.Sprintf("Port %d was in use, using %s instead", port, addr)))
+			valueStyle.Render(fmt.Sprintf("Port %d was in use, using %s instead", opts.port, addr)))
 	}
+	opsStatus := "disabled"
+	if opts.enableOps {
+		opsStatus = "enabled"
+		if opts.token != "" {
+			opsStatus = "enabled (token required)"
+		}
+	}
+	fmt.Printf("  %s %s\n",
+		labelStyle.Render("Operations:"),
+		valueStyle.Render(opsStatus))
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Status:"),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("40")).Render("Running"))
@@ -566,6 +639,17 @@ func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
+		decoded, err := url.PathUnescape(domain)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		normalized, err := target.NormalizeTarget(decoded)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		domain = normalized
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 

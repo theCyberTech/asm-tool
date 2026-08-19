@@ -119,6 +119,12 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
 # Custom port
 ./asm.sh dashboard --port 3000
+
+# Enable Operations (scan runner). Disabled by default.
+./asm.sh dashboard --enable-ops
+
+# Non-loopback binds require a token:
+# ASM_DASHBOARD_TOKEN=secret ./asm.sh dashboard --host 0.0.0.0 --enable-ops
 ```
 
 ### Reporting

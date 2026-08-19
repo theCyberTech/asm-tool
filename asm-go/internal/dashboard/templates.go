@@ -33,6 +33,7 @@ type PageData struct {
 
 // OperationsData holds command runner state for the operations dashboard.
 type OperationsData struct {
+	Enabled      bool
 	Actions      []OperationOption
 	Runs         []RunRecord
 	RunningCount int
