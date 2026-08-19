@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/ratelimit"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/ratelimit"
 )
 
 // DefaultUserAgent is the User-Agent header sent by scanner modules.

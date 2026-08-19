@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
-	"github.com/asm-tool/asm-go/internal/database"
-	"github.com/asm-tool/asm-go/internal/notifier"
-	"github.com/asm-tool/asm-go/internal/parallel"
-	"github.com/asm-tool/asm-go/internal/persistence"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/config"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/notifier"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/parallel"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/persistence"
 )
 
 // JobType identifies a scheduled job.
@@ -449,6 +449,10 @@ func (s *Scheduler) executeScan(jobType JobType, domain string) (*parallel.ScanR
 		}
 	}
 
+	if len(result.Errors) > 0 {
+		return result, fmt.Errorf("scan completed with %d module error(s)", len(result.Errors))
+	}
+
 	return result, nil
 }
 
@@ -514,6 +518,7 @@ func (s *Scheduler) buildConfig(jobType JobType) parallel.RunConfig {
 
 	// Technologies
 	cfg.Technologies.InsecureSkipVerify = s.cfg.Scanning.InsecureSkipVerify
+	cfg.APIs.InsecureSkipVerify = s.cfg.Scanning.InsecureSkipVerify
 
 	return cfg
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -15,12 +16,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
-	"github.com/asm-tool/asm-go/internal/dashboard"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/dashboard"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/target"
 )
 
 var (
-	dashboardPort int
-	dashboardHost string
+	dashboardPort      int
+	dashboardHost      string
+	dashboardAuthToken string
 )
 
 // DashboardCmd creates the dashboard command
@@ -30,18 +33,23 @@ func DashboardCmd(deps *Deps) *cobra.Command {
 		Short: "Start the web dashboard server",
 		Long:  "Start an HTTP server that serves the ASM dashboard for visualizing attack surface data.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDashboard(deps, dashboardHost, dashboardPort)
+			opts, err := resolveDashboardOptions(cmd, deps)
+			if err != nil {
+				return err
+			}
+			return runDashboard(deps, opts)
 		},
 	}
 
 	cmd.Flags().IntVarP(&dashboardPort, "port", "p", 8080, "port to listen on")
 	cmd.Flags().StringVar(&dashboardHost, "host", "127.0.0.1", "host to bind to")
+	cmd.Flags().StringVar(&dashboardAuthToken, "auth-token", "", "Shared secret for dashboard access (ASM_DASHBOARD_TOKEN preferred)")
 
 	return cmd
 }
 
-func runDashboard(deps *Deps, host string, port int) error {
-	addr, err := findAvailableAddr(host, port)
+func runDashboard(deps *Deps, opts dashboardOptions) error {
+	addr, err := findAvailableAddr(opts.host, opts.port)
 	if err != nil {
 		return err
 	}
@@ -81,7 +89,7 @@ func runDashboard(deps *Deps, host string, port int) error {
 	// Create server
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      withSecurityHeaders(withDashboardAuth(opts.token, mux)),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -102,11 +110,18 @@ func runDashboard(deps *Deps, host string, port int) error {
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Server:"),
 		valueStyle.Render(fmt.Sprintf("http://%s", addr)))
-	if addr != fmt.Sprintf("%s:%d", host, port) {
+	if addr != fmt.Sprintf("%s:%d", opts.host, opts.port) {
 		fmt.Printf("  %s %s\n",
 			labelStyle.Render("Note:"),
-			valueStyle.Render(fmt.Sprintf("Port %d was in use, using %s instead", port, addr)))
+			valueStyle.Render(fmt.Sprintf("Port %d was in use, using %s instead", opts.port, addr)))
 	}
+	authStatus := "open (loopback)"
+	if opts.token != "" {
+		authStatus = "token required"
+	}
+	fmt.Printf("  %s %s\n",
+		labelStyle.Render("Auth:"),
+		valueStyle.Render(authStatus))
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Status:"),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("40")).Render("Running"))
@@ -566,6 +581,17 @@ func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
+		decoded, err := url.PathUnescape(domain)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		normalized, err := target.NormalizeTarget(decoded)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		domain = normalized
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 

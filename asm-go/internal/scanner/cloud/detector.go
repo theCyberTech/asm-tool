@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/httpclient"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/httpclient"
 )
 
 // Bucket represents a discovered cloud storage bucket

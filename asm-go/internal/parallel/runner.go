@@ -5,20 +5,21 @@ package parallel
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/scanner/apis"
-	"github.com/asm-tool/asm-go/internal/scanner/certificates"
-	"github.com/asm-tool/asm-go/internal/scanner/cloud"
-	"github.com/asm-tool/asm-go/internal/scanner/dns"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
-	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
-	"github.com/asm-tool/asm-go/internal/scanner/ports"
-	"github.com/asm-tool/asm-go/internal/scanner/subdomains"
-	"github.com/asm-tool/asm-go/internal/scanner/takeover"
-	"github.com/asm-tool/asm-go/internal/scanner/technologies"
-	"github.com/asm-tool/asm-go/internal/scanner/urls"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/apis"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/certificates"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/cloud"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/dns"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/emails"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/ports"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/subdomains"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/takeover"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/technologies"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/urls"
 )
 
 // ModuleType identifies a scanner module.
@@ -62,6 +63,21 @@ type ScanResult struct {
 	Errors          map[ModuleType]error
 }
 
+// OpenPortCount returns the number of open ports across all hosts.
+func (r *ScanResult) OpenPortCount() int {
+	if r == nil {
+		return 0
+	}
+	n := 0
+	for _, p := range r.Ports {
+		if p == nil {
+			continue
+		}
+		n += len(p.OpenPorts)
+	}
+	return n
+}
+
 // Runner is the scan orchestrator. It has no configuration state; all config
 // comes through RunConfig passed to Run().
 type Runner struct{}
@@ -78,6 +94,16 @@ func (r *Runner) Run(ctx context.Context, domain string, cfg RunConfig, enabled 
 
 	// URLs, emails, and cloud modules read the domain from cfg.Subdomains.Domain.
 	applyRunDomain(&cfg, domain)
+
+	if progress != nil {
+		orig := progress
+		var progressMu sync.Mutex
+		progress = func(module ModuleType, duration time.Duration, err error) {
+			progressMu.Lock()
+			defer progressMu.Unlock()
+			orig(module, duration, err)
+		}
+	}
 
 	// Phase 1: Subdomain enumeration (sequential — results feed Phase 2).
 	if enabled[ModuleSubdomains] {
@@ -186,6 +212,15 @@ func runModule(ctx context.Context, mod ModuleType, cfg RunConfig, hosts []strin
 	case ModuleTechnologies:
 		results := technologies.Scan(ctx, cfg.Technologies, hosts)
 		result.Technologies = results
+		var failed int
+		for _, r := range results {
+			if r != nil && r.Error != "" {
+				failed++
+			}
+		}
+		if failed == len(results) && len(results) > 0 {
+			return fmt.Errorf("technology fingerprinting failed for all %d hosts", len(results))
+		}
 		return nil
 	case ModuleURLs:
 		r := urls.Scan(ctx, cfg.URLs, cfg.Subdomains.Domain)

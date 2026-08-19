@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
-	"github.com/asm-tool/asm-go/internal/database"
-	"github.com/asm-tool/asm-go/internal/parallel"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/config"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/parallel"
 )
 
 func TestParseCron(t *testing.T) {

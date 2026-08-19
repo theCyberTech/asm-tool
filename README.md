@@ -47,8 +47,7 @@ chmod +x asm.sh
 ### Using Go Install (CLI only)
 
 ```bash
-# Module path is github.com/asm-tool/asm-go (repository: theCyberTech/asm-tool)
-go install github.com/asm-tool/asm-go/cmd/asm@latest
+go install github.com/theCyberTech/asm-tool/asm-go/cmd/asm@latest
 ```
 
 ### Install Nuclei (optional)
@@ -119,15 +118,18 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
 # Custom port
 ./asm.sh dashboard --port 3000
+
+# Bind off loopback only with a token
+# ASM_DASHBOARD_TOKEN=secret ./asm.sh dashboard --host 0.0.0.0
 ```
 
 ### Reporting
 
 ```bash
-# Generate a report for all scanned domains
-./asm.sh report --format html --output ./reports/
-./asm.sh report --format markdown
-./asm.sh report --format json
+# Generate a report for a scanned domain
+./asm.sh report example.com --format html --output ./reports/
+./asm.sh report example.com --format markdown
+./asm.sh report example.com --format json
 ```
 
 ### Scheduled Scans

@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/parallel"
-	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/parallel"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/ports"
 )
 
 func TestGenerateUsesSafeFilename(t *testing.T) {
@@ -80,5 +81,38 @@ func assertVulnNames(t *testing.T, vulns []*nuclei.Finding, names ...string) {
 		if vulns[i].Info.Name != name {
 			t.Fatalf("expected vulnerability %d to be %q, got %q", i, name, vulns[i].Info.Name)
 		}
+	}
+}
+
+func TestParseFormat(t *testing.T) {
+	got, err := ParseFormat("MD")
+	if err != nil || got != FormatMarkdown {
+		t.Fatalf("ParseFormat(MD) = %q, %v", got, err)
+	}
+	if _, err := ParseFormat("pdf"); err == nil {
+		t.Fatal("expected error for pdf")
+	}
+}
+
+func TestOpenPortCountUsesOpenPortsNotHosts(t *testing.T) {
+	rep := &Reporter{OutputDir: t.TempDir()}
+	result := &parallel.ScanResult{
+		Domain:    "example.com",
+		StartTime: time.Unix(0, 0),
+		Errors:    make(map[parallel.ModuleType]error),
+		Ports: []*ports.Result{
+			{Host: "a.example.com", OpenPorts: []ports.Port{{Port: 80}, {Port: 443}}},
+			{Host: "b.example.com"},
+		},
+	}
+	if result.OpenPortCount() != 2 {
+		t.Fatalf("OpenPortCount = %d, want 2", result.OpenPortCount())
+	}
+	content, err := rep.generateJSON(result)
+	if err != nil {
+		t.Fatalf("generateJSON: %v", err)
+	}
+	if !strings.Contains(content, `"open_port_count": 2`) {
+		t.Fatalf("json missing open_port_count 2: %s", content)
 	}
 }

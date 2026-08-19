@@ -79,29 +79,33 @@ func (m *Monitor) Check(ctx context.Context, host string, port int) *Certificate
 		Port: port,
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 
-	// Create TLS config
+	// Collect the peer certificate even when it is expired, mismatched, or untrusted.
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: m.InsecureSkipVerify,
+		InsecureSkipVerify: true,
 		ServerName:         host,
 	}
 
-	// Create dialer with timeout
-	dialer := &net.Dialer{
-		Timeout: m.Timeout,
+	dialer := &tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: m.Timeout},
+		Config:    tlsConfig,
 	}
 
-	// Connect with context
-	conn, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		cert.Error = err.Error()
 		return cert
 	}
-	defer conn.Close()
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		conn.Close()
+		cert.Error = "unexpected TLS connection type"
+		return cert
+	}
+	defer tlsConn.Close()
 
-	// Get peer certificates
-	state := conn.ConnectionState()
+	state := tlsConn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
 		cert.Error = "no certificates returned"
 		return cert
@@ -138,6 +142,20 @@ func (m *Monitor) Check(ctx context.Context, host string, port int) *Certificate
 	// Extract SANs (Subject Alternative Names)
 	cert.SAN = extractSANs(x509Cert)
 
+	if !m.InsecureSkipVerify {
+		opts := x509.VerifyOptions{
+			DNSName:       host,
+			Intermediates: x509.NewCertPool(),
+			CurrentTime:   now,
+		}
+		for _, extra := range state.PeerCertificates[1:] {
+			opts.Intermediates.AddCert(extra)
+		}
+		if _, err := x509Cert.Verify(opts); err != nil {
+			cert.Error = err.Error()
+		}
+	}
+
 	return cert
 }
 
@@ -159,7 +177,7 @@ func (m *Monitor) CheckBatch(ctx context.Context, hosts []string, port int) *Res
 	results := make(chan *Certificate, len(hosts))
 
 	// Semaphore for limiting concurrency
-	sem := make(chan struct{}, m.Workers)
+	sem := make(chan struct{}, normalizeWorkers(m.Workers, DefaultMonitor().Workers))
 
 	var wg sync.WaitGroup
 
@@ -214,7 +232,10 @@ func (m *Monitor) CheckBatch(ctx context.Context, hosts []string, port int) *Res
 func (r *Result) GetExpiring(days int) []*Certificate {
 	var expiring []*Certificate
 	for _, cert := range r.Certificates {
-		if cert.Error == "" && cert.DaysUntilExpiry <= days && !cert.IsExpired {
+		if cert.NotAfter.IsZero() {
+			continue
+		}
+		if cert.DaysUntilExpiry <= days && !cert.IsExpired {
 			expiring = append(expiring, cert)
 		}
 	}
@@ -225,7 +246,7 @@ func (r *Result) GetExpiring(days int) []*Certificate {
 func (r *Result) GetExpired() []*Certificate {
 	var expired []*Certificate
 	for _, cert := range r.Certificates {
-		if cert.Error == "" && cert.IsExpired {
+		if !cert.NotAfter.IsZero() && cert.IsExpired {
 			expired = append(expired, cert)
 		}
 	}
@@ -315,7 +336,7 @@ func Scan(ctx context.Context, cfg Config, hosts []string) *ScanResult {
 	}
 
 	// Apply defaults for zero-value fields.
-	if cfg.Workers == 0 {
+	if cfg.Workers <= 0 {
 		cfg.Workers = DefaultConfig().Workers
 	}
 	if cfg.Timeout == 0 {
@@ -356,6 +377,8 @@ func (r *Result) GetSummary() *Summary {
 	for _, cert := range r.Certificates {
 		if cert.Error != "" {
 			s.Errors++
+		}
+		if cert.NotAfter.IsZero() {
 			continue
 		}
 
@@ -372,4 +395,14 @@ func (r *Result) GetSummary() *Summary {
 	}
 
 	return s
+}
+
+func normalizeWorkers(n, fallback int) int {
+	if n > 0 {
+		return n
+	}
+	if fallback > 0 {
+		return fallback
+	}
+	return 1
 }

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/parallel"
-	"github.com/asm-tool/asm-go/internal/scanner/cloud"
-	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
-	"github.com/asm-tool/asm-go/internal/scanner/takeover"
-	"github.com/asm-tool/asm-go/internal/target"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/parallel"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/cloud"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/takeover"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/target"
 )
 
 // Format represents the report output format
@@ -24,6 +24,20 @@ const (
 	FormatMarkdown Format = "markdown"
 	FormatHTML     Format = "html"
 )
+
+// ParseFormat converts a user-supplied format name into a Format value.
+func ParseFormat(s string) (Format, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "json":
+		return FormatJSON, nil
+	case "markdown", "md":
+		return FormatMarkdown, nil
+	case "html":
+		return FormatHTML, nil
+	default:
+		return "", fmt.Errorf("unknown report format %q (want json, markdown, or html)", s)
+	}
+}
 
 // Reporter generates reports from scan results
 type Reporter struct {
@@ -195,7 +209,7 @@ func (r *Reporter) generateJSON(result *parallel.ScanResult) (string, error) {
 		Duration: result.Duration.Round(time.Millisecond).String(),
 		Summary: ReportSummary{
 			SubdomainCount:   len(result.Subdomains),
-			OpenPortCount:    len(result.Ports),
+			OpenPortCount:    result.OpenPortCount(),
 			CertificateCount: len(result.Certificates),
 			TakeoverCount:    countVulnerableTakeovers(result),
 			TechCount:        countTechnologies(result),
@@ -358,7 +372,7 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 	sb.WriteString("| Metric | Count |\n")
 	sb.WriteString("|--------|-------|\n")
 	sb.WriteString(fmt.Sprintf("| Subdomains | %d |\n", len(result.Subdomains)))
-	sb.WriteString(fmt.Sprintf("| Open Ports | %d |\n", len(result.Ports)))
+	sb.WriteString(fmt.Sprintf("| Open Ports | %d |\n", result.OpenPortCount()))
 	sb.WriteString(fmt.Sprintf("| Certificates | %d |\n", len(result.Certificates)))
 	sb.WriteString(fmt.Sprintf("| Takeover Vulnerabilities | %d |\n", countVulnerableTakeovers(result)))
 	sb.WriteString(fmt.Sprintf("| Technologies | %d |\n", countTechnologies(result)))
@@ -777,7 +791,7 @@ func (r *Reporter) generateHTML(result *parallel.ScanResult) (string, error) {
 		"ScanTime":       result.StartTime.Format(time.RFC3339),
 		"Duration":       result.Duration.Round(time.Millisecond).String(),
 		"SubdomainCount": len(result.Subdomains),
-		"PortCount":      len(result.Ports),
+		"PortCount":      result.OpenPortCount(),
 		"CertCount":      len(result.Certificates),
 		"TakeoverCount":  countVulnerableTakeovers(result),
 		"TechCount":      countTechnologies(result),

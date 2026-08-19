@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
 	"github.com/spf13/cobra"
 )
 

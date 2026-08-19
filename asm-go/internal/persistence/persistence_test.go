@@ -7,17 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/database"
-	"github.com/asm-tool/asm-go/internal/parallel"
-	"github.com/asm-tool/asm-go/internal/scanner/apis"
-	"github.com/asm-tool/asm-go/internal/scanner/certificates"
-	"github.com/asm-tool/asm-go/internal/scanner/cloud"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
-	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
-	"github.com/asm-tool/asm-go/internal/scanner/ports"
-	"github.com/asm-tool/asm-go/internal/scanner/takeover"
-	"github.com/asm-tool/asm-go/internal/scanner/technologies"
-	"github.com/asm-tool/asm-go/internal/scanner/urls"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/parallel"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/apis"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/certificates"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/cloud"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/emails"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/ports"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/takeover"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/technologies"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/urls"
 )
 
 func TestScannerHelpersPersistDashboardData(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/asm-tool/asm-go/internal/config"
-	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/config"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )

@@ -1,9 +1,12 @@
 package nuclei
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSanitizeNucleiTarget(t *testing.T) {
@@ -117,10 +120,44 @@ func TestBuildArgsSkipsUnsafeHeaders(t *testing.T) {
 			foundOK = true
 		}
 		if strings.Contains(h, "X-Injected") {
-			t.Fatalf("injected header present: %q", h)
+			t.Fatalf("injected header written: %q", h)
 		}
 	}
 	if !foundOK {
-		t.Fatalf("safe header missing, got %v", headers)
+		t.Fatal("expected X-Ok header")
+	}
+}
+
+func TestScanMissingBinary(t *testing.T) {
+	_, err := Scan(context.Background(), Config{
+		BinaryPath: filepath.Join(t.TempDir(), "missing-nuclei"),
+		Timeout:    time.Second,
+	}, []string{"example.com"})
+	if err == nil {
+		t.Fatal("expected error for missing nuclei binary")
+	}
+}
+
+func TestScanParsesFindingsFromFakeBinary(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "nuclei")
+	script := "#!/bin/sh\n" +
+		`echo '{"template-id":"t1","info":{"name":"finding","severity":"high"},"host":"example.com","matched-at":"https://example.com"}'` +
+		"\nexit 0\n"
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	findings, err := Scan(context.Background(), Config{
+		BinaryPath: bin,
+		Timeout:    5 * time.Second,
+		RateLimit:  10,
+		BulkSize:   1,
+		Concurrency: 1,
+	}, []string{"example.com"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(findings) != 1 || findings[0].TemplateID != "t1" {
+		t.Fatalf("findings = %+v, want template t1", findings)
 	}
 }

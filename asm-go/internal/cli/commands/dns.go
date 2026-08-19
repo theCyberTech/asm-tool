@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/database"
-	"github.com/asm-tool/asm-go/internal/persistence"
-	"github.com/asm-tool/asm-go/internal/scanner/dns"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/persistence"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/dns"
 	"github.com/spf13/cobra"
 )
 

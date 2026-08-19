@@ -1,19 +1,20 @@
 package parallel
 
 import (
+	"strings"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/scanner/apis"
-	"github.com/asm-tool/asm-go/internal/scanner/certificates"
-	"github.com/asm-tool/asm-go/internal/scanner/cloud"
-	"github.com/asm-tool/asm-go/internal/scanner/dns"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
-	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
-	"github.com/asm-tool/asm-go/internal/scanner/ports"
-	"github.com/asm-tool/asm-go/internal/scanner/subdomains"
-	"github.com/asm-tool/asm-go/internal/scanner/takeover"
-	"github.com/asm-tool/asm-go/internal/scanner/technologies"
-	"github.com/asm-tool/asm-go/internal/scanner/urls"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/apis"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/certificates"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/cloud"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/dns"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/emails"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/ports"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/subdomains"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/takeover"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/technologies"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/urls"
 )
 
 // RunConfig holds all per-module configuration for a full scan.
@@ -158,7 +159,7 @@ func AllModules() []ModuleType {
 
 // ParseModule converts a string to a ModuleType.
 func ParseModule(name string) ModuleType {
-	switch name {
+	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "subdomains", "subdomain":
 		return ModuleSubdomains
 	case "ports", "port":

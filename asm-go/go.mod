@@ -1,4 +1,4 @@
-module github.com/asm-tool/asm-go
+module github.com/theCyberTech/asm-tool/asm-go
 
 go 1.25.0
 

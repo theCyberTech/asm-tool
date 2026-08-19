@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/parallel"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/parallel"
 )
 
 // Notifier sends notifications about scan results
@@ -143,7 +143,7 @@ func (n *Notifier) buildSlackMessage(result *parallel.ScanResult) SlackMessage {
 			Type: "section",
 			Fields: []SlackText{
 				{Type: "mrkdwn", Text: fmt.Sprintf("*Subdomains:* %d", len(result.Subdomains))},
-				{Type: "mrkdwn", Text: fmt.Sprintf("*Open Ports:* %d", len(result.Ports))},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Open Ports:* %d", result.OpenPortCount())},
 				{Type: "mrkdwn", Text: fmt.Sprintf("*Certificates:* %d", len(result.Certificates))},
 				{Type: "mrkdwn", Text: fmt.Sprintf("*Technologies:* %d", techCount)},
 			},
@@ -392,7 +392,7 @@ th { background: #f5f5f5; }
 <div class="stat"><div class="stat-number">%d</div><div class="stat-label">Buckets</div></div>
 `,
 		len(result.Subdomains),
-		len(result.Ports),
+		result.OpenPortCount(),
 		len(result.Certificates),
 		techCount,
 		len(result.URLs),

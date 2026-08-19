@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
-	"github.com/asm-tool/asm-go/internal/dashboard"
-	"github.com/asm-tool/asm-go/internal/target"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/config"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/dashboard"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/target"
 )
 
 const (
@@ -149,18 +149,6 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 			},
 		},
 		{
-			OperationOption: dashboard.OperationOption{ID: "build", Label: "Build"},
-			build: func(req operationRequest) (commandSpec, error) {
-				return commandSpec{Name: "go", Args: []string{"build", "-o", "asm-go", "./cmd/asm"}, Dir: o.goDir}, nil
-			},
-		},
-		{
-			OperationOption: dashboard.OperationOption{ID: "test", Label: "Test"},
-			build: func(req operationRequest) (commandSpec, error) {
-				return commandSpec{Name: "go", Args: []string{"test", "./..."}, Dir: o.goDir}, nil
-			},
-		},
-		{
 			OperationOption: dashboard.OperationOption{ID: "scan", Label: "Full scan", RequiresTarget: true, SupportsOutputFormat: true, SupportsNuclei: true},
 			build: func(req operationRequest) (commandSpec, error) {
 				normalized, err := target.NormalizeTarget(req.Target)
@@ -283,7 +271,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 
 func (o *dashboardOps) operationOptions() []dashboard.OperationOption {
 	order := []string{
-		"status", "build", "test", "scan", "discover", "dns", "urls",
+		"status", "scan", "discover", "dns", "urls",
 		"certificates", "takeover", "fingerprint", "apis", "emails",
 		"cloudstorage", "portscan", "nuclei", "report",
 	}
@@ -395,6 +383,9 @@ func (o *dashboardOps) start(req operationRequest) (dashboard.RunRecord, error) 
 	}
 	if req.AllKnown && !def.SupportsAllKnown {
 		return dashboard.RunRecord{}, fmt.Errorf("%s does not support all-known mode", def.Label)
+	}
+	if def.RequiresTarget && !req.AllKnown && strings.TrimSpace(req.Target) == "" {
+		return dashboard.RunRecord{}, fmt.Errorf("%s requires a target domain", def.Label)
 	}
 
 	spec, err := def.build(req)

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
-	"github.com/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/config"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
 )
 
 func newTestDashboardOps(t *testing.T, script string) *dashboardOps {
@@ -242,5 +242,105 @@ func TestDashboardOverviewStatCardsLinkToAssetPages(t *testing.T) {
 		if !strings.Contains(body, href) {
 			t.Fatalf("dashboard overview missing stat-card link %s", href)
 		}
+	}
+}
+
+func TestDashboardAuthRequiresToken(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	h := withDashboardAuth("secret", inner)
+
+	unauth := httptest.NewRequest(http.MethodGet, "/findings", nil)
+	unauthRec := httptest.NewRecorder()
+	h.ServeHTTP(unauthRec, unauth)
+	if unauthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want 401", unauthRec.Code)
+	}
+
+	auth := httptest.NewRequest(http.MethodGet, "/findings", nil)
+	auth.Header.Set("X-ASM-Token", "secret")
+	authRec := httptest.NewRecorder()
+	h.ServeHTTP(authRec, auth)
+	if authRec.Code != http.StatusOK {
+		t.Fatalf("authenticated status = %d, want 200", authRec.Code)
+	}
+
+	health := httptest.NewRequest(http.MethodGet, "/health", nil)
+	healthRec := httptest.NewRecorder()
+	h.ServeHTTP(healthRec, health)
+	if healthRec.Code != http.StatusOK {
+		t.Fatalf("health status = %d, want 200", healthRec.Code)
+	}
+}
+
+func TestResolveDashboardOptionsRequiresTokenOffLoopback(t *testing.T) {
+	deps := &Deps{Cfg: config.Default()}
+	cmd := DashboardCmd(deps)
+	if err := cmd.ParseFlags([]string{"--host", "0.0.0.0"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	_, err := resolveDashboardOptions(cmd, deps)
+	if err == nil {
+		t.Fatal("expected token requirement when binding to 0.0.0.0")
+	}
+}
+
+func TestIsLoopbackHost(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "localhost", "::1", "[::1]"} {
+		if !isLoopbackHost(host) {
+			t.Fatalf("isLoopbackHost(%q) = false, want true", host)
+		}
+	}
+	if isLoopbackHost("0.0.0.0") {
+		t.Fatal("isLoopbackHost(0.0.0.0) = true, want false")
+	}
+}
+
+func TestDashboardOpsOmitsBuildAndTest(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
+	ops.defs = ops.operationDefinitions()
+	for _, action := range []string{"build", "test"} {
+		if _, ok := ops.defs[action]; ok {
+			t.Fatalf("unexpected %s action", action)
+		}
+	}
+}
+
+func TestDashboardOpsRejectsMissingTarget(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
+	ops.defs = ops.operationDefinitions()
+	_, err := ops.start(operationRequest{Action: "scan"})
+	if err == nil || !strings.Contains(err.Error(), "requires a target") {
+		t.Fatalf("error = %v, want requires a target", err)
+	}
+}
+
+func TestDomainDetailRejectsInvalidPath(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	defer db.Close()
+
+	handler := makeDomainDetailHandler(&Deps{DB: db, Cfg: config.Default()})
+	req := httptest.NewRequest(http.MethodGet, "/domains/example.com/not-a-domain", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	h := withSecurityHeaders(inner)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Header().Get("X-Frame-Options") != "DENY" {
+		t.Fatalf("X-Frame-Options = %q", rec.Header().Get("X-Frame-Options"))
 	}
 }

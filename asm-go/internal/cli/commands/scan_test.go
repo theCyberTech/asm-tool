@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
-	"github.com/asm-tool/asm-go/internal/database"
-	"github.com/asm-tool/asm-go/internal/parallel"
-	"github.com/asm-tool/asm-go/internal/scanner/ports"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/config"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/parallel"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/ports"
 )
 
 func TestPersistScanResultWritesFindingsAndSnapshot(t *testing.T) {
@@ -186,5 +186,39 @@ func TestScanNotifierUsesConfigAndFlagOverrides(t *testing.T) {
 	}
 	if !reflect.DeepEqual(fromFlags.EmailTo, []string{"flag@example.com"}) {
 		t.Fatalf("EmailTo = %v, want flag recipient", fromFlags.EmailTo)
+	}
+}
+
+func TestValidateScanOptionsRejectsUnknownModuleAndFormat(t *testing.T) {
+	if err := validateScanOptions(scanOptions{onlyModules: []string{"not-a-module"}}); err == nil {
+		t.Fatal("expected unknown module error")
+	}
+	if err := validateScanOptions(scanOptions{outputFormat: "pdf"}); err == nil {
+		t.Fatal("expected unknown format error")
+	}
+	if err := validateScanOptions(scanOptions{onlyModules: []string{"PORTS"}, outputFormat: "md"}); err != nil {
+		t.Fatalf("valid options rejected: %v", err)
+	}
+}
+
+func TestBuildScanConfigAppliesAPIWorkersAndNucleiTimeout(t *testing.T) {
+	cfg := config.Default()
+	cfg.Timeouts.Nuclei = 12 * time.Minute
+	out := buildScanConfig(cfg, scanOptions{apiWorkers: 7})
+	if out.APIs.Workers != 7 {
+		t.Fatalf("APIs.Workers = %d, want 7", out.APIs.Workers)
+	}
+	if out.Nuclei.Timeout != 12*time.Minute {
+		t.Fatalf("Nuclei.Timeout = %s, want 12m", out.Nuclei.Timeout)
+	}
+	if !out.APIs.InsecureSkipVerify && cfg.Scanning.InsecureSkipVerify {
+		t.Fatal("expected APIs InsecureSkipVerify to follow scanning config")
+	}
+}
+
+func TestEnsureModulesEnabled(t *testing.T) {
+	err := ensureModulesEnabled(map[parallel.ModuleType]bool{parallel.ModulePorts: false}, scanOptions{onlyModules: []string{"ports"}})
+	if err == nil {
+		t.Fatal("expected error when --only enables nothing")
 	}
 }

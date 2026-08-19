@@ -9,14 +9,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/config"
-	"github.com/asm-tool/asm-go/internal/database"
-	"github.com/asm-tool/asm-go/internal/notifier"
-	"github.com/asm-tool/asm-go/internal/parallel"
-	"github.com/asm-tool/asm-go/internal/persistence"
-	"github.com/asm-tool/asm-go/internal/reporter"
-	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
-	"github.com/asm-tool/asm-go/internal/target"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/config"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/notifier"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/parallel"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/persistence"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/reporter"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/target"
 	"github.com/spf13/cobra"
 )
 
@@ -117,6 +117,9 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	if cfg == nil {
 		cfg = config.Default()
 	}
+	if err := validateScanOptions(opts); err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -146,6 +149,9 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	// Build config and enabled modules
 	runCfg := buildScanConfig(cfg, opts)
 	enabled := buildEnabledModules(cfg, opts)
+	if err := ensureModulesEnabled(enabled, opts); err != nil {
+		return err
+	}
 
 	// Print enabled modules
 	var enabledNames []string
@@ -218,17 +224,9 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 		rep := reporter.DefaultReporter()
 		rep.OutputDir = opts.outputDir
 
-		var format reporter.Format
-		switch strings.ToLower(opts.outputFormat) {
-		case "json":
-			format = reporter.FormatJSON
-		case "markdown", "md":
-			format = reporter.FormatMarkdown
-		case "html":
-			format = reporter.FormatHTML
-		default:
-			fmt.Printf("%s Unknown format: %s\n", highStyle.Render("[!]"), opts.outputFormat)
-			return nil
+		format, err := reporter.ParseFormat(opts.outputFormat)
+		if err != nil {
+			return err
 		}
 
 		path, err := rep.Generate(result, format)
@@ -260,6 +258,9 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 	fmt.Printf("%s Scan completed in %s\n", titleStyle.Render("[*]"),
 		valueStyle.Render(time.Since(startTime).Round(time.Millisecond).String()))
 
+	if len(result.Errors) > 0 {
+		return fmt.Errorf("scan completed with %d module error(s)", len(result.Errors))
+	}
 	return nil
 }
 
@@ -302,6 +303,10 @@ func buildScanConfig(cfg *config.Config, opts scanOptions) parallel.RunConfig {
 		out.URLs.Timeout = cfg.Timeouts.Gau
 	}
 
+	if opts.apiWorkers > 0 {
+		out.APIs.Workers = opts.apiWorkers
+	}
+
 	// Nuclei
 	out.ApplyNucleiConfig(
 		selectNucleiSeverities(cfg, opts),
@@ -311,6 +316,9 @@ func buildScanConfig(cfg *config.Config, opts scanOptions) parallel.RunConfig {
 	)
 	out.Nuclei.RateLimit = cfg.Scanning.RateLimit
 	out.Nuclei.ExcludeTags = splitCSV(cfg.Nuclei.ExcludeTags)
+	if cfg.Timeouts.Nuclei > 0 {
+		out.Nuclei.Timeout = cfg.Timeouts.Nuclei
+	}
 
 	// Email / Hunter
 	out.Emails.HunterAPIKey = cfg.Hunter.APIKey
@@ -320,6 +328,7 @@ func buildScanConfig(cfg *config.Config, opts scanOptions) parallel.RunConfig {
 	out.Takeover.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
 	out.Technologies.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
 	out.Cloud.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
+	out.APIs.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
 
 	return out
 }
@@ -356,6 +365,47 @@ func buildEnabledModules(cfg *config.Config, opts scanOptions) map[parallel.Modu
 	}
 
 	return enabled
+}
+
+func validateScanOptions(opts scanOptions) error {
+	if opts.outputFormat != "" {
+		if _, err := reporter.ParseFormat(opts.outputFormat); err != nil {
+			return err
+		}
+	}
+	if err := validateModuleNames(opts.onlyModules); err != nil {
+		return err
+	}
+	return validateModuleNames(opts.skipModules)
+}
+
+func validateModuleNames(names []string) error {
+	var unknown []string
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if parallel.ParseModule(name) == "" {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) > 0 {
+		return fmt.Errorf("unknown module(s): %s", strings.Join(unknown, ", "))
+	}
+	return nil
+}
+
+func ensureModulesEnabled(enabled map[parallel.ModuleType]bool, opts scanOptions) error {
+	if len(opts.onlyModules) == 0 {
+		return nil
+	}
+	for _, on := range enabled {
+		if on {
+			return nil
+		}
+	}
+	return fmt.Errorf("--only did not enable any modules")
 }
 
 // applyModuleSelection enables/disables modules based on CLI options.
@@ -482,7 +532,7 @@ func printScanSummary(result *parallel.ScanResult) {
 
 	// Asset counts
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Subdomains:", 20)), len(result.Subdomains))
-	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Open Ports:", 20)), len(result.Ports))
+	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Open Ports:", 20)), result.OpenPortCount())
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Certificates:", 20)), len(result.Certificates))
 
 	// Count technologies

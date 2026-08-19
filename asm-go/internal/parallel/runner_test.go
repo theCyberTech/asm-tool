@@ -3,7 +3,7 @@ package parallel
 import (
 	"testing"
 
-	"github.com/asm-tool/asm-go/internal/scanner/ports"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/ports"
 )
 
 func TestApplyRunDomainSetsSubdomainsDomain(t *testing.T) {

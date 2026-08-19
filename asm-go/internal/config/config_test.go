@@ -191,6 +191,7 @@ func TestApplyEnvOverridesPrefersEnv(t *testing.T) {
 	t.Setenv("ASM_SMTP_USER", "env-user")
 	t.Setenv("ASM_SMTP_PASSWORD", "env-pass")
 	t.Setenv("ASM_SLACK_WEBHOOK", "https://hooks.slack.com/env")
+	t.Setenv("ASM_DASHBOARD_TOKEN", "env-dash-token")
 
 	ApplyEnvOverrides(cfg)
 
@@ -202,6 +203,9 @@ func TestApplyEnvOverridesPrefersEnv(t *testing.T) {
 	}
 	if cfg.Notifications.Slack.WebhookURL != "https://hooks.slack.com/env" {
 		t.Errorf("WebhookURL = %q, want env webhook", cfg.Notifications.Slack.WebhookURL)
+	}
+	if cfg.Dashboard.Token != "env-dash-token" {
+		t.Errorf("Dashboard.Token = %q, want env-dash-token", cfg.Dashboard.Token)
 	}
 }
 

@@ -70,7 +70,7 @@ func New(dbPath string) (*Database, error) {
 	}
 
 	// Open database with WAL mode for better concurrency
-	db, err := sqlx.Connect("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
+	db, err := sqlx.Connect("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -737,22 +737,28 @@ type CloudStorage struct {
 // GetCertificatesForDomain returns all certificates for hosts matching a domain
 func (d *Database) GetCertificatesForDomain(domain string) ([]Certificate, error) {
 	var certs []Certificate
+	args := domainMatchArgs(domain)
 	err := d.db.Select(&certs, `
 		SELECT * FROM certificates
-		WHERE host LIKE ? OR host = ?
+		WHERE `+domainMatchClause("host")+`
 		ORDER BY days_until_expiry
-	`, "%"+domain, domain)
+	`, args...)
 	return certs, err
 }
 
 // GetTakeoversForDomain returns all takeover findings for a domain
 func (d *Database) GetTakeoversForDomain(domain string) ([]Takeover, error) {
 	var takeovers []Takeover
+	args := append(domainMatchArgs(domain), "open")
 	err := d.db.Select(&takeovers, `
-		SELECT * FROM takeovers
-		WHERE subdomain LIKE ? AND status = 'open'
+		SELECT id, subdomain, COALESCE(cname, '') AS cname, service,
+			COALESCE(takeover_type, '') AS takeover_type, COALESCE(confidence, '') AS confidence,
+			COALESCE(evidence, '') AS evidence, COALESCE(documentation, '') AS documentation,
+			status, discovered_at, resolved_at
+		FROM takeovers
+		WHERE `+domainMatchClause("subdomain")+` AND status = ?
 		ORDER BY subdomain
-	`, "%"+domain)
+	`, args...)
 	if err != nil && isTableNotExistsError(err) {
 		return []Takeover{}, nil
 	}
@@ -762,12 +768,16 @@ func (d *Database) GetTakeoversForDomain(domain string) ([]Takeover, error) {
 // GetURLsForDomain returns all URLs for a domain
 func (d *Database) GetURLsForDomain(domain string) ([]URL, error) {
 	var urls []URL
+	args := domainMatchArgs(domain)
 	err := d.db.Select(&urls, `
 		SELECT * FROM urls
-		WHERE domain = ? OR domain LIKE ?
+		WHERE `+domainMatchClause("domain")+`
 		ORDER BY url
-	`, domain, "%."+domain)
-	return urls, err
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	return filterURLsByDomain(urls, domain), nil
 }
 
 // GetAPIsForDomain returns all APIs for a domain
@@ -775,10 +785,12 @@ func (d *Database) GetAPIsForDomain(domain string) ([]API, error) {
 	var apis []API
 	err := d.db.Select(&apis, `
 		SELECT id, url, api_type, title, version, discovered_at FROM apis
-		WHERE url LIKE ?
 		ORDER BY url
-	`, "%"+domain+"%")
-	return apis, err
+	`)
+	if err != nil {
+		return nil, err
+	}
+	return filterAPIsByDomain(apis, domain), nil
 }
 
 // GetEmailsForDomain returns all emails for a domain
@@ -843,8 +855,7 @@ func (d *Database) GetDomainsWithStats() ([]DomainWithStats, error) {
 				d2.id as domain_id,
 				COUNT(*) as port_count
 			FROM domains d2
-			JOIN subdomains s ON s.domain_id = d2.id
-			JOIN ports pt ON pt.host = s.subdomain AND pt.state = 'open'
+			JOIN ports pt ON pt.state = 'open' AND ` + sqlHostMatchesDomainColumn("pt.host", "d2.domain") + `
 			GROUP BY d2.id
 		) p ON p.domain_id = d.id
 		LEFT JOIN (
@@ -853,7 +864,7 @@ func (d *Database) GetDomainsWithStats() ([]DomainWithStats, error) {
 				SUM(CASE WHEN f.severity = 'critical' THEN 1 ELSE 0 END) as critical_count,
 				SUM(CASE WHEN f.severity = 'high' THEN 1 ELSE 0 END) as high_count
 			FROM domains d3
-			JOIN findings f ON f.host LIKE '%' || d3.domain AND f.status = 'open'
+			JOIN findings f ON f.status = 'open' AND ` + sqlHostMatchesDomainColumn("f.host", "d3.domain") + `
 			GROUP BY d3.id
 		) f ON f.domain_id = d.id
 		WHERE d.active = 1
@@ -873,9 +884,10 @@ func (d *Database) GetDomainsWithStats() ([]DomainWithStats, error) {
 // GetVulnerabilitiesForDomain returns all vulnerabilities for a domain
 func (d *Database) GetVulnerabilitiesForDomain(domain string) ([]Finding, error) {
 	var findings []Finding
+	args := append(domainMatchArgs(domain), "open")
 	err := d.db.Select(&findings, `
 		SELECT * FROM findings
-		WHERE host LIKE ? AND status = 'open'
+		WHERE `+domainMatchClause("host")+` AND status = ?
 		ORDER BY
 			CASE severity
 				WHEN 'critical' THEN 1
@@ -885,7 +897,7 @@ func (d *Database) GetVulnerabilitiesForDomain(domain string) ([]Finding, error)
 				ELSE 5
 			END,
 			name
-	`, "%"+domain)
+	`, args...)
 	return findings, err
 }
 
@@ -914,11 +926,12 @@ type DNSRecord struct {
 // GetTechnologiesForDomain returns all technology fingerprints for a domain
 func (d *Database) GetTechnologiesForDomain(domain string) ([]Technology, error) {
 	var techs []Technology
+	args := domainMatchArgs(domain)
 	err := d.db.Select(&techs, `
 		SELECT * FROM technologies
-		WHERE host LIKE ? OR host = ?
+		WHERE `+domainMatchClause("host")+`
 		ORDER BY host
-	`, "%."+domain, domain)
+	`, args...)
 	if err != nil && isTableNotExistsError(err) {
 		return []Technology{}, nil
 	}
@@ -928,11 +941,12 @@ func (d *Database) GetTechnologiesForDomain(domain string) ([]Technology, error)
 // GetDNSRecordsForDomain returns DNS records for a domain
 func (d *Database) GetDNSRecordsForDomain(domain string) ([]DNSRecord, error) {
 	var records []DNSRecord
+	args := domainMatchArgs(domain)
 	err := d.db.Select(&records, `
 		SELECT * FROM dns_records
-		WHERE domain LIKE ? OR domain = ?
+		WHERE `+domainMatchClause("domain")+`
 		ORDER BY domain
-	`, "%."+domain, domain)
+	`, args...)
 	if err != nil && isTableNotExistsError(err) {
 		return []DNSRecord{}, nil
 	}
@@ -942,11 +956,12 @@ func (d *Database) GetDNSRecordsForDomain(domain string) ([]DNSRecord, error) {
 // GetPortsForDomain returns all open ports for hosts under a domain
 func (d *Database) GetPortsForDomain(domain string) ([]Port, error) {
 	var ports []Port
+	args := append(domainMatchArgs(domain), "open")
 	err := d.db.Select(&ports, `
 		SELECT * FROM ports
-		WHERE (host LIKE ? OR host = ?) AND state = 'open'
+		WHERE `+domainMatchClause("host")+` AND state = ?
 		ORDER BY host, port
-	`, "%."+domain, domain)
+	`, args...)
 	if err != nil && isTableNotExistsError(err) {
 		return []Port{}, nil
 	}
@@ -1167,61 +1182,62 @@ func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, erro
 		return nil, fmt.Errorf("failed to count subdomains: %w", err)
 	}
 
+	hostArgs := domainMatchArgs(domain)
+
 	// Count ports
 	if err := d.db.Get(&stats.PortCount, `
 		SELECT COUNT(*) FROM ports
-		WHERE (host LIKE ? OR host = ?) AND state = 'open'
-	`, "%."+domain, domain); err != nil {
+		WHERE `+domainMatchClause("host")+` AND state = ?
+	`, append(hostArgs, "open")...); err != nil {
 		return nil, fmt.Errorf("failed to count ports: %w", err)
 	}
 
 	// Count certificates
 	if err := d.db.Get(&stats.CertificateCount, `
 		SELECT COUNT(*) FROM certificates
-		WHERE host LIKE ? OR host = ?
-	`, "%."+domain, domain); err != nil {
+		WHERE `+domainMatchClause("host")+`
+	`, hostArgs...); err != nil {
 		return nil, fmt.Errorf("failed to count certificates: %w", err)
 	}
 
 	// Count technologies
 	if err := d.db.Get(&stats.TechnologyCount, `
 		SELECT COUNT(*) FROM technologies
-		WHERE host LIKE ? OR host = ?
-	`, "%."+domain, domain); err != nil {
+		WHERE `+domainMatchClause("host")+`
+	`, hostArgs...); err != nil {
 		return nil, fmt.Errorf("failed to count technologies: %w", err)
 	}
 
 	// Count DNS records
 	if err := d.db.Get(&stats.DNSRecordCount, `
 		SELECT COUNT(*) FROM dns_records
-		WHERE domain LIKE ? OR domain = ?
-	`, "%."+domain, domain); err != nil {
+		WHERE `+domainMatchClause("domain")+`
+	`, hostArgs...); err != nil {
 		return nil, fmt.Errorf("failed to count DNS records: %w", err)
 	}
 
 	// Count vulns
 	if err := d.db.Get(&stats.VulnCount, `
 		SELECT COUNT(*) FROM findings
-		WHERE host LIKE ? AND status = 'open'
-	`, "%"+domain); err != nil {
+		WHERE `+domainMatchClause("host")+` AND status = ?
+	`, append(hostArgs, "open")...); err != nil {
 		return nil, fmt.Errorf("failed to count findings: %w", err)
 	}
 
 	// Count URLs
 	if err := d.db.Get(&stats.URLCount, `
 		SELECT COUNT(*) FROM urls
-		WHERE domain = ? OR domain LIKE ?
-	`, domain, "%."+domain); err != nil {
+		WHERE `+domainMatchClause("domain")+`
+	`, hostArgs...); err != nil {
 		return nil, fmt.Errorf("failed to count URLs: %w", err)
 	}
 
 	// Count APIs
-	if err := d.db.Get(&stats.APICount, `
-		SELECT COUNT(*) FROM apis
-		WHERE url LIKE ?
-	`, "%"+domain+"%"); err != nil {
+	apis, err := d.GetAPIsForDomain(domain)
+	if err != nil {
 		return nil, fmt.Errorf("failed to count APIs: %w", err)
 	}
+	stats.APICount = len(apis)
 
 	// Count emails
 	if err := d.db.Get(&stats.EmailCount, `
@@ -1242,8 +1258,8 @@ func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, erro
 	// Count takeovers
 	if err := d.db.Get(&stats.TakeoverCount, `
 		SELECT COUNT(*) FROM takeovers
-		WHERE subdomain LIKE ? AND status = 'open'
-	`, "%"+domain); err != nil {
+		WHERE `+domainMatchClause("subdomain")+` AND status = ?
+	`, append(hostArgs, "open")...); err != nil {
 		return nil, fmt.Errorf("failed to count takeovers: %w", err)
 	}
 
@@ -1331,7 +1347,10 @@ func (d *Database) GetAllFindings() ([]Finding, error) {
 
 func (d *Database) GetAllTakeovers() ([]Takeover, error) {
 	var rows []Takeover
-	err := d.db.Select(&rows, `SELECT * FROM takeovers WHERE status = 'open' ORDER BY subdomain`)
+	err := d.db.Select(&rows, `SELECT id, subdomain, COALESCE(cname, '') AS cname, service,
+			COALESCE(takeover_type, '') AS takeover_type, COALESCE(confidence, '') AS confidence,
+			COALESCE(evidence, '') AS evidence, COALESCE(documentation, '') AS documentation,
+			status, discovered_at, resolved_at FROM takeovers WHERE status = 'open' ORDER BY subdomain`)
 	if err != nil && isTableNotExistsError(err) {
 		return nil, nil
 	}

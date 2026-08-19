@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/target"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/target"
 )
 
 // Finding represents a vulnerability finding from Nuclei
@@ -607,12 +607,24 @@ func Scan(ctx context.Context, cfg Config, hosts []string) ([]*Finding, error) {
 		return nil, nil
 	}
 
-	// Apply defaults.
-	if cfg.Timeout == 0 {
-		cfg.Timeout = DefaultConfig().Timeout
+	defaults := DefaultConfig()
+	if cfg.BinaryPath == "" {
+		cfg.BinaryPath = defaults.BinaryPath
 	}
-	if cfg.RateLimit == 0 {
-		cfg.RateLimit = DefaultConfig().RateLimit
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = defaults.Timeout
+	}
+	if cfg.RateLimit <= 0 {
+		cfg.RateLimit = defaults.RateLimit
+	}
+	if cfg.BulkSize <= 0 {
+		cfg.BulkSize = defaults.BulkSize
+	}
+	if cfg.Concurrency <= 0 {
+		cfg.Concurrency = defaults.Concurrency
+	}
+	if len(cfg.Severities) == 0 {
+		cfg.Severities = defaults.Severities
 	}
 
 	// Convert hosts to URLs.
@@ -635,7 +647,10 @@ func Scan(ctx context.Context, cfg Config, hosts []string) ([]*Finding, error) {
 
 	result, err := scanner.Scan(ctx, targets)
 	if err != nil {
-		return result.Findings, err
+		if result != nil {
+			return result.Findings, err
+		}
+		return nil, err
 	}
 	return result.Findings, nil
 }

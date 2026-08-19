@@ -11,8 +11,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/persistence"
-	"github.com/asm-tool/asm-go/internal/scheduler"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/persistence"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scheduler"
 	"github.com/spf13/cobra"
 )
 

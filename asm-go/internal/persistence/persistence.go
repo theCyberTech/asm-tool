@@ -10,18 +10,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/database"
-	"github.com/asm-tool/asm-go/internal/parallel"
-	"github.com/asm-tool/asm-go/internal/scanner/apis"
-	"github.com/asm-tool/asm-go/internal/scanner/certificates"
-	"github.com/asm-tool/asm-go/internal/scanner/cloud"
-	"github.com/asm-tool/asm-go/internal/scanner/dns"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
-	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
-	"github.com/asm-tool/asm-go/internal/scanner/ports"
-	"github.com/asm-tool/asm-go/internal/scanner/takeover"
-	"github.com/asm-tool/asm-go/internal/scanner/technologies"
-	"github.com/asm-tool/asm-go/internal/scanner/urls"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/database"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/parallel"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/apis"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/certificates"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/cloud"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/dns"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/emails"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/nuclei"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/ports"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/takeover"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/technologies"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/scanner/urls"
 )
 
 // Store is the persistence entry point. A Store owns a database connection
@@ -121,9 +121,10 @@ func saveTx(tx *database.Transaction, result *parallel.ScanResult) error {
 		collect(err, "saving ports")
 	}
 
-	// Certificates
+	// Certificates: persist metadata even when verification failed, as long as
+	// a certificate was actually retrieved.
 	for _, cert := range result.Certificates {
-		if cert == nil || cert.Error != "" {
+		if cert == nil || cert.Fingerprint == "" {
 			continue
 		}
 		dbCert := &database.Certificate{
@@ -648,7 +649,7 @@ func SavePortScanResults(store any, results []*ports.Result) (int, error) {
 	err = s.SaveAll(&parallel.ScanResult{
 		Ports: results,
 	})
-	return 0, err
+	return countOpenPortResults(results), err
 }
 
 // SaveAPIs persists API discovery results.
@@ -660,7 +661,7 @@ func SaveAPIs(store any, results []apis.API) (int, error) {
 	err = s.SaveAll(&parallel.ScanResult{
 		APIs: results,
 	})
-	return 0, err
+	return len(results), err
 }
 
 // SaveCertificates persists TLS certificate results.
@@ -672,7 +673,7 @@ func SaveCertificates(store any, certs []*certificates.Certificate) (int, error)
 	err = s.SaveAll(&parallel.ScanResult{
 		Certificates: certs,
 	})
-	return 0, err
+	return countSavedCertificates(certs), err
 }
 
 // SaveDNSResults persists DNS lookup results.
@@ -712,7 +713,7 @@ func SaveEmails(store any, results []emails.Email) (int, error) {
 	err = s.SaveAll(&parallel.ScanResult{
 		Emails: results,
 	})
-	return 0, err
+	return len(results), err
 }
 
 // SaveCloudBuckets persists cloud storage detection results.
@@ -724,7 +725,7 @@ func SaveCloudBuckets(store any, results []cloud.Bucket) (int, error) {
 	err = s.SaveAll(&parallel.ScanResult{
 		CloudStorage: results,
 	})
-	return 0, err
+	return len(results), err
 }
 
 // SaveTechnologies persists technology fingerprint results.
@@ -736,7 +737,7 @@ func SaveTechnologies(store any, results []*technologies.Result) (int, error) {
 	err = s.SaveAll(&parallel.ScanResult{
 		Technologies: results,
 	})
-	return 0, err
+	return len(results), err
 }
 
 // SaveURLs persists URL enumeration results.
@@ -748,7 +749,7 @@ func SaveURLs(store any, results []urls.URL) (int, error) {
 	err = s.SaveAll(&parallel.ScanResult{
 		URLs: results,
 	})
-	return 0, err
+	return len(results), err
 }
 
 // TakeoverFinding is the persistence shape shared by standalone takeover scans
@@ -764,7 +765,7 @@ func SaveTakeovers(store any, findings []TakeoverFinding) (int, error) {
 	err = s.SaveAll(&parallel.ScanResult{
 		Takeovers: findings,
 	})
-	return 0, err
+	return len(findings), err
 }
 
 // SaveNucleiFindings persists vulnerability scan results.
@@ -776,5 +777,26 @@ func SaveNucleiFindings(store any, results []*nuclei.Finding) (int, error) {
 	err = s.SaveAll(&parallel.ScanResult{
 		Vulnerabilities: results,
 	})
-	return 0, err
+	return len(results), err
+}
+
+func countOpenPortResults(results []*ports.Result) int {
+	n := 0
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		n += len(r.OpenPorts)
+	}
+	return n
+}
+
+func countSavedCertificates(certs []*certificates.Certificate) int {
+	n := 0
+	for _, c := range certs {
+		if c != nil && c.Fingerprint != "" {
+			n++
+		}
+	}
+	return n
 }

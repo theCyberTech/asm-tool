@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/httpclient"
-	"github.com/asm-tool/asm-go/internal/target"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/httpclient"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/target"
 )
 
 // Result represents subdomain enumeration results

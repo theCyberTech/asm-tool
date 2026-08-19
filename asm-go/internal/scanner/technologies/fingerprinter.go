@@ -3,7 +3,7 @@ package technologies
 import (
 	"context"
 	"encoding/json"
-	"github.com/asm-tool/asm-go/internal/httpclient"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/httpclient"
 	"io"
 	"net/http"
 	"regexp"
@@ -164,7 +164,7 @@ func (f *Fingerprinter) Fingerprint(ctx context.Context, host string) *Result {
 func (f *Fingerprinter) FingerprintBatch(ctx context.Context, hosts []string) []*Result {
 	results := make([]*Result, len(hosts))
 
-	sem := make(chan struct{}, f.Workers)
+	sem := make(chan struct{}, normalizeWorkers(f.Workers, DefaultConfig().Workers))
 	var wg sync.WaitGroup
 
 	for i, host := range hosts {
@@ -495,7 +495,7 @@ func Scan(ctx context.Context, cfg Config, hosts []string) []*Result {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = DefaultConfig().Timeout
 	}
-	if cfg.Workers == 0 {
+	if cfg.Workers <= 0 {
 		cfg.Workers = DefaultConfig().Workers
 	}
 
@@ -514,4 +514,14 @@ func Scan(ctx context.Context, cfg Config, hosts []string) []*Result {
 	}
 
 	return fp.FingerprintBatch(ctx, hosts)
+}
+
+func normalizeWorkers(n, fallback int) int {
+	if n > 0 {
+		return n
+	}
+	if fallback > 0 {
+		return fallback
+	}
+	return 1
 }

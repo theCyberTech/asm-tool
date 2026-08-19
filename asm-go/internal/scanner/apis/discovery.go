@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/httpclient"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/httpclient"
 )
 
 // API represents a discovered API endpoint
@@ -146,7 +146,7 @@ func (d *Discovery) DiscoverBatch(ctx context.Context, hosts []string) *BatchRes
 		Results: make([]*Result, len(hosts)),
 	}
 
-	sem := make(chan struct{}, d.Workers)
+	sem := make(chan struct{}, normalizeWorkers(d.Workers, DefaultDiscovery().Workers))
 	var wg sync.WaitGroup
 
 	for i, host := range hosts {
@@ -226,8 +226,9 @@ func (d *Discovery) checkPath(ctx context.Context, url, path string) *API {
 		}
 	}
 
-	// Check for API documentation pages
-	if isDocPath(path) && strings.Contains(contentType, "html") {
+	// Check for API documentation pages. Path + HTML is not enough: SPA
+	// fallbacks and soft 404s often include "docs" in the URL.
+	if isDocPath(path) && strings.Contains(contentType, "html") && looksLikeAPIDocs(string(body)) {
 		return &API{
 			URL:   url,
 			Type:  "documentation",
@@ -269,10 +270,9 @@ func (d *Discovery) checkGraphQL(ctx context.Context, baseURL string) *API {
 					api := &API{
 						URL:                  url,
 						Type:                 "graphql",
-						IntrospectionEnabled: true,
+						IntrospectionEnabled: false,
 					}
 
-					// Check if introspection returned schema
 					if dataMap, ok := data.(map[string]interface{}); ok {
 						if schema, ok := dataMap["__schema"]; ok && schema != nil {
 							api.IntrospectionEnabled = true
@@ -323,6 +323,18 @@ func isDocPath(path string) bool {
 	pathLower := strings.ToLower(path)
 	for _, dp := range docPaths {
 		if strings.Contains(pathLower, dp) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeAPIDocs(body string) bool {
+	lower := strings.ToLower(body)
+	for _, marker := range []string{
+		"swagger", "openapi", "graphql", "api reference", "redoc", "rapidoc", "swagger-ui",
+	} {
+		if strings.Contains(lower, marker) {
 			return true
 		}
 	}
@@ -466,9 +478,10 @@ func DefaultAPIPaths() []string {
 
 // Config holds configuration for API discovery.
 type Config struct {
-	Workers           int
-	Timeout           time.Duration
-	HTTPClientTimeout time.Duration
+	Workers            int
+	Timeout            time.Duration
+	HTTPClientTimeout  time.Duration
+	InsecureSkipVerify bool
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -496,10 +509,14 @@ func Scan(ctx context.Context, cfg Config, hosts []string) *ScanResult {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = DefaultConfig().Timeout
 	}
+	if cfg.Workers <= 0 {
+		cfg.Workers = DefaultConfig().Workers
+	}
 
 	client := httpclient.New(httpclient.Options{
-		Timeout:      cfg.Timeout,
-		MaxRedirects: 2,
+		Timeout:            cfg.Timeout,
+		MaxRedirects:       2,
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
 	})
 
 	disc := &Discovery{
@@ -511,8 +528,29 @@ func Scan(ctx context.Context, cfg Config, hosts []string) *ScanResult {
 
 	batch := disc.DiscoverBatch(ctx, hosts)
 	var apis []API
+	var errs []string
 	for _, r := range batch.Results {
+		if r == nil {
+			continue
+		}
 		apis = append(apis, r.APIs...)
+		if r.Error != "" {
+			errs = append(errs, r.Host+": "+r.Error)
+		}
 	}
-	return &ScanResult{APIs: apis}
+	out := &ScanResult{APIs: apis, Errors: errs}
+	if len(errs) == len(hosts) && len(hosts) > 0 {
+		out.Err = fmt.Errorf("api discovery failed for all %d hosts", len(hosts))
+	}
+	return out
+}
+
+func normalizeWorkers(n, fallback int) int {
+	if n > 0 {
+		return n
+	}
+	if fallback > 0 {
+		return fallback
+	}
+	return 1
 }

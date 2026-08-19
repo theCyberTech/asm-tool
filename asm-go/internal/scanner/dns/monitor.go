@@ -200,7 +200,7 @@ func (m *Monitor) Lookup(ctx context.Context, domain string) *Result {
 func (m *Monitor) LookupBatch(ctx context.Context, domains []string) []*Result {
 	results := make([]*Result, len(domains))
 
-	sem := make(chan struct{}, m.Workers)
+	sem := make(chan struct{}, normalizeWorkers(m.Workers, DefaultConfig().Workers))
 	var wg sync.WaitGroup
 
 	for i, domain := range domains {
@@ -674,6 +674,16 @@ func Scan(ctx context.Context, cfg Config, hosts []string) ([]Result, error) {
 		return nil, nil
 	}
 
+	if cfg.DNSServer == "" {
+		cfg.DNSServer = DefaultConfig().DNSServer
+	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = DefaultConfig().Timeout
+	}
+	if cfg.Workers <= 0 {
+		cfg.Workers = DefaultConfig().Workers
+	}
+
 	monitor := Monitor{
 		DNSServer: cfg.DNSServer,
 		Timeout:   cfg.Timeout,
@@ -686,4 +696,14 @@ func Scan(ctx context.Context, cfg Config, hosts []string) ([]Result, error) {
 		out = append(out, *r)
 	}
 	return out, nil
+}
+
+func normalizeWorkers(n, fallback int) int {
+	if n > 0 {
+		return n
+	}
+	if fallback > 0 {
+		return fallback
+	}
+	return 1
 }

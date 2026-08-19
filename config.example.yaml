@@ -58,3 +58,12 @@ schedule:
 dashboard:
   host: "127.0.0.1"
   port: 8080
+  # Required when binding outside loopback. Prefer ASM_DASHBOARD_TOKEN.
+  # token: ""
+
+# Timeouts (optional)
+# timeouts:
+#   http: 10s
+#   dns: 5s
+#   nuclei: 30m
+

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asm-tool/asm-go/internal/httpclient"
+	"github.com/theCyberTech/asm-tool/asm-go/internal/httpclient"
 )
 
 // Finding represents a potential subdomain takeover
