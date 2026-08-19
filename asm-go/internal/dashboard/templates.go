@@ -140,6 +140,7 @@ type DomainDetailData struct {
 	CloudStorage []CloudStorageView
 	Takeovers    []TakeoverView
 	ChangeEvents []ChangeEventView
+	SelectedHost string
 }
 
 // ChangeEventView represents a DNS change event for display

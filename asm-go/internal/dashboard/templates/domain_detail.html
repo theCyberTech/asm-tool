@@ -387,6 +387,7 @@
     {{template "emails-modal" .}}
     {{template "cloud-modal" .}}
     {{template "takeovers-modal" .}}
+    {{template "host-modal" .}}
 </div>
 
 <!-- Subdomains Card -->
@@ -400,10 +401,11 @@
             </svg>
             Subdomains
         </h2>
-        <span class="badge badge-blue">{{len .DomainDetail.Subdomains}} found</span>
+        <span class="badge badge-blue">{{.DomainDetail.Stats.SubdomainCount}} found</span>
     </div>
     <div class="card-body">
         {{if .DomainDetail.Subdomains}}
+        <p class="text-muted" style="margin-bottom: 0.75rem;">Click a subdomain to view its open ports, certificates, technologies, and DNS records.</p>
         <div class="table-container">
             <table>
                 <thead>
@@ -415,8 +417,12 @@
                 </thead>
                 <tbody>
                     {{range .DomainDetail.Subdomains}}
-                    <tr>
-                        <td><span class="text-mono">{{.Subdomain}}</span></td>
+                    <tr class="host-row"
+                        hx-get="/domains/{{$.DomainDetail.Domain}}/host?name={{urlquery .Subdomain}}"
+                        hx-target="#modal-body-host"
+                        hx-swap="innerHTML"
+                        onclick="openAssetModal('host')">
+                        <td><span class="text-mono domain-link">{{.Subdomain}}</span></td>
                         <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                         <td class="text-muted">{{.LastSeen.Format "Jan 02, 2006"}}</td>
                     </tr>
@@ -1099,8 +1105,12 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Subdomains}}
-                        <tr data-search="{{.Subdomain}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
-                            <td><span class="text-mono">{{.Subdomain}}</span></td>
+                        <tr class="host-row" data-search="{{.Subdomain}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())"
+                            hx-get="/domains/{{$.DomainDetail.Domain}}/host?name={{urlquery .Subdomain}}"
+                            hx-target="#modal-body-host"
+                            hx-swap="innerHTML"
+                            onclick="openAssetModal('host')">
+                            <td><span class="text-mono domain-link">{{.Subdomain}}</span></td>
                             <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                             <td class="text-muted">{{.LastSeen.Format "Jan 02, 2006"}}</td>
                         </tr>
@@ -1866,4 +1876,118 @@
             </div>
             {{end}}
 </div>
+{{end}}
+
+{{define "host-modal"}}
+<div class="modal-backdrop" id="modal-host" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 class="modal-title">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+                Subdomain details
+            </h2>
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body" id="modal-body-host">
+            <div class="empty-state"><p class="text-muted">Click a subdomain to load its ports, certificates, technologies, and DNS records.</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "host-modal-body"}}
+{{if .DomainDetail}}
+<div>
+    <h3 class="text-mono" style="margin-bottom: 1rem;">{{.DomainDetail.SelectedHost}}</h3>
+
+    <h4 class="card-title" style="margin-bottom: 0.5rem;">Open Ports <span class="badge badge-yellow">{{len .DomainDetail.Ports}}</span></h4>
+    {{if .DomainDetail.Ports}}
+    <div class="table-container" style="margin-bottom: 1.25rem;">
+        <table>
+            <thead><tr><th>Port</th><th>Service</th><th>Product/Version</th></tr></thead>
+            <tbody>
+                {{range .DomainDetail.Ports}}
+                <tr>
+                    <td><span class="badge badge-blue">{{.Port}}/{{.Protocol}}</span></td>
+                    <td>{{if .Service}}{{.Service}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                    <td>{{if .Product}}{{.Product}}{{if .Version}} {{.Version}}{{end}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <p class="text-muted" style="margin-bottom: 1.25rem;">No open ports for this host.</p>
+    {{end}}
+
+    <h4 class="card-title" style="margin-bottom: 0.5rem;">Certificates <span class="badge badge-green">{{len .DomainDetail.Certificates}}</span></h4>
+    {{if .DomainDetail.Certificates}}
+    <div class="table-container" style="margin-bottom: 1.25rem;">
+        <table>
+            <thead><tr><th>Host</th><th>Subject</th><th>Issuer</th><th>Days Left</th></tr></thead>
+            <tbody>
+                {{range .DomainDetail.Certificates}}
+                <tr>
+                    <td><span class="text-mono">{{.Host}}:{{.Port}}</span></td>
+                    <td>{{.Subject}}</td>
+                    <td class="text-muted">{{.Issuer}}</td>
+                    <td>{{.DaysUntilExpiry}} days</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <p class="text-muted" style="margin-bottom: 1.25rem;">No certificates for this host.</p>
+    {{end}}
+
+    <h4 class="card-title" style="margin-bottom: 0.5rem;">Technologies <span class="badge badge-purple">{{len .DomainDetail.Technologies}}</span></h4>
+    {{if .DomainDetail.Technologies}}
+    <div class="table-container" style="margin-bottom: 1.25rem;">
+        <table>
+            <thead><tr><th>Status</th><th>Title</th><th>Server</th><th>Technologies</th></tr></thead>
+            <tbody>
+                {{range .DomainDetail.Technologies}}
+                <tr>
+                    <td><span class="badge badge-blue">{{.StatusCode}}</span></td>
+                    <td>{{if .Title}}{{.Title}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                    <td class="text-muted">{{if .Server}}{{.Server}}{{else}}-{{end}}</td>
+                    <td>{{if .Technologies}}<span class="text-mono" style="font-size: 0.75rem;">{{.Technologies}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <p class="text-muted" style="margin-bottom: 1.25rem;">No technologies for this host.</p>
+    {{end}}
+
+    <h4 class="card-title" style="margin-bottom: 0.5rem;">DNS Records <span class="badge badge-blue">{{len .DomainDetail.DNSRecords}}</span></h4>
+    {{if .DomainDetail.DNSRecords}}
+    <div class="table-container">
+        <table>
+            <thead><tr><th>Domain</th><th>Records</th></tr></thead>
+            <tbody>
+                {{range .DomainDetail.DNSRecords}}
+                <tr>
+                    <td><span class="text-mono">{{.Domain}}</span></td>
+                    <td><pre style="margin: 0; background: transparent; border: none; padding: 0; font-size: 0.75rem; white-space: pre-wrap;">{{.Records}}</pre></td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <p class="text-muted">No DNS records for this host.</p>
+    {{end}}
+</div>
+{{else}}
+<div class="empty-state"><h3>Host not found</h3></div>
+{{end}}
 {{end}}
