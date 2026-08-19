@@ -92,11 +92,17 @@ func TestDomainDetailRenderEscapesScanDataOutsideJSStrings(t *testing.T) {
 	if !strings.Contains(out, "openAssetModal('ports')") {
 		t.Fatal("expected domain detail page to open asset modals without Alpine activeModal")
 	}
+	if !strings.Contains(out, `href="/domains/example.com/modal/subdomains"`) {
+		t.Fatal("expected subdomain stat card to be a real link")
+	}
 	if !strings.Contains(out, `class="host-row"`) {
 		t.Fatal("expected clickable subdomain rows")
 	}
 	if !strings.Contains(out, "/host?name=") {
 		t.Fatal("expected subdomain rows to load host details")
+	}
+	if strings.Contains(out, `hx-boost="true"`) {
+		t.Fatal("domain detail page still enables hx-boost, which skips body scripts")
 	}
 	if !strings.Contains(out, `id="modal-body-ports"`) {
 		t.Fatal("expected lazy-loaded ports modal body target")

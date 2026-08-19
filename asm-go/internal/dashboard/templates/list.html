@@ -9,7 +9,7 @@
     <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
     <style>{{template "styles" .}}</style>
 </head>
-<body hx-boost="true" x-data="{}">
+<body x-data="{}">
     {{template "nav" .}}
     <div class="layout">
         {{template "sidebar" .}}
@@ -48,7 +48,7 @@
                 <tbody>
                     {{range .GlobalList.Subdomains}}
                     <tr>
-                        <td><span class="text-mono">{{.Subdomain}}</span></td>
+                        <td>{{if .ParentDomain}}<a href="/domains/{{.ParentDomain}}/host?name={{urlquery .Subdomain}}" class="text-mono domain-link" hx-boost="false">{{.Subdomain}}</a>{{else}}<span class="text-mono">{{.Subdomain}}</span>{{end}}</td>
                         <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                         <td class="text-muted">{{.LastSeen.Format "Jan 02, 2006"}}</td>
                     </tr>

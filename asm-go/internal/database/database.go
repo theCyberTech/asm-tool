@@ -1354,6 +1354,29 @@ func (d *Database) GetAllSubdomains() ([]Subdomain, error) {
 	return rows, err
 }
 
+// SubdomainWithParent is a subdomain joined to its monitored root domain.
+type SubdomainWithParent struct {
+	Subdomain    string    `db:"subdomain"`
+	ParentDomain string    `db:"parent_domain"`
+	DiscoveredAt time.Time `db:"discovered_at"`
+	LastSeen     time.Time `db:"last_seen"`
+}
+
+func (d *Database) GetAllSubdomainsWithParent() ([]SubdomainWithParent, error) {
+	var rows []SubdomainWithParent
+	err := d.db.Select(&rows, `
+		SELECT s.subdomain, d.domain AS parent_domain, s.discovered_at, s.last_seen
+		FROM subdomains s
+		INNER JOIN domains d ON d.id = s.domain_id
+		WHERE s.active = 1
+		ORDER BY s.subdomain COLLATE NOCASE
+	`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
 func (d *Database) GetAllPorts() ([]Port, error) {
 	var rows []Port
 	err := d.db.Select(&rows, `SELECT * FROM ports WHERE state = 'open' ORDER BY host, port`)
