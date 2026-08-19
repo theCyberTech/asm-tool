@@ -31,6 +31,9 @@ var migration004 string
 //go:embed migrations/005_scheduled_runs.sql
 var migration005 string
 
+//go:embed migrations/006_query_indexes.sql
+var migration006 string
+
 // Database is the main database facade
 type Database struct {
 	db *sqlx.DB
@@ -181,6 +184,12 @@ func (d *Database) migrate() error {
 	if version < 5 {
 		if _, err = d.db.Exec(migration005); err != nil {
 			return fmt.Errorf("running migration 005: %w", err)
+		}
+	}
+
+	if version < 6 {
+		if _, err = d.db.Exec(migration006); err != nil {
+			return fmt.Errorf("running migration 006: %w", err)
 		}
 	}
 
@@ -739,9 +748,9 @@ func (d *Database) GetCertificatesForDomain(domain string) ([]Certificate, error
 	var certs []Certificate
 	err := d.db.Select(&certs, `
 		SELECT * FROM certificates
-		WHERE host LIKE ? OR host = ?
+		WHERE host = ? OR host LIKE ?
 		ORDER BY days_until_expiry
-	`, "%"+domain, domain)
+	`, domain, "%."+domain)
 	return certs, err
 }
 
@@ -750,9 +759,9 @@ func (d *Database) GetTakeoversForDomain(domain string) ([]Takeover, error) {
 	var takeovers []Takeover
 	err := d.db.Select(&takeovers, `
 		SELECT * FROM takeovers
-		WHERE subdomain LIKE ? AND status = 'open'
+		WHERE (subdomain = ? OR subdomain LIKE ?) AND status = 'open'
 		ORDER BY subdomain
-	`, "%"+domain)
+	`, domain, "%."+domain)
 	if err != nil && isTableNotExistsError(err) {
 		return []Takeover{}, nil
 	}
@@ -875,7 +884,7 @@ func (d *Database) GetVulnerabilitiesForDomain(domain string) ([]Finding, error)
 	var findings []Finding
 	err := d.db.Select(&findings, `
 		SELECT * FROM findings
-		WHERE host LIKE ? AND status = 'open'
+		WHERE (host = ? OR host LIKE ?) AND status = 'open'
 		ORDER BY
 			CASE severity
 				WHEN 'critical' THEN 1
@@ -885,7 +894,7 @@ func (d *Database) GetVulnerabilitiesForDomain(domain string) ([]Finding, error)
 				ELSE 5
 			END,
 			name
-	`, "%"+domain)
+	`, domain, "%."+domain)
 	return findings, err
 }
 
@@ -970,17 +979,17 @@ func (d *Database) GetSubdomainsForDomain(domain string) ([]Subdomain, error) {
 
 // DomainDetailStats holds counts for a domain detail view
 type DomainDetailStats struct {
-	SubdomainCount   int
-	PortCount        int
-	CertificateCount int
-	TechnologyCount  int
-	DNSRecordCount   int
-	VulnCount        int
-	URLCount         int
-	APICount         int
-	EmailCount       int
-	CloudCount       int
-	TakeoverCount    int
+	SubdomainCount   int `db:"subdomain_count"`
+	PortCount        int `db:"port_count"`
+	CertificateCount int `db:"certificate_count"`
+	TechnologyCount  int `db:"technology_count"`
+	DNSRecordCount   int `db:"dns_record_count"`
+	VulnCount        int `db:"vuln_count"`
+	URLCount         int `db:"url_count"`
+	APICount         int `db:"api_count"`
+	EmailCount       int `db:"email_count"`
+	CloudCount       int `db:"cloud_count"`
+	TakeoverCount    int `db:"takeover_count"`
 }
 
 // UpdateDomainLastScanned updates the last_scanned timestamp for a domain
@@ -1157,96 +1166,48 @@ func saveCloudBucket(db queryExecutor, provider, bucketName, url, domain, access
 // GetDomainDetailStats returns aggregate counts for a specific domain
 func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, error) {
 	stats := &DomainDetailStats{}
+	hostSuffix := "%." + domain
+	urlNeedle := "%" + domain + "%"
 
-	// Count subdomains
-	if err := d.db.Get(&stats.SubdomainCount, `
-		SELECT COUNT(*) FROM subdomains s
-		JOIN domains d ON s.domain_id = d.id
-		WHERE d.domain = ? AND s.active = 1
-	`, domain); err != nil {
-		return nil, fmt.Errorf("failed to count subdomains: %w", err)
+	err := d.db.Get(stats, `
+		SELECT
+			(SELECT COUNT(*) FROM subdomains s
+			 JOIN domains d ON s.domain_id = d.id
+			 WHERE d.domain = ? AND s.active = 1) AS subdomain_count,
+			(SELECT COUNT(*) FROM ports
+			 WHERE (host = ? OR host LIKE ?) AND state = 'open') AS port_count,
+			(SELECT COUNT(*) FROM certificates
+			 WHERE host = ? OR host LIKE ?) AS certificate_count,
+			(SELECT COUNT(*) FROM technologies
+			 WHERE host = ? OR host LIKE ?) AS technology_count,
+			(SELECT COUNT(*) FROM dns_records
+			 WHERE domain = ? OR domain LIKE ?) AS dns_record_count,
+			(SELECT COUNT(*) FROM findings
+			 WHERE (host = ? OR host LIKE ?) AND status = 'open') AS vuln_count,
+			(SELECT COUNT(*) FROM urls
+			 WHERE domain = ? OR domain LIKE ?) AS url_count,
+			(SELECT COUNT(*) FROM apis
+			 WHERE url LIKE ?) AS api_count,
+			(SELECT COUNT(*) FROM emails
+			 WHERE domain = ?) AS email_count,
+			(SELECT COUNT(*) FROM cloud_storage
+			 WHERE domain = ?) AS cloud_count,
+			(SELECT COUNT(*) FROM takeovers
+			 WHERE (subdomain = ? OR subdomain LIKE ?) AND status = 'open') AS takeover_count
+	`, domain,
+		domain, hostSuffix,
+		domain, hostSuffix,
+		domain, hostSuffix,
+		domain, hostSuffix,
+		domain, hostSuffix,
+		domain, hostSuffix,
+		urlNeedle,
+		domain,
+		domain,
+		domain, hostSuffix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load domain detail stats: %w", err)
 	}
-
-	// Count ports
-	if err := d.db.Get(&stats.PortCount, `
-		SELECT COUNT(*) FROM ports
-		WHERE (host LIKE ? OR host = ?) AND state = 'open'
-	`, "%."+domain, domain); err != nil {
-		return nil, fmt.Errorf("failed to count ports: %w", err)
-	}
-
-	// Count certificates
-	if err := d.db.Get(&stats.CertificateCount, `
-		SELECT COUNT(*) FROM certificates
-		WHERE host LIKE ? OR host = ?
-	`, "%."+domain, domain); err != nil {
-		return nil, fmt.Errorf("failed to count certificates: %w", err)
-	}
-
-	// Count technologies
-	if err := d.db.Get(&stats.TechnologyCount, `
-		SELECT COUNT(*) FROM technologies
-		WHERE host LIKE ? OR host = ?
-	`, "%."+domain, domain); err != nil {
-		return nil, fmt.Errorf("failed to count technologies: %w", err)
-	}
-
-	// Count DNS records
-	if err := d.db.Get(&stats.DNSRecordCount, `
-		SELECT COUNT(*) FROM dns_records
-		WHERE domain LIKE ? OR domain = ?
-	`, "%."+domain, domain); err != nil {
-		return nil, fmt.Errorf("failed to count DNS records: %w", err)
-	}
-
-	// Count vulns
-	if err := d.db.Get(&stats.VulnCount, `
-		SELECT COUNT(*) FROM findings
-		WHERE host LIKE ? AND status = 'open'
-	`, "%"+domain); err != nil {
-		return nil, fmt.Errorf("failed to count findings: %w", err)
-	}
-
-	// Count URLs
-	if err := d.db.Get(&stats.URLCount, `
-		SELECT COUNT(*) FROM urls
-		WHERE domain = ? OR domain LIKE ?
-	`, domain, "%."+domain); err != nil {
-		return nil, fmt.Errorf("failed to count URLs: %w", err)
-	}
-
-	// Count APIs
-	if err := d.db.Get(&stats.APICount, `
-		SELECT COUNT(*) FROM apis
-		WHERE url LIKE ?
-	`, "%"+domain+"%"); err != nil {
-		return nil, fmt.Errorf("failed to count APIs: %w", err)
-	}
-
-	// Count emails
-	if err := d.db.Get(&stats.EmailCount, `
-		SELECT COUNT(*) FROM emails
-		WHERE domain = ?
-	`, domain); err != nil {
-		return nil, fmt.Errorf("failed to count emails: %w", err)
-	}
-
-	// Count cloud storage
-	if err := d.db.Get(&stats.CloudCount, `
-		SELECT COUNT(*) FROM cloud_storage
-		WHERE domain = ?
-	`, domain); err != nil {
-		return nil, fmt.Errorf("failed to count cloud storage: %w", err)
-	}
-
-	// Count takeovers
-	if err := d.db.Get(&stats.TakeoverCount, `
-		SELECT COUNT(*) FROM takeovers
-		WHERE subdomain LIKE ? AND status = 'open'
-	`, "%"+domain); err != nil {
-		return nil, fmt.Errorf("failed to count takeovers: %w", err)
-	}
-
 	return stats, nil
 }
 

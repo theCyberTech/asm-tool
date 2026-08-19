@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -372,5 +373,73 @@ func TestDomainDetailRejectsInvalidPath(t *testing.T) {
 	handler(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStatsHandlerJSONIncludesStatus(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	defer db.Close()
+
+	handler := makeStatsHandler(&Deps{DB: db, Cfg: config.Default()})
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("content-type = %q", rec.Header().Get("Content-Type"))
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decoding stats JSON: %v", err)
+	}
+	if payload["status"] != "ok" {
+		t.Fatalf("status field = %v, want ok", payload["status"])
+	}
+	if _, ok := payload["findings"].(map[string]interface{}); !ok {
+		t.Fatalf("findings = %T, want object", payload["findings"])
+	}
+}
+
+func TestDomainsPartialRejectsInvalidDate(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	defer db.Close()
+
+	handler := makeDomainsPartialHandler(&Deps{DB: db, Cfg: config.Default()})
+	req := httptest.NewRequest(http.MethodGet, "/partials/domains?from=not-a-date", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDomainsPageHasFilterErrorHandling(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	defer db.Close()
+
+	handler := makeDomainsHandler(&Deps{DB: db, Cfg: config.Default()})
+	req := httptest.NewRequest(http.MethodGet, "/domains", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "htmx:responseError") {
+		t.Fatal("/domains is missing HTMX error handling")
+	}
+	if !strings.Contains(body, "htmx:sendError") {
+		t.Fatal("/domains is missing HTMX network error handling")
 	}
 }

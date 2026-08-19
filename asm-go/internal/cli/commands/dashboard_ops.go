@@ -402,8 +402,17 @@ func (o *dashboardOps) handleRunsJSON(w http.ResponseWriter, r *http.Request) {
 	if !o.requireEnabled(w, r) || !o.authorize(w, r) {
 		return
 	}
+	body, err := json.Marshal(o.pageData().Runs)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "failed to encode runs",
+		})
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(o.pageData().Runs)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
 
 func (o *dashboardOps) handleStartRun(w http.ResponseWriter, r *http.Request) {

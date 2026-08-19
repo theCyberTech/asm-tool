@@ -27,7 +27,6 @@
         </main>
     </div>
 
-    <!-- Toast Container -->
     <div class="toast-container" id="toast-container">
         <template x-for="toast in toasts" :key="toast.id">
             <div class="toast" :class="'toast-' + toast.type" x-show="toast.visible"
@@ -175,6 +174,9 @@
     </div>
 </div>
 {{else}}
+{{if .Warning}}
+<div class="alert alert-warning mb-md">{{.Warning}}</div>
+{{end}}
 <div class="page-header">
     <div>
         <div class="flex items-center gap-md mb-sm">

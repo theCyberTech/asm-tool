@@ -60,7 +60,10 @@ func runStatus(db *database.Database, cfg *config.Config) error {
 	}
 
 	// Get finding severity counts
-	findings, _ := db.GetFindingSeverityCounts()
+	findings, err := db.GetFindingSeverityCounts()
+	if err != nil {
+		return fmt.Errorf("getting finding counts: %w", err)
+	}
 
 	// Print header
 	fmt.Println()
