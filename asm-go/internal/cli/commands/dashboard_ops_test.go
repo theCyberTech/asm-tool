@@ -121,9 +121,12 @@ func TestDashboardOpsStartHandlerReturnsRunsPartial(t *testing.T) {
 	ops := newTestDashboardOps(t, script)
 	ops.defs = ops.operationDefinitions()
 	ops.actions = ops.operationOptions()
+	ops.enabled = true
 
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/start", strings.NewReader("action=status"))
+	req.Host = "127.0.0.1:8080"
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://127.0.0.1:8080")
 	rec := httptest.NewRecorder()
 
 	ops.handleStartRun(rec, req)
@@ -242,5 +245,132 @@ func TestDashboardOverviewStatCardsLinkToAssetPages(t *testing.T) {
 		if !strings.Contains(body, href) {
 			t.Fatalf("dashboard overview missing stat-card link %s", href)
 		}
+	}
+}
+
+func TestDashboardOpsStartHandlerDisabledByDefault(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
+	ops.defs = ops.operationDefinitions()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/start", strings.NewReader("action=status"))
+	req.Host = "127.0.0.1:8080"
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://127.0.0.1:8080")
+	rec := httptest.NewRecorder()
+
+	ops.handleStartRun(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDashboardOpsStartHandlerRejectsCrossOrigin(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
+	ops.defs = ops.operationDefinitions()
+	ops.enabled = true
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/start", strings.NewReader("action=status"))
+	req.Host = "127.0.0.1:8080"
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://evil.example")
+	rec := httptest.NewRecorder()
+
+	ops.handleStartRun(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDashboardOpsStartHandlerRequiresToken(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "echo ok\nexit 0\n"))
+	ops.defs = ops.operationDefinitions()
+	ops.actions = ops.operationOptions()
+	ops.enabled = true
+	ops.token = "secret-token"
+
+	unauth := httptest.NewRequest(http.MethodPost, "/api/runs/start", strings.NewReader("action=status"))
+	unauth.Host = "127.0.0.1:8080"
+	unauth.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	unauth.Header.Set("Origin", "http://127.0.0.1:8080")
+	unauthRec := httptest.NewRecorder()
+	ops.handleStartRun(unauthRec, unauth)
+	if unauthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want 401, body = %s", unauthRec.Code, unauthRec.Body.String())
+	}
+
+	auth := httptest.NewRequest(http.MethodPost, "/api/runs/start", strings.NewReader("action=status"))
+	auth.Host = "127.0.0.1:8080"
+	auth.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	auth.Header.Set("X-ASM-Token", "secret-token")
+	authRec := httptest.NewRecorder()
+	ops.handleStartRun(authRec, auth)
+	if authRec.Code != http.StatusOK {
+		t.Fatalf("authenticated status = %d, body = %s", authRec.Code, authRec.Body.String())
+	}
+}
+
+func TestDashboardOpsRejectsMissingTarget(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
+	ops.defs = ops.operationDefinitions()
+
+	_, err := ops.start(operationRequest{Action: "scan"})
+	if err == nil {
+		t.Fatal("expected missing target to be rejected")
+	}
+	if !strings.Contains(err.Error(), "requires a target") {
+		t.Fatalf("error = %q, want requires a target", err.Error())
+	}
+}
+
+func TestDashboardOpsOmitsBuildAndTestActions(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
+	ops.defs = ops.operationDefinitions()
+	ops.actions = ops.operationOptions()
+
+	for _, action := range []string{"build", "test"} {
+		if _, ok := ops.defs[action]; ok {
+			t.Fatalf("unexpected %s action in operations allowlist", action)
+		}
+	}
+}
+
+func TestResolveDashboardOptionsRequiresTokenOffLoopback(t *testing.T) {
+	deps := &Deps{Cfg: config.Default()}
+	cmd := DashboardCmd(deps)
+	if err := cmd.ParseFlags([]string{"--host", "0.0.0.0", "--enable-ops"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	_, err := resolveDashboardOptions(cmd, deps)
+	if err == nil {
+		t.Fatal("expected token requirement when enabling ops on 0.0.0.0")
+	}
+}
+
+func TestIsLoopbackHost(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "localhost", "::1", "[::1]"} {
+		if !isLoopbackHost(host) {
+			t.Fatalf("isLoopbackHost(%q) = false, want true", host)
+		}
+	}
+	if isLoopbackHost("0.0.0.0") {
+		t.Fatal("isLoopbackHost(0.0.0.0) = true, want false")
+	}
+}
+
+func TestDomainDetailRejectsInvalidPath(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	defer db.Close()
+
+	handler := makeDomainDetailHandler(&Deps{DB: db, Cfg: config.Default()})
+	req := httptest.NewRequest(http.MethodGet, "/domains/example.com/not-a-domain", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404, body = %s", rec.Code, rec.Body.String())
 	}
 }

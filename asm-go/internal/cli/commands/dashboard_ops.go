@@ -3,10 +3,12 @@ package commands
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +39,8 @@ type dashboardOps struct {
 	logPath    string
 	actions    []dashboard.OperationOption
 	defs       map[string]operationDefinition
+	enabled    bool
+	token      string
 }
 
 type operationDefinition struct {
@@ -114,6 +118,79 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+func (o *dashboardOps) requireEnabled(w http.ResponseWriter, r *http.Request) bool {
+	if o.enabled {
+		return true
+	}
+	http.Error(w, "operations are disabled; start the dashboard with --enable-ops", http.StatusForbidden)
+	return false
+}
+
+func (o *dashboardOps) authorize(w http.ResponseWriter, r *http.Request) bool {
+	if o.token == "" {
+		return true
+	}
+	if o.requestHasValidToken(r) {
+		return true
+	}
+	w.Header().Set("WWW-Authenticate", `Basic realm="ASM Operations"`)
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return false
+}
+
+func (o *dashboardOps) requestHasValidToken(r *http.Request) bool {
+	if o.token == "" {
+		return false
+	}
+	if tokenMatches(requestToken(r), o.token) {
+		return true
+	}
+	user, pass, ok := r.BasicAuth()
+	if !ok {
+		return false
+	}
+	if user != "asm" && user != "" {
+		return false
+	}
+	return tokenMatches(pass, o.token)
+}
+
+func requestToken(r *http.Request) string {
+	if h := strings.TrimSpace(r.Header.Get("X-ASM-Token")); h != "" {
+		return h
+	}
+	const bearer = "bearer "
+	if auth := strings.TrimSpace(r.Header.Get("Authorization")); len(auth) > len(bearer) && strings.EqualFold(auth[:len(bearer)], bearer) {
+		return strings.TrimSpace(auth[len(bearer):])
+	}
+	if t := strings.TrimSpace(r.URL.Query().Get("token")); t != "" {
+		return t
+	}
+	return strings.TrimSpace(r.FormValue("ops_token"))
+}
+
+func tokenMatches(got, want string) bool {
+	if want == "" || len(got) != len(want) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+func sameOriginRequest(r *http.Request) bool {
+	src := r.Header.Get("Origin")
+	if src == "" {
+		src = r.Header.Get("Referer")
+	}
+	if src == "" || src == "null" {
+		return false
+	}
+	u, err := url.Parse(src)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
+}
+
 func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 	cli := func(args ...string) commandSpec {
 		base := make([]string, 0, len(args)+4)
@@ -146,18 +223,6 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 			OperationOption: dashboard.OperationOption{ID: "status", Label: "Status"},
 			build: func(req operationRequest) (commandSpec, error) {
 				return cli("status"), nil
-			},
-		},
-		{
-			OperationOption: dashboard.OperationOption{ID: "build", Label: "Build"},
-			build: func(req operationRequest) (commandSpec, error) {
-				return commandSpec{Name: "go", Args: []string{"build", "-o", "asm-go", "./cmd/asm"}, Dir: o.goDir}, nil
-			},
-		},
-		{
-			OperationOption: dashboard.OperationOption{ID: "test", Label: "Test"},
-			build: func(req operationRequest) (commandSpec, error) {
-				return commandSpec{Name: "go", Args: []string{"test", "./..."}, Dir: o.goDir}, nil
 			},
 		},
 		{
@@ -283,7 +348,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 
 func (o *dashboardOps) operationOptions() []dashboard.OperationOption {
 	order := []string{
-		"status", "build", "test", "scan", "discover", "dns", "urls",
+		"status", "scan", "discover", "dns", "urls",
 		"certificates", "takeover", "fingerprint", "apis", "emails",
 		"cloudstorage", "portscan", "nuclei", "report",
 	}
@@ -302,6 +367,9 @@ func makeOperationsHandler(deps *Deps, ops *dashboardOps) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
+		if ops.enabled && !ops.authorize(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 		data := getPageData(deps, "operations")
@@ -315,6 +383,9 @@ func makeOperationsHandler(deps *Deps, ops *dashboardOps) http.HandlerFunc {
 }
 
 func (o *dashboardOps) handleRunsPartial(w http.ResponseWriter, r *http.Request) {
+	if !o.requireEnabled(w, r) || !o.authorize(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	data := dashboard.PageData{ActivePage: "operations", Operations: o.pageData()}
 	if err := dashboard.RenderPartial(w, "runs-panel", data); err != nil {
@@ -328,6 +399,9 @@ func (o *dashboardOps) handleRunsJSON(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !o.requireEnabled(w, r) || !o.authorize(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(o.pageData().Runs)
 }
@@ -338,8 +412,18 @@ func (o *dashboardOps) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !o.requireEnabled(w, r) {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	if !o.authorize(w, r) {
+		return
+	}
+	if !o.requestHasValidToken(r) && !sameOriginRequest(r) {
+		http.Error(w, "csrf check failed", http.StatusForbidden)
 		return
 	}
 
@@ -375,6 +459,7 @@ func (o *dashboardOps) pageData() *dashboard.OperationsData {
 	}
 
 	return &dashboard.OperationsData{
+		Enabled:      o.enabled,
 		Actions:      o.actions,
 		Runs:         runs,
 		RunningCount: running,
@@ -395,6 +480,9 @@ func (o *dashboardOps) start(req operationRequest) (dashboard.RunRecord, error) 
 	}
 	if req.AllKnown && !def.SupportsAllKnown {
 		return dashboard.RunRecord{}, fmt.Errorf("%s does not support all-known mode", def.Label)
+	}
+	if def.RequiresTarget && !req.AllKnown && strings.TrimSpace(req.Target) == "" {
+		return dashboard.RunRecord{}, fmt.Errorf("%s requires a target domain", def.Label)
 	}
 
 	spec, err := def.build(req)

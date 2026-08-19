@@ -100,8 +100,10 @@ type ScheduleConfig struct {
 }
 
 type DashboardConfig struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"port"`
+	Host      string `mapstructure:"host"`
+	Port      int    `mapstructure:"port"`
+	EnableOps bool   `mapstructure:"enable_ops"`
+	Token     string `mapstructure:"token"`
 }
 
 // Default returns a Config with sensible defaults
@@ -239,6 +241,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := firstNonEmptyEnv("ASM_SLACK_WEBHOOK", "SLACK_WEBHOOK_URL"); v != "" {
 		cfg.Notifications.Slack.WebhookURL = v
+	}
+	if v := firstNonEmptyEnv("ASM_DASHBOARD_TOKEN"); v != "" {
+		cfg.Dashboard.Token = v
 	}
 }
 
