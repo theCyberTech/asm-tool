@@ -1021,7 +1021,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Subdomains}}
-                        <tr x-show="!search || '{{.Subdomain}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Subdomain}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Subdomain}}</span></td>
                             <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                             <td class="text-muted">{{.LastSeen.Format "Jan 02, 2006"}}</td>
@@ -1080,7 +1080,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Ports}}
-                        <tr x-show="!search || '{{.Host}} {{.Port}} {{.Service}} {{.Product}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Host}} {{.Port}} {{.Service}} {{.Product}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Host}}</span></td>
                             <td><span class="badge badge-blue">{{.Port}}/{{.Protocol}}</span></td>
                             <td>{{if .Service}}{{.Service}}{{else}}<span class="text-muted">-</span>{{end}}</td>
@@ -1142,7 +1142,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Certificates}}
-                        <tr x-show="!search || '{{.Host}} {{.Subject}} {{.Issuer}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Host}} {{.Subject}} {{.Issuer}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Host}}:{{.Port}}</span></td>
                             <td>{{.Subject}}</td>
                             <td class="text-muted">{{.Issuer}}</td>
@@ -1214,7 +1214,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Technologies}}
-                        <tr x-show="!search || '{{.Host}} {{.Title}} {{.Server}} {{.Technologies}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Host}} {{.Title}} {{.Server}} {{.Technologies}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Host}}</span></td>
                             <td>
                                 {{if and (ge .StatusCode 200) (lt .StatusCode 300)}}
@@ -1283,7 +1283,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.DNSRecords}}
-                        <tr x-show="!search || '{{.Domain}} {{.Records}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Domain}} {{.Records}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Domain}}</span></td>
                             <td><pre style="margin: 0; background: transparent; border: none; padding: 0; font-size: 0.75rem; white-space: pre-wrap;">{{.Records}}</pre></td>
                             <td class="text-muted">{{.CheckedAt.Format "Jan 02, 2006"}}</td>
@@ -1356,7 +1356,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Findings}}
-                        <tr x-show="(!search || '{{.Name}} {{.Host}} {{.MatchedAt}} {{.Tags}}'.toLowerCase().includes(search.toLowerCase())) && (!severityFilter || '{{.Severity}}' === severityFilter)">
+                        <tr data-search="{{.Name}} {{.Host}} {{.MatchedAt}} {{.Tags}}" data-severity="{{.Severity}}" x-show="(!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())) && (!severityFilter || $el.dataset.severity === severityFilter)">
                             <td><span class="severity severity-{{.Severity}}">{{.Severity}}</span></td>
                             <td>{{.Name}}</td>
                             <td><span class="text-mono">{{.Host}}</span></td>
@@ -1421,7 +1421,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.URLs}}
-                        <tr x-show="(!search || '{{.URL}}'.toLowerCase().includes(search.toLowerCase())) && (!interestingOnly || {{.Interesting}})">
+                        <tr data-search="{{.URL}}" data-interesting="{{.Interesting}}" x-show="(!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())) && (!interestingOnly || $el.dataset.interesting === 'true')">
                             <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
                             <td>{{if .Category.Valid}}{{.Category.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
                             <td>{{if .Interesting}}<span class="badge badge-yellow">Yes</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
@@ -1480,7 +1480,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.APIs}}
-                        <tr x-show="!search || '{{.URL}} {{.Type.String}} {{.Title.String}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.URL}} {{.Type.String}} {{.Title.String}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
                             <td>{{if .Type.Valid}}<span class="badge badge-blue">{{.Type.String}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
                             <td>{{if .Title.Valid}}{{.Title.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
@@ -1538,7 +1538,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Emails}}
-                        <tr x-show="!search || '{{.Address}} {{.Source}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Address}} {{.Source}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Address}}</span></td>
                             <td class="text-muted">{{.Source}}</td>
                             <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
@@ -1611,7 +1611,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.CloudStorage}}
-                        <tr x-show="(!search || '{{.BucketName}} {{.Provider}} {{.URL}}'.toLowerCase().includes(search.toLowerCase())) && (!severityFilter || '{{.Severity}}' === severityFilter)">
+                        <tr data-search="{{.BucketName}} {{.Provider}} {{.URL}}" data-severity="{{.Severity}}" x-show="(!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())) && (!severityFilter || $el.dataset.severity === severityFilter)">
                             <td>
                                 {{if eq .Provider "s3"}}
                                 <span class="badge badge-yellow">AWS S3</span>
@@ -1697,7 +1697,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Takeovers}}
-                        <tr x-show="(!search || '{{.Subdomain}} {{.CNAME}} {{.Service}}'.toLowerCase().includes(search.toLowerCase())) && (!confidenceFilter || '{{.Confidence}}' === confidenceFilter)">
+                        <tr data-search="{{.Subdomain}} {{.CNAME}} {{.Service}}" data-confidence="{{.Confidence}}" x-show="(!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())) && (!confidenceFilter || $el.dataset.confidence === confidenceFilter)">
                             <td><span class="text-mono">{{.Subdomain}}</span></td>
                             <td><span class="text-mono text-muted">{{.CNAME}}</span></td>
                             <td>{{.Service}}</td>
