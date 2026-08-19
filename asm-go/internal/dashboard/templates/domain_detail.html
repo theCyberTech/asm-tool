@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{if .DomainDetail}}{{.DomainDetail.Domain}}{{else}}Domain{{end}} - ASM Dashboard</title>
+    <title>{{if .DomainDetail}}{{if .DomainDetail.SelectedHost}}{{.DomainDetail.SelectedHost}}{{else if .DomainDetail.AssetTitle}}{{.DomainDetail.AssetTitle}} — {{.DomainDetail.Domain}}{{else}}{{.DomainDetail.Domain}}{{end}}{{else}}Domain{{end}} - ASM Dashboard</title>
 
     <!-- htmx -->
     <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
@@ -16,7 +16,7 @@
         {{template "styles" .}}
     </style>
 </head>
-<body hx-boost="true" x-data="toastManager()">
+<body x-data="toastManager()">
     {{template "nav" .}}
 
     <div class="layout">
@@ -174,6 +174,10 @@
         </div>
     </div>
 </div>
+{{else if and .DomainDetail .DomainDetail.SelectedHost}}
+{{template "host-page-content" .}}
+{{else if and .DomainDetail .DomainDetail.AssetKind}}
+{{template "asset-list-page" .}}
 {{else}}
 {{if .Warning}}
 <div class="alert alert-warning mb-md">{{.Warning}}</div>
@@ -220,12 +224,14 @@
 {{define "domain-detail-content"}}
 <!-- Stats Overview - Clickable cards that open modals -->
 <div class="stats-grid">
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/subdomains"
-            hx-target="#modal-body-subdomains"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('subdomains')">
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/subdomains"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/subdomains"
+       hx-target="#modal-body-subdomains"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('subdomains')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
@@ -233,13 +239,15 @@
         </div>
         <div class="stat-label">Subdomains</div>
         <div class="stat-value">{{.DomainDetail.Stats.SubdomainCount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/ports"
-            hx-target="#modal-body-ports"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('ports')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/ports"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/ports"
+       hx-target="#modal-body-ports"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('ports')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>
@@ -247,13 +255,15 @@
         </div>
         <div class="stat-label">Open Ports</div>
         <div class="stat-value">{{.DomainDetail.Stats.PortCount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/certificates"
-            hx-target="#modal-body-certificates"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('certificates')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/certificates"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/certificates"
+       hx-target="#modal-body-certificates"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('certificates')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -261,13 +271,15 @@
         </div>
         <div class="stat-label">Certificates</div>
         <div class="stat-value">{{.DomainDetail.Stats.CertificateCount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/technologies"
-            hx-target="#modal-body-technologies"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('technologies')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/technologies"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/technologies"
+       hx-target="#modal-body-technologies"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('technologies')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
@@ -275,13 +287,15 @@
         </div>
         <div class="stat-label">Technologies</div>
         <div class="stat-value">{{.DomainDetail.Stats.TechnologyCount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/dns"
-            hx-target="#modal-body-dns"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('dns')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/dns"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/dns"
+       hx-target="#modal-body-dns"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('dns')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
@@ -289,13 +303,15 @@
         </div>
         <div class="stat-label">DNS Records</div>
         <div class="stat-value">{{.DomainDetail.Stats.DNSRecordCount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/vulnerabilities"
-            hx-target="#modal-body-vulnerabilities"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('vulnerabilities')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/vulnerabilities"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/vulnerabilities"
+       hx-target="#modal-body-vulnerabilities"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('vulnerabilities')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -303,13 +319,15 @@
         </div>
         <div class="stat-label">Vulnerabilities</div>
         <div class="stat-value {{if .DomainDetail.Stats.VulnCount}}severity-high{{end}}">{{.DomainDetail.Stats.VulnCount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/urls"
-            hx-target="#modal-body-urls"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('urls')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/urls"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/urls"
+       hx-target="#modal-body-urls"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('urls')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
@@ -317,13 +335,15 @@
         </div>
         <div class="stat-label">URLs</div>
         <div class="stat-value">{{.DomainDetail.Stats.URLCount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/apis"
-            hx-target="#modal-body-apis"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('apis')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/apis"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/apis"
+       hx-target="#modal-body-apis"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('apis')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
@@ -331,13 +351,15 @@
         </div>
         <div class="stat-label">APIs</div>
         <div class="stat-value">{{.DomainDetail.Stats.APICount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/emails"
-            hx-target="#modal-body-emails"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('emails')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/emails"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/emails"
+       hx-target="#modal-body-emails"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('emails')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
@@ -345,13 +367,15 @@
         </div>
         <div class="stat-label">Emails</div>
         <div class="stat-value">{{.DomainDetail.Stats.EmailCount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/cloud"
-            hx-target="#modal-body-cloud"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('cloud')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/cloud"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/cloud"
+       hx-target="#modal-body-cloud"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('cloud')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
@@ -359,13 +383,15 @@
         </div>
         <div class="stat-label">Cloud Storage</div>
         <div class="stat-value {{if .DomainDetail.Stats.CloudCount}}severity-medium{{end}}">{{.DomainDetail.Stats.CloudCount}}</div>
-    </button>
-    <button type="button" class="stat-card stat-card-clickable"
-            hx-get="/domains/{{.DomainDetail.Domain}}/modal/takeovers"
-            hx-target="#modal-body-takeovers"
-            hx-swap="innerHTML"
-            hx-trigger="click once"
-            onclick="openAssetModal('takeovers')">
+    </a>
+    <a class="stat-card stat-card-clickable"
+       href="/domains/{{.DomainDetail.Domain}}/modal/takeovers"
+       hx-boost="false"
+       hx-get="/domains/{{.DomainDetail.Domain}}/modal/takeovers"
+       hx-target="#modal-body-takeovers"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if (typeof openAssetModal === 'function') openAssetModal('takeovers')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
@@ -373,8 +399,9 @@
         </div>
         <div class="stat-label">Takeovers</div>
         <div class="stat-value {{if .DomainDetail.Stats.TakeoverCount}}severity-critical{{end}}">{{.DomainDetail.Stats.TakeoverCount}}</div>
-    </button>
+    </a>
 </div>
+<p class="text-muted" style="margin: -0.5rem 0 1.25rem;">Click a card to view the full list.</p>
 <div class="modal-layer">
     {{template "subdomains-modal" .}}
     {{template "ports-modal" .}}
@@ -401,7 +428,7 @@
             </svg>
             Subdomains
         </h2>
-        <span class="badge badge-blue">{{.DomainDetail.Stats.SubdomainCount}} found</span>
+        <a href="/domains/{{.DomainDetail.Domain}}/modal/subdomains" class="badge badge-blue" hx-boost="false">{{.DomainDetail.Stats.SubdomainCount}} found</a>
     </div>
     <div class="card-body">
         {{if .DomainDetail.Subdomains}}
@@ -417,12 +444,8 @@
                 </thead>
                 <tbody>
                     {{range .DomainDetail.Subdomains}}
-                    <tr class="host-row"
-                        hx-get="/domains/{{$.DomainDetail.Domain}}/host?name={{urlquery .Subdomain}}"
-                        hx-target="#modal-body-host"
-                        hx-swap="innerHTML"
-                        onclick="openAssetModal('host')">
-                        <td><span class="text-mono domain-link">{{.Subdomain}}</span></td>
+                    <tr class="host-row">
+                        <td><a href="/domains/{{$.DomainDetail.Domain}}/host?name={{urlquery .Subdomain}}" class="text-mono domain-link" hx-boost="false">{{.Subdomain}}</a></td>
                         <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                         <td class="text-muted">{{.LastSeen.Format "Jan 02, 2006"}}</td>
                     </tr>
@@ -1105,12 +1128,8 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Subdomains}}
-                        <tr class="host-row" data-search="{{.Subdomain}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())"
-                            hx-get="/domains/{{$.DomainDetail.Domain}}/host?name={{urlquery .Subdomain}}"
-                            hx-target="#modal-body-host"
-                            hx-swap="innerHTML"
-                            onclick="openAssetModal('host')">
-                            <td><span class="text-mono domain-link">{{.Subdomain}}</span></td>
+                        <tr class="host-row" data-search="{{.Subdomain}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
+                            <td><a href="/domains/{{$.DomainDetail.Domain}}/host?name={{urlquery .Subdomain}}" class="text-mono domain-link" hx-boost="false">{{.Subdomain}}</a></td>
                             <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                             <td class="text-muted">{{.LastSeen.Format "Jan 02, 2006"}}</td>
                         </tr>
@@ -1875,6 +1894,58 @@
                 <p>Run subdomain takeover detection to find vulnerable subdomains</p>
             </div>
             {{end}}
+</div>
+{{end}}
+
+
+{{define "host-page-content"}}
+{{if .Warning}}
+<div class="alert alert-warning mb-md">{{.Warning}}</div>
+{{end}}
+<div class="page-header">
+    <div>
+        <div class="flex items-center gap-md mb-sm">
+            <a href="/domains/{{.DomainDetail.Domain}}" class="text-muted" style="text-decoration: none;">&larr; Back to {{.DomainDetail.Domain}}</a>
+        </div>
+        <h1 class="page-title"><span class="text-mono">{{.DomainDetail.SelectedHost}}</span></h1>
+        <p class="page-description">Open ports, certificates, technologies, and DNS records for this host.</p>
+    </div>
+</div>
+<div class="card">
+    <div class="card-body">
+        {{template "host-modal-body" .}}
+    </div>
+</div>
+{{end}}
+
+{{define "asset-list-page"}}
+{{if .Warning}}
+<div class="alert alert-warning mb-md">{{.Warning}}</div>
+{{end}}
+<div class="page-header">
+    <div>
+        <div class="flex items-center gap-md mb-sm">
+            <a href="/domains/{{.DomainDetail.Domain}}" class="text-muted" style="text-decoration: none;">&larr; Back to {{.DomainDetail.Domain}}</a>
+        </div>
+        <h1 class="page-title">{{.DomainDetail.AssetTitle}}</h1>
+        <p class="page-description">Full list for <span class="text-mono">{{.DomainDetail.Domain}}</span></p>
+    </div>
+</div>
+<div class="card">
+    <div class="card-body">
+        {{if eq .DomainDetail.AssetKind "subdomains"}}{{template "subdomains-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "ports"}}{{template "ports-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "certificates"}}{{template "certificates-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "technologies"}}{{template "technologies-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "dns"}}{{template "dns-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "vulnerabilities"}}{{template "vulnerabilities-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "urls"}}{{template "urls-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "apis"}}{{template "apis-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "emails"}}{{template "emails-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "cloud"}}{{template "cloud-modal-body" .}}
+        {{else if eq .DomainDetail.AssetKind "takeovers"}}{{template "takeovers-modal-body" .}}
+        {{end}}
+    </div>
 </div>
 {{end}}
 

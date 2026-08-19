@@ -141,6 +141,8 @@ type DomainDetailData struct {
 	Takeovers    []TakeoverView
 	ChangeEvents []ChangeEventView
 	SelectedHost string
+	AssetKind    string
+	AssetTitle   string
 }
 
 // ChangeEventView represents a DNS change event for display
@@ -172,6 +174,7 @@ type DomainDetailStats struct {
 // SubdomainView represents a subdomain for display
 type SubdomainView struct {
 	Subdomain    string
+	ParentDomain string
 	DiscoveredAt time.Time
 	LastSeen     time.Time
 }

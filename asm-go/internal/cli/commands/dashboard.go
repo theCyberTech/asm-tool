@@ -450,7 +450,7 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 
 		switch activePage {
 		case "subdomains":
-			rows, err := deps.DB.GetAllSubdomains()
+			rows, err := deps.DB.GetAllSubdomainsWithParent()
 			if err != nil {
 				http.Error(w, "Failed to load subdomains: "+err.Error(), http.StatusInternalServerError)
 				return
@@ -458,6 +458,7 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 			for _, s := range rows {
 				list.Subdomains = append(list.Subdomains, dashboard.SubdomainView{
 					Subdomain:    s.Subdomain,
+					ParentDomain: s.ParentDomain,
 					DiscoveredAt: s.DiscoveredAt,
 					LastSeen:     s.LastSeen,
 				})
@@ -679,6 +680,31 @@ var domainModalTemplates = map[string]string{
 	"takeovers":       "takeovers-modal-body",
 }
 
+var assetKindTitles = map[string]string{
+	"subdomains":      "Subdomains",
+	"ports":           "Open Ports",
+	"certificates":    "Certificates",
+	"technologies":    "Technologies",
+	"dns":             "DNS Records",
+	"vulnerabilities": "Vulnerabilities",
+	"urls":            "URLs",
+	"apis":            "API Endpoints",
+	"emails":          "Email Addresses",
+	"cloud":           "Cloud Storage",
+	"takeovers":       "Takeovers",
+}
+
+func wantsHTMLPartial(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("HX-Request"), "true")
+}
+
+func assetKindTitle(kind string) string {
+	if title, ok := assetKindTitles[kind]; ok {
+		return title
+	}
+	return kind
+}
+
 type domainDetailRoute struct {
 	domain string
 	action string // "", "refresh", or a modal kind
@@ -757,7 +783,13 @@ func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
 				http.NotFound(w, r)
 				return
 			}
-			if err := dashboard.RenderPartial(w, "host-modal-body", data); err != nil {
+			if wantsHTMLPartial(r) {
+				if err := dashboard.RenderPartial(w, "host-modal-body", data); err != nil {
+					http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+				}
+				return
+			}
+			if err := dashboard.RenderPage(w, "domain-base", data); err != nil {
 				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 			}
 		default:
@@ -770,7 +802,15 @@ func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
 				http.NotFound(w, r)
 				return
 			}
-			if err := dashboard.RenderPartial(w, domainModalTemplates[route.action], data); err != nil {
+			data.DomainDetail.AssetKind = route.action
+			data.DomainDetail.AssetTitle = assetKindTitle(route.action)
+			if wantsHTMLPartial(r) {
+				if err := dashboard.RenderPartial(w, domainModalTemplates[route.action], data); err != nil {
+					http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+				}
+				return
+			}
+			if err := dashboard.RenderPage(w, "domain-base", data); err != nil {
 				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 			}
 		}
@@ -844,6 +884,7 @@ func loadDomainDetailPageData(deps *Deps, domainName, only string, previewLimit,
 			for i, s := range subs {
 				detail.Subdomains[i] = dashboard.SubdomainView{
 					Subdomain:    s.Subdomain,
+					ParentDomain: domain.Domain,
 					DiscoveredAt: s.DiscoveredAt,
 					LastSeen:     s.LastSeen,
 				}
