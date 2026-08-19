@@ -724,6 +724,11 @@ select.form-input {
 .gap-md { gap: var(--space-md); }
 
 /* Modals */
+.modal-layer {
+    position: relative;
+    z-index: 200;
+}
+
 .modal-backdrop {
     position: fixed;
     inset: 0;
@@ -735,12 +740,14 @@ select.form-input {
     padding: var(--space-lg);
     opacity: 0;
     visibility: hidden;
+    pointer-events: none;
     transition: opacity 0.2s ease, visibility 0.2s ease;
 }
 
 .modal-backdrop.active {
     opacity: 1;
     visibility: visible;
+    pointer-events: auto;
 }
 
 .modal {
@@ -813,6 +820,13 @@ select.form-input {
 }
 
 /* Clickable stat cards */
+button.stat-card {
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    width: 100%;
+}
+
 .stat-card-clickable {
     cursor: pointer;
     transition: border-color 0.15s ease, transform 0.15s ease;

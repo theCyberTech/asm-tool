@@ -660,19 +660,66 @@ func makeStatsHandler(deps *Deps) http.HandlerFunc {
 	}
 }
 
+const (
+	domainDetailPreviewLimit = 25
+	domainModalURLLimit      = 500
+)
+
+var domainModalTemplates = map[string]string{
+	"subdomains":      "subdomains-modal-body",
+	"ports":           "ports-modal-body",
+	"certificates":    "certificates-modal-body",
+	"technologies":    "technologies-modal-body",
+	"dns":             "dns-modal-body",
+	"vulnerabilities": "vulnerabilities-modal-body",
+	"urls":            "urls-modal-body",
+	"apis":            "apis-modal-body",
+	"emails":          "emails-modal-body",
+	"cloud":           "cloud-modal-body",
+	"takeovers":       "takeovers-modal-body",
+}
+
+type domainDetailRoute struct {
+	domain string
+	action string // "", "refresh", or a modal kind
+}
+
+func parseDomainDetailPath(path string) (domainDetailRoute, bool) {
+	rest := strings.Trim(strings.TrimPrefix(path, "/domains/"), "/")
+	if rest == "" {
+		return domainDetailRoute{}, false
+	}
+	parts := strings.Split(rest, "/")
+	switch len(parts) {
+	case 1:
+		return domainDetailRoute{domain: parts[0]}, true
+	case 2:
+		if parts[1] == "refresh" {
+			return domainDetailRoute{domain: parts[0], action: "refresh"}, true
+		}
+	case 3:
+		if parts[1] == "modal" {
+			if _, ok := domainModalTemplates[parts[2]]; ok {
+				return domainDetailRoute{domain: parts[0], action: parts[2]}, true
+			}
+		}
+	}
+	return domainDetailRoute{}, false
+}
+
 func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Extract domain from URL path: /domains/{domain}
-		path := r.URL.Path
-		domain := strings.TrimPrefix(path, "/domains/")
-		domain = strings.TrimSuffix(domain, "/")
-		domain = strings.TrimSuffix(domain, "/refresh")
-
-		if domain == "" {
-			http.Redirect(w, r, "/", http.StatusFound)
+		route, ok := parseDomainDetailPath(r.URL.Path)
+		if !ok {
+			if strings.Trim(strings.TrimPrefix(r.URL.Path, "/domains/"), "/") == "" {
+				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
+			http.NotFound(w, r)
 			return
 		}
-		decoded, err := url.PathUnescape(domain)
+
+		decoded, err := url.PathUnescape(route.domain)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -682,42 +729,70 @@ func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		domain = normalized
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-		data := getDomainDetailPageData(deps, domain)
-
-		// Check if this is a refresh request (htmx partial)
-		if strings.HasSuffix(r.URL.Path, "/refresh") {
+		switch {
+		case route.action == "":
+			data := loadDomainDetailPageData(deps, normalized, "", domainDetailPreviewLimit, domainDetailPreviewLimit)
+			if err := dashboard.RenderPage(w, "domain-base", data); err != nil {
+				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			}
+		case route.action == "refresh":
+			data := loadDomainDetailPageData(deps, normalized, "", domainDetailPreviewLimit, domainDetailPreviewLimit)
 			if err := dashboard.RenderPartial(w, "domain-detail-content", data); err != nil {
 				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 			}
-			return
-		}
-
-		// Full page render
-		if err := dashboard.RenderPage(w, "domain-base", data); err != nil {
-			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
-			return
+		default:
+			urlLimit := 0
+			if route.action == "urls" {
+				urlLimit = domainModalURLLimit
+			}
+			data := loadDomainDetailPageData(deps, normalized, route.action, 0, urlLimit)
+			if data.Error != "" || data.DomainDetail == nil {
+				http.NotFound(w, r)
+				return
+			}
+			if err := dashboard.RenderPartial(w, domainModalTemplates[route.action], data); err != nil {
+				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			}
 		}
 	}
 }
 
-// getDomainDetailPageData fetches all domain-specific data for the detail view
-func getDomainDetailPageData(deps *Deps, domainName string) dashboard.PageData {
+func wantDomainAsset(only, kind string) bool {
+	return only == "" || only == kind
+}
+
+func previewList[T any](items []T, n int) []T {
+	if n <= 0 || len(items) <= n {
+		return items
+	}
+	return items[:n]
+}
+
+func addPageWarning(data *dashboard.PageData, msg string) {
+	if data.Warning == "" {
+		data.Warning = msg
+		return
+	}
+	data.Warning += "; " + msg
+}
+
+// loadDomainDetailPageData fetches domain-specific data for the detail view or one modal.
+// only limits loading to a single asset kind (empty means all). previewLimit slices
+// inline tables; urlLimit caps URL queries (0 means no SQL limit).
+func loadDomainDetailPageData(deps *Deps, domainName, only string, previewLimit, urlLimit int) dashboard.PageData {
 	data := dashboard.PageData{
 		ActivePage: "domains",
 	}
 
-	// Get domain info
 	domain, err := deps.DB.Domains.GetByName(domainName)
 	if err != nil {
 		data.Error = "Domain not found"
 		return data
 	}
 
-	// Initialize domain detail data
 	detail := &dashboard.DomainDetailData{
 		Domain:      domain.Domain,
 		AddedAt:     domain.AddedAt,
@@ -726,7 +801,7 @@ func getDomainDetailPageData(deps *Deps, domainName string) dashboard.PageData {
 
 	stats, err := deps.DB.GetDomainDetailStats(domainName)
 	if err != nil {
-		data.Warning = "Failed to load domain statistics"
+		addPageWarning(&data, "Failed to load domain statistics")
 	} else if stats != nil {
 		detail.Stats = dashboard.DomainDetailStats{
 			SubdomainCount:   stats.SubdomainCount,
@@ -743,170 +818,241 @@ func getDomainDetailPageData(deps *Deps, domainName string) dashboard.PageData {
 		}
 	}
 
-	// Get subdomains
-	subs, _ := deps.DB.GetSubdomainsForDomain(domainName)
-	detail.Subdomains = make([]dashboard.SubdomainView, len(subs))
-	for i, s := range subs {
-		detail.Subdomains[i] = dashboard.SubdomainView{
-			Subdomain:    s.Subdomain,
-			DiscoveredAt: s.DiscoveredAt,
-			LastSeen:     s.LastSeen,
+	if wantDomainAsset(only, "subdomains") {
+		subs, err := deps.DB.GetSubdomainsForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load subdomains")
+		} else {
+			detail.Subdomains = make([]dashboard.SubdomainView, len(subs))
+			for i, s := range subs {
+				detail.Subdomains[i] = dashboard.SubdomainView{
+					Subdomain:    s.Subdomain,
+					DiscoveredAt: s.DiscoveredAt,
+					LastSeen:     s.LastSeen,
+				}
+			}
+			detail.Subdomains = previewList(detail.Subdomains, previewLimit)
 		}
 	}
 
-	// Get ports
-	ports, _ := deps.DB.GetPortsForDomain(domainName)
-	detail.Ports = make([]dashboard.PortView, len(ports))
-	for i, p := range ports {
-		detail.Ports[i] = dashboard.PortView{
-			Host:         p.Host,
-			Port:         p.Port,
-			Protocol:     p.Protocol,
-			Service:      p.Service,
-			Version:      p.Version,
-			Product:      p.Product,
-			State:        p.State,
-			Banner:       p.Banner,
-			DiscoveredAt: p.DiscoveredAt,
+	if wantDomainAsset(only, "ports") {
+		ports, err := deps.DB.GetPortsForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load open ports")
+		} else {
+			detail.Ports = make([]dashboard.PortView, len(ports))
+			for i, p := range ports {
+				detail.Ports[i] = dashboard.PortView{
+					Host:         p.Host,
+					Port:         p.Port,
+					Protocol:     p.Protocol,
+					Service:      p.Service,
+					Version:      p.Version,
+					Product:      p.Product,
+					State:        p.State,
+					Banner:       p.Banner,
+					DiscoveredAt: p.DiscoveredAt,
+				}
+			}
+			detail.Ports = previewList(detail.Ports, previewLimit)
 		}
 	}
 
-	// Get certificates
-	certs, _ := deps.DB.GetCertificatesForDomain(domainName)
-	detail.Certificates = make([]dashboard.CertificateView, len(certs))
-	for i, c := range certs {
-		detail.Certificates[i] = dashboard.CertificateView{
-			Host:            c.Host,
-			Port:            c.Port,
-			Subject:         c.Subject,
-			Issuer:          c.Issuer,
-			NotAfter:        c.NotAfter,
-			DaysUntilExpiry: c.DaysUntilExpiry,
-			SAN:             c.SAN,
+	if wantDomainAsset(only, "certificates") {
+		certs, err := deps.DB.GetCertificatesForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load certificates")
+		} else {
+			detail.Certificates = make([]dashboard.CertificateView, len(certs))
+			for i, c := range certs {
+				detail.Certificates[i] = dashboard.CertificateView{
+					Host:            c.Host,
+					Port:            c.Port,
+					Subject:         c.Subject,
+					Issuer:          c.Issuer,
+					NotAfter:        c.NotAfter,
+					DaysUntilExpiry: c.DaysUntilExpiry,
+					SAN:             c.SAN,
+				}
+			}
+			detail.Certificates = previewList(detail.Certificates, previewLimit)
 		}
 	}
 
-	// Get technologies
-	techs, _ := deps.DB.GetTechnologiesForDomain(domainName)
-	detail.Technologies = make([]dashboard.TechnologyView, len(techs))
-	for i, t := range techs {
-		detail.Technologies[i] = dashboard.TechnologyView{
-			Host:         t.Host,
-			StatusCode:   t.StatusCode,
-			Title:        t.Title,
-			Server:       t.Server,
-			Technologies: t.Technologies,
-			CheckedAt:    t.CheckedAt,
+	if wantDomainAsset(only, "technologies") {
+		techs, err := deps.DB.GetTechnologiesForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load technologies")
+		} else {
+			detail.Technologies = make([]dashboard.TechnologyView, len(techs))
+			for i, t := range techs {
+				detail.Technologies[i] = dashboard.TechnologyView{
+					Host:         t.Host,
+					StatusCode:   t.StatusCode,
+					Title:        t.Title,
+					Server:       t.Server,
+					Technologies: t.Technologies,
+					CheckedAt:    t.CheckedAt,
+				}
+			}
+			detail.Technologies = previewList(detail.Technologies, previewLimit)
 		}
 	}
 
-	// Get DNS records
-	dns, _ := deps.DB.GetDNSRecordsForDomain(domainName)
-	detail.DNSRecords = make([]dashboard.DNSRecordView, len(dns))
-	for i, d := range dns {
-		detail.DNSRecords[i] = dashboard.DNSRecordView{
-			Domain:    d.Domain,
-			Records:   d.Records,
-			CheckedAt: d.CheckedAt,
+	if wantDomainAsset(only, "dns") {
+		dns, err := deps.DB.GetDNSRecordsForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load DNS records")
+		} else {
+			detail.DNSRecords = make([]dashboard.DNSRecordView, len(dns))
+			for i, d := range dns {
+				detail.DNSRecords[i] = dashboard.DNSRecordView{
+					Domain:    d.Domain,
+					Records:   d.Records,
+					CheckedAt: d.CheckedAt,
+				}
+			}
+			detail.DNSRecords = previewList(detail.DNSRecords, previewLimit)
 		}
 	}
 
-	// Get findings/vulnerabilities
-	findings, _ := deps.DB.GetVulnerabilitiesForDomain(domainName)
-	detail.Findings = make([]dashboard.FindingView, len(findings))
-	for i, f := range findings {
-		detail.Findings[i] = dashboard.FindingView{
-			ID:           f.ID,
-			Name:         f.Name,
-			Severity:     f.Severity,
-			Description:  f.Description,
-			Host:         f.Host,
-			MatchedAt:    f.MatchedAt,
-			Tags:         f.Tags,
-			DiscoveredAt: f.DiscoveredAt,
+	if wantDomainAsset(only, "vulnerabilities") {
+		findings, err := deps.DB.GetVulnerabilitiesForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load vulnerabilities")
+		} else {
+			detail.Findings = make([]dashboard.FindingView, len(findings))
+			for i, f := range findings {
+				detail.Findings[i] = dashboard.FindingView{
+					ID:           f.ID,
+					Name:         f.Name,
+					Severity:     f.Severity,
+					Description:  f.Description,
+					Host:         f.Host,
+					MatchedAt:    f.MatchedAt,
+					Tags:         f.Tags,
+					DiscoveredAt: f.DiscoveredAt,
+				}
+			}
+			detail.Findings = previewList(detail.Findings, previewLimit)
 		}
 	}
 
-	// Get URLs
-	urls, _ := deps.DB.GetURLsForDomain(domainName)
-	detail.URLs = make([]dashboard.URLView, len(urls))
-	for i, u := range urls {
-		detail.URLs[i] = dashboard.URLView{
-			URL:          u.URL,
-			Domain:       u.Domain,
-			Category:     u.Category,
-			Interesting:  u.Interesting > 0,
-			Source:       u.Source,
-			DiscoveredAt: u.DiscoveredAt,
+	if wantDomainAsset(only, "urls") {
+		urls, err := deps.DB.GetURLsForDomainLimit(domainName, urlLimit)
+		if err != nil {
+			addPageWarning(&data, "Failed to load URLs")
+		} else {
+			detail.URLs = make([]dashboard.URLView, len(urls))
+			for i, u := range urls {
+				detail.URLs[i] = dashboard.URLView{
+					URL:          u.URL,
+					Domain:       u.Domain,
+					Category:     u.Category,
+					Interesting:  u.Interesting > 0,
+					Source:       u.Source,
+					DiscoveredAt: u.DiscoveredAt,
+				}
+			}
+			detail.URLs = previewList(detail.URLs, previewLimit)
 		}
 	}
 
-	// Get APIs
-	apis, _ := deps.DB.GetAPIsForDomain(domainName)
-	detail.APIs = make([]dashboard.APIView, len(apis))
-	for i, a := range apis {
-		detail.APIs[i] = dashboard.APIView{
-			URL:          a.URL,
-			Type:         a.Type,
-			Title:        a.Title,
-			Version:      a.Version,
-			DiscoveredAt: a.DiscoveredAt,
+	if wantDomainAsset(only, "apis") {
+		apis, err := deps.DB.GetAPIsForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load APIs")
+		} else {
+			detail.APIs = make([]dashboard.APIView, len(apis))
+			for i, a := range apis {
+				detail.APIs[i] = dashboard.APIView{
+					URL:          a.URL,
+					Type:         a.Type,
+					Title:        a.Title,
+					Version:      a.Version,
+					DiscoveredAt: a.DiscoveredAt,
+				}
+			}
+			detail.APIs = previewList(detail.APIs, previewLimit)
 		}
 	}
 
-	// Get emails
-	emails, _ := deps.DB.GetEmailsForDomain(domainName)
-	detail.Emails = make([]dashboard.EmailView, len(emails))
-	for i, e := range emails {
-		detail.Emails[i] = dashboard.EmailView{
-			Address:      e.Address,
-			Source:       e.Source,
-			DiscoveredAt: e.DiscoveredAt,
+	if wantDomainAsset(only, "emails") {
+		emails, err := deps.DB.GetEmailsForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load emails")
+		} else {
+			detail.Emails = make([]dashboard.EmailView, len(emails))
+			for i, e := range emails {
+				detail.Emails[i] = dashboard.EmailView{
+					Address:      e.Address,
+					Source:       e.Source,
+					DiscoveredAt: e.DiscoveredAt,
+				}
+			}
+			detail.Emails = previewList(detail.Emails, previewLimit)
 		}
 	}
 
-	// Get cloud storage
-	cloud, _ := deps.DB.GetCloudStorageForDomain(domainName)
-	detail.CloudStorage = make([]dashboard.CloudStorageView, len(cloud))
-	for i, c := range cloud {
-		detail.CloudStorage[i] = dashboard.CloudStorageView{
-			Provider:    c.Provider,
-			BucketName:  c.BucketName,
-			URL:         c.URL,
-			AccessLevel: c.AccessLevel,
-			Severity:    c.Severity,
-			Evidence:    c.Evidence,
-			Status:      c.Status,
+	if wantDomainAsset(only, "cloud") {
+		cloud, err := deps.DB.GetCloudStorageForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load cloud storage")
+		} else {
+			detail.CloudStorage = make([]dashboard.CloudStorageView, len(cloud))
+			for i, c := range cloud {
+				detail.CloudStorage[i] = dashboard.CloudStorageView{
+					Provider:    c.Provider,
+					BucketName:  c.BucketName,
+					URL:         c.URL,
+					AccessLevel: c.AccessLevel,
+					Severity:    c.Severity,
+					Evidence:    c.Evidence,
+					Status:      c.Status,
+				}
+			}
+			detail.CloudStorage = previewList(detail.CloudStorage, previewLimit)
 		}
 	}
 
-	// Get takeovers
-	takeovers, _ := deps.DB.GetTakeoversForDomain(domainName)
-	detail.Takeovers = make([]dashboard.TakeoverView, len(takeovers))
-	for i, t := range takeovers {
-		detail.Takeovers[i] = dashboard.TakeoverView{
-			Subdomain:    t.Subdomain,
-			CNAME:        t.CNAME,
-			Service:      t.Service,
-			TakeoverType: t.TakeoverType,
-			Confidence:   t.Confidence,
-			Evidence:     t.Evidence,
-			DiscoveredAt: t.DiscoveredAt,
+	if wantDomainAsset(only, "takeovers") {
+		takeovers, err := deps.DB.GetTakeoversForDomain(domainName)
+		if err != nil {
+			addPageWarning(&data, "Failed to load takeovers")
+		} else {
+			detail.Takeovers = make([]dashboard.TakeoverView, len(takeovers))
+			for i, t := range takeovers {
+				detail.Takeovers[i] = dashboard.TakeoverView{
+					Subdomain:    t.Subdomain,
+					CNAME:        t.CNAME,
+					Service:      t.Service,
+					TakeoverType: t.TakeoverType,
+					Confidence:   t.Confidence,
+					Evidence:     t.Evidence,
+					DiscoveredAt: t.DiscoveredAt,
+				}
+			}
+			detail.Takeovers = previewList(detail.Takeovers, previewLimit)
 		}
 	}
 
-	// Get change events for this domain
-	changes, _ := deps.DB.GetChangeEvents(domainName, 100)
-	detail.ChangeEvents = make([]dashboard.ChangeEventView, len(changes))
-	for i, c := range changes {
-		detail.ChangeEvents[i] = dashboard.ChangeEventView{
-			Domain:      c.Domain,
-			ChangeType:  c.ChangeType,
-			Severity:    c.Severity,
-			Description: c.Description,
-			OldValue:    c.OldValue,
-			NewValue:    c.NewValue,
-			Timestamp:   c.Timestamp,
+	if only == "" {
+		changes, err := deps.DB.GetChangeEvents(domainName, 100)
+		if err != nil {
+			addPageWarning(&data, "Failed to load change events")
+		} else {
+			detail.ChangeEvents = make([]dashboard.ChangeEventView, len(changes))
+			for i, c := range changes {
+				detail.ChangeEvents[i] = dashboard.ChangeEventView{
+					Domain:      c.Domain,
+					ChangeType:  c.ChangeType,
+					Severity:    c.Severity,
+					Description: c.Description,
+					OldValue:    c.OldValue,
+					NewValue:    c.NewValue,
+					Timestamp:   c.Timestamp,
+				}
+			}
 		}
 	}
 

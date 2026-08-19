@@ -234,3 +234,40 @@ function sortableTable(initialData) {
     {{end}}
 </div>
 {{end}}
+
+{{define "dashboard-scripts"}}
+<script>
+function openAssetModal(name) {
+    document.querySelectorAll('.modal-backdrop.active').forEach(function(el) {
+        el.classList.remove('active');
+    });
+    var modal = document.getElementById('modal-' + name);
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function closeAssetModal(el) {
+    var backdrop = el && el.classList && el.classList.contains('modal-backdrop')
+        ? el
+        : (el && el.closest ? el.closest('.modal-backdrop') : null);
+    if (backdrop) {
+        backdrop.classList.remove('active');
+    }
+}
+
+document.addEventListener('keydown', function(evt) {
+    if (evt.key === 'Escape') {
+        document.querySelectorAll('.modal-backdrop.active').forEach(function(el) {
+            el.classList.remove('active');
+        });
+    }
+});
+
+document.addEventListener('htmx:afterSwap', function(evt) {
+    if (window.Alpine && evt.detail && evt.detail.elt) {
+        Alpine.initTree(evt.detail.elt);
+    }
+});
+</script>
+{{end}}
