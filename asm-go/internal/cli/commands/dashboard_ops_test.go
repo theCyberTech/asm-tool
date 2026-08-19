@@ -386,6 +386,7 @@ func TestParseDomainDetailPath(t *testing.T) {
 		{"/domains/example.com", "example.com", "", true},
 		{"/domains/example.com/", "example.com", "", true},
 		{"/domains/example.com/refresh", "example.com", "refresh", true},
+		{"/domains/example.com/host", "example.com", "host", true},
 		{"/domains/example.com/modal/ports", "example.com", "ports", true},
 		{"/domains/example.com/modal/certificates", "example.com", "certificates", true},
 		{"/domains/example.com/modal/technologies", "example.com", "technologies", true},
@@ -414,8 +415,12 @@ func TestDomainDetailAssetModalsLoadHostRecords(t *testing.T) {
 	}
 	defer db.Close()
 
-	if _, err := db.Domains.Add("example.com"); err != nil {
+	domain, err := db.Domains.Add("example.com")
+	if err != nil {
 		t.Fatalf("Add domain: %v", err)
+	}
+	if err := db.Domains.AddSubdomain(domain.ID, "api.example.com"); err != nil {
+		t.Fatalf("Add subdomain: %v", err)
 	}
 	if err := db.Ports.Add(&database.Port{
 		Host: "api.example.com", Port: 443, Protocol: "tcp", State: "open", Service: "https",
@@ -458,6 +463,15 @@ func TestDomainDetailAssetModalsLoadHostRecords(t *testing.T) {
 	if !strings.Contains(page, `id="modal-ports"`) || !strings.Contains(page, "openAssetModal('ports')") {
 		t.Fatal("domain page missing vanilla ports modal")
 	}
+	if !strings.Contains(page, `class="host-row"`) || !strings.Contains(page, "/host?name=") {
+		t.Fatal("domain page missing clickable subdomain rows")
+	}
+	if !strings.Contains(page, `href="/domains/example.com/modal/subdomains"`) {
+		t.Fatal("domain page missing subdomain list link")
+	}
+	if strings.Contains(page, `hx-boost="true"`) {
+		t.Fatal("domain page still enables hx-boost")
+	}
 
 	for _, kind := range []string{"ports", "certificates", "technologies", "dns"} {
 		req := httptest.NewRequest(http.MethodGet, "/domains/example.com/modal/"+kind, nil)
@@ -473,6 +487,80 @@ func TestDomainDetailAssetModalsLoadHostRecords(t *testing.T) {
 		if !strings.Contains(body, `data-search="`) {
 			t.Fatalf("%s modal missing data-search filter attribute", kind)
 		}
+	}
+
+	hostReq := httptest.NewRequest(http.MethodGet, "/domains/example.com/host?name=api.example.com", nil)
+	hostRec := httptest.NewRecorder()
+	handler(hostRec, hostReq)
+	if hostRec.Code != http.StatusOK {
+		t.Fatalf("host page status = %d, body = %s", hostRec.Code, hostRec.Body.String())
+	}
+	hostBody := hostRec.Body.String()
+	if !strings.Contains(hostBody, "<html") {
+		t.Fatal("host page without HX-Request should be a full HTML document")
+	}
+	if !strings.Contains(hostBody, "api.example.com") {
+		t.Fatalf("host page missing selected host, body = %s", hostBody)
+	}
+	if !strings.Contains(hostBody, "443/tcp") {
+		t.Fatalf("host page missing open port, body = %s", hostBody)
+	}
+	if !strings.Contains(hostBody, "Open Ports") || !strings.Contains(hostBody, "Certificates") ||
+		!strings.Contains(hostBody, "Technologies") || !strings.Contains(hostBody, "DNS Records") {
+		t.Fatalf("host page missing asset sections, body = %s", hostBody)
+	}
+	if !strings.Contains(hostBody, "Back to example.com") {
+		t.Fatal("host page missing back link to domain")
+	}
+
+	hostPartialReq := httptest.NewRequest(http.MethodGet, "/domains/example.com/host?name=api.example.com", nil)
+	hostPartialReq.Header.Set("HX-Request", "true")
+	hostPartialRec := httptest.NewRecorder()
+	handler(hostPartialRec, hostPartialReq)
+	if hostPartialRec.Code != http.StatusOK {
+		t.Fatalf("host partial status = %d, body = %s", hostPartialRec.Code, hostPartialRec.Body.String())
+	}
+	hostPartial := hostPartialRec.Body.String()
+	if strings.Contains(hostPartial, "<html") {
+		t.Fatal("HTMX host request should return a partial, not a full page")
+	}
+	if !strings.Contains(hostPartial, "443/tcp") {
+		t.Fatalf("host partial missing open port, body = %s", hostPartial)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/domains/example.com/modal/subdomains", nil)
+	listRec := httptest.NewRecorder()
+	handler(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("subdomains page status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	listBody := listRec.Body.String()
+	if !strings.Contains(listBody, "<html") {
+		t.Fatal("subdomains list without HX-Request should be a full HTML document")
+	}
+	if !strings.Contains(listBody, "api.example.com") {
+		t.Fatal("subdomains list page missing subdomain")
+	}
+	if !strings.Contains(listBody, `href="/domains/example.com/host?name=api.example.com"`) {
+		t.Fatal("subdomains list page missing host link")
+	}
+
+	listPartialReq := httptest.NewRequest(http.MethodGet, "/domains/example.com/modal/subdomains", nil)
+	listPartialReq.Header.Set("HX-Request", "true")
+	listPartialRec := httptest.NewRecorder()
+	handler(listPartialRec, listPartialReq)
+	if listPartialRec.Code != http.StatusOK {
+		t.Fatalf("subdomains partial status = %d", listPartialRec.Code)
+	}
+	if strings.Contains(listPartialRec.Body.String(), "<html") {
+		t.Fatal("HTMX subdomains request should return a partial, not a full page")
+	}
+
+	badReq := httptest.NewRequest(http.MethodGet, "/domains/example.com/host?name=notexample.com", nil)
+	badRec := httptest.NewRecorder()
+	handler(badRec, badReq)
+	if badRec.Code != http.StatusNotFound {
+		t.Fatalf("foreign host status = %d, want 404", badRec.Code)
 	}
 }
 

@@ -1009,6 +1009,91 @@ func (d *Database) GetPortsForDomain(domain string) ([]Port, error) {
 	return ports, err
 }
 
+func (d *Database) GetCertificatesForHost(host string) ([]Certificate, error) {
+	var certs []Certificate
+	err := d.db.Select(&certs, `
+		SELECT
+			id, host, port,
+			COALESCE(subject, '') AS subject,
+			COALESCE(issuer, '') AS issuer,
+			COALESCE(serial_number, '') AS serial_number,
+			not_before,
+			not_after,
+			COALESCE(days_until_expiry, 0) AS days_until_expiry,
+			COALESCE(fingerprint, '') AS fingerprint,
+			COALESCE(san, '') AS san,
+			COALESCE(signature_algorithm, '') AS signature_algorithm,
+			checked_at
+		FROM certificates
+		WHERE host = ?
+		ORDER BY port
+	`, host)
+	return certs, err
+}
+
+func (d *Database) GetTechnologiesForHost(host string) ([]Technology, error) {
+	var techs []Technology
+	err := d.db.Select(&techs, `
+		SELECT
+			id, host,
+			COALESCE(status_code, 0) AS status_code,
+			COALESCE(title, '') AS title,
+			COALESCE(server, '') AS server,
+			COALESCE(technologies, '') AS technologies,
+			COALESCE(headers, '') AS headers,
+			COALESCE(content_length, 0) AS content_length,
+			COALESCE(redirect_url, '') AS redirect_url,
+			checked_at
+		FROM technologies
+		WHERE host = ?
+		ORDER BY host
+	`, host)
+	if err != nil && isTableNotExistsError(err) {
+		return []Technology{}, nil
+	}
+	return techs, err
+}
+
+func (d *Database) GetDNSRecordsForHost(host string) ([]DNSRecord, error) {
+	var records []DNSRecord
+	err := d.db.Select(&records, `
+		SELECT
+			id, domain,
+			COALESCE(records, '') AS records,
+			checked_at
+		FROM dns_records
+		WHERE domain = ?
+		ORDER BY domain
+	`, host)
+	if err != nil && isTableNotExistsError(err) {
+		return []DNSRecord{}, nil
+	}
+	return records, err
+}
+
+func (d *Database) GetPortsForHost(host string) ([]Port, error) {
+	var ports []Port
+	err := d.db.Select(&ports, `
+		SELECT
+			id, host, port,
+			COALESCE(protocol, 'tcp') AS protocol,
+			COALESCE(service, '') AS service,
+			COALESCE(version, '') AS version,
+			COALESCE(product, '') AS product,
+			COALESCE(state, 'open') AS state,
+			COALESCE(banner, '') AS banner,
+			discovered_at,
+			last_seen
+		FROM ports
+		WHERE host = ? AND state = 'open'
+		ORDER BY port
+	`, host)
+	if err != nil && isTableNotExistsError(err) {
+		return []Port{}, nil
+	}
+	return ports, err
+}
+
 // GetSubdomainsForDomain returns all subdomains for a domain name
 func (d *Database) GetSubdomainsForDomain(domain string) ([]Subdomain, error) {
 	var subs []Subdomain
@@ -1263,6 +1348,29 @@ func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, erro
 func (d *Database) GetAllSubdomains() ([]Subdomain, error) {
 	var rows []Subdomain
 	err := d.db.Select(&rows, `SELECT s.* FROM subdomains s WHERE s.active = 1 ORDER BY s.subdomain`)
+	if err != nil && isTableNotExistsError(err) {
+		return nil, nil
+	}
+	return rows, err
+}
+
+// SubdomainWithParent is a subdomain joined to its monitored root domain.
+type SubdomainWithParent struct {
+	Subdomain    string    `db:"subdomain"`
+	ParentDomain string    `db:"parent_domain"`
+	DiscoveredAt time.Time `db:"discovered_at"`
+	LastSeen     time.Time `db:"last_seen"`
+}
+
+func (d *Database) GetAllSubdomainsWithParent() ([]SubdomainWithParent, error) {
+	var rows []SubdomainWithParent
+	err := d.db.Select(&rows, `
+		SELECT s.subdomain, d.domain AS parent_domain, s.discovered_at, s.last_seen
+		FROM subdomains s
+		INNER JOIN domains d ON d.id = s.domain_id
+		WHERE s.active = 1
+		ORDER BY s.subdomain COLLATE NOCASE
+	`)
 	if err != nil && isTableNotExistsError(err) {
 		return nil, nil
 	}

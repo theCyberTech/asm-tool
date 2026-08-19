@@ -450,7 +450,7 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 
 		switch activePage {
 		case "subdomains":
-			rows, err := deps.DB.GetAllSubdomains()
+			rows, err := deps.DB.GetAllSubdomainsWithParent()
 			if err != nil {
 				http.Error(w, "Failed to load subdomains: "+err.Error(), http.StatusInternalServerError)
 				return
@@ -458,6 +458,7 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 			for _, s := range rows {
 				list.Subdomains = append(list.Subdomains, dashboard.SubdomainView{
 					Subdomain:    s.Subdomain,
+					ParentDomain: s.ParentDomain,
 					DiscoveredAt: s.DiscoveredAt,
 					LastSeen:     s.LastSeen,
 				})
@@ -679,6 +680,31 @@ var domainModalTemplates = map[string]string{
 	"takeovers":       "takeovers-modal-body",
 }
 
+var assetKindTitles = map[string]string{
+	"subdomains":      "Subdomains",
+	"ports":           "Open Ports",
+	"certificates":    "Certificates",
+	"technologies":    "Technologies",
+	"dns":             "DNS Records",
+	"vulnerabilities": "Vulnerabilities",
+	"urls":            "URLs",
+	"apis":            "API Endpoints",
+	"emails":          "Email Addresses",
+	"cloud":           "Cloud Storage",
+	"takeovers":       "Takeovers",
+}
+
+func wantsHTMLPartial(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("HX-Request"), "true")
+}
+
+func assetKindTitle(kind string) string {
+	if title, ok := assetKindTitles[kind]; ok {
+		return title
+	}
+	return kind
+}
+
 type domainDetailRoute struct {
 	domain string
 	action string // "", "refresh", or a modal kind
@@ -696,6 +722,9 @@ func parseDomainDetailPath(path string) (domainDetailRoute, bool) {
 	case 2:
 		if parts[1] == "refresh" {
 			return domainDetailRoute{domain: parts[0], action: "refresh"}, true
+		}
+		if parts[1] == "host" {
+			return domainDetailRoute{domain: parts[0], action: "host"}, true
 		}
 	case 3:
 		if parts[1] == "modal" {
@@ -743,6 +772,26 @@ func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
 			if err := dashboard.RenderPartial(w, "domain-detail-content", data); err != nil {
 				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 			}
+		case route.action == "host":
+			host := target.NormalizeSubdomain(r.URL.Query().Get("name"), normalized)
+			if host == "" {
+				http.NotFound(w, r)
+				return
+			}
+			data := loadHostDetailPageData(deps, normalized, host)
+			if data.Error != "" || data.DomainDetail == nil {
+				http.NotFound(w, r)
+				return
+			}
+			if wantsHTMLPartial(r) {
+				if err := dashboard.RenderPartial(w, "host-modal-body", data); err != nil {
+					http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+				}
+				return
+			}
+			if err := dashboard.RenderPage(w, "domain-base", data); err != nil {
+				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			}
 		default:
 			urlLimit := 0
 			if route.action == "urls" {
@@ -753,7 +802,15 @@ func makeDomainDetailHandler(deps *Deps) http.HandlerFunc {
 				http.NotFound(w, r)
 				return
 			}
-			if err := dashboard.RenderPartial(w, domainModalTemplates[route.action], data); err != nil {
+			data.DomainDetail.AssetKind = route.action
+			data.DomainDetail.AssetTitle = assetKindTitle(route.action)
+			if wantsHTMLPartial(r) {
+				if err := dashboard.RenderPartial(w, domainModalTemplates[route.action], data); err != nil {
+					http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+				}
+				return
+			}
+			if err := dashboard.RenderPage(w, "domain-base", data); err != nil {
 				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 			}
 		}
@@ -827,6 +884,7 @@ func loadDomainDetailPageData(deps *Deps, domainName, only string, previewLimit,
 			for i, s := range subs {
 				detail.Subdomains[i] = dashboard.SubdomainView{
 					Subdomain:    s.Subdomain,
+					ParentDomain: domain.Domain,
 					DiscoveredAt: s.DiscoveredAt,
 					LastSeen:     s.LastSeen,
 				}
@@ -1052,6 +1110,97 @@ func loadDomainDetailPageData(deps *Deps, domainName, only string, previewLimit,
 					NewValue:    c.NewValue,
 					Timestamp:   c.Timestamp,
 				}
+			}
+		}
+	}
+
+	data.DomainDetail = detail
+	return data
+}
+
+func loadHostDetailPageData(deps *Deps, domainName, host string) dashboard.PageData {
+	data := dashboard.PageData{
+		ActivePage: "domains",
+	}
+
+	domain, err := deps.DB.Domains.GetByName(domainName)
+	if err != nil {
+		data.Error = "Domain not found"
+		return data
+	}
+
+	detail := &dashboard.DomainDetailData{
+		Domain:       domain.Domain,
+		AddedAt:      domain.AddedAt,
+		LastScanned:  domain.LastScanned,
+		SelectedHost: host,
+	}
+
+	ports, err := deps.DB.GetPortsForHost(host)
+	if err != nil {
+		addPageWarning(&data, "Failed to load open ports")
+	} else {
+		detail.Ports = make([]dashboard.PortView, len(ports))
+		for i, p := range ports {
+			detail.Ports[i] = dashboard.PortView{
+				Host:         p.Host,
+				Port:         p.Port,
+				Protocol:     p.Protocol,
+				Service:      p.Service,
+				Version:      p.Version,
+				Product:      p.Product,
+				State:        p.State,
+				Banner:       p.Banner,
+				DiscoveredAt: p.DiscoveredAt,
+			}
+		}
+	}
+
+	certs, err := deps.DB.GetCertificatesForHost(host)
+	if err != nil {
+		addPageWarning(&data, "Failed to load certificates")
+	} else {
+		detail.Certificates = make([]dashboard.CertificateView, len(certs))
+		for i, c := range certs {
+			detail.Certificates[i] = dashboard.CertificateView{
+				Host:            c.Host,
+				Port:            c.Port,
+				Subject:         c.Subject,
+				Issuer:          c.Issuer,
+				NotAfter:        c.NotAfter,
+				DaysUntilExpiry: c.DaysUntilExpiry,
+				SAN:             c.SAN,
+			}
+		}
+	}
+
+	techs, err := deps.DB.GetTechnologiesForHost(host)
+	if err != nil {
+		addPageWarning(&data, "Failed to load technologies")
+	} else {
+		detail.Technologies = make([]dashboard.TechnologyView, len(techs))
+		for i, t := range techs {
+			detail.Technologies[i] = dashboard.TechnologyView{
+				Host:         t.Host,
+				StatusCode:   t.StatusCode,
+				Title:        t.Title,
+				Server:       t.Server,
+				Technologies: t.Technologies,
+				CheckedAt:    t.CheckedAt,
+			}
+		}
+	}
+
+	dns, err := deps.DB.GetDNSRecordsForHost(host)
+	if err != nil {
+		addPageWarning(&data, "Failed to load DNS records")
+	} else {
+		detail.DNSRecords = make([]dashboard.DNSRecordView, len(dns))
+		for i, d := range dns {
+			detail.DNSRecords[i] = dashboard.DNSRecordView{
+				Domain:    d.Domain,
+				Records:   d.Records,
+				CheckedAt: d.CheckedAt,
 			}
 		}
 	}

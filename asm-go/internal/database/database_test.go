@@ -186,6 +186,36 @@ func TestDomainRepository(t *testing.T) {
 	}
 }
 
+func TestGetAllSubdomainsWithParent(t *testing.T) {
+	db, err := New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer db.Close()
+
+	domain, err := db.Domains.Add("example.com")
+	if err != nil {
+		t.Fatalf("Add domain: %v", err)
+	}
+	if err := db.Domains.AddSubdomain(domain.ID, "www.example.com"); err != nil {
+		t.Fatalf("AddSubdomain: %v", err)
+	}
+
+	rows, err := db.GetAllSubdomainsWithParent()
+	if err != nil {
+		t.Fatalf("GetAllSubdomainsWithParent: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Subdomain != "www.example.com" {
+		t.Fatalf("subdomain = %q", rows[0].Subdomain)
+	}
+	if rows[0].ParentDomain != "example.com" {
+		t.Fatalf("parent domain = %q", rows[0].ParentDomain)
+	}
+}
+
 func TestPortRepository(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
