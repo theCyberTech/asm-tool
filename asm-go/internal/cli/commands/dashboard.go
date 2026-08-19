@@ -237,9 +237,10 @@ func getPageData(deps *Deps, activePage string) dashboard.PageData {
 		ActivePage: activePage,
 	}
 
-	// Get stats from database
 	stats, err := deps.DB.GetStats()
-	if err == nil {
+	if err != nil {
+		data.Warning = "Failed to load dashboard statistics"
+	} else {
 		data.Stats = dashboard.Stats{
 			Domains:      stats.Domains,
 			Subdomains:   stats.Subdomains,
@@ -253,9 +254,12 @@ func getPageData(deps *Deps, activePage string) dashboard.PageData {
 		}
 	}
 
-	// Get finding counts
 	findings, err := deps.DB.GetFindingSeverityCounts()
-	if err == nil {
+	if err != nil {
+		if data.Warning == "" {
+			data.Warning = "Failed to load finding counts"
+		}
+	} else {
 		data.Findings = dashboard.FindingCounts{
 			Critical: findings.Critical,
 			High:     findings.High,
@@ -314,6 +318,9 @@ func makeIndexHandler(deps *Deps) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 		data := getPageData(deps, "dashboard")
+		if data.Warning != "" {
+			data.Error = data.Warning
+		}
 
 		if err := dashboard.RenderPage(w, "base", data); err != nil {
 			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
@@ -362,6 +369,18 @@ func makeDomainsPartialHandler(deps *Deps) http.HandlerFunc {
 		searchTerm := strings.TrimSpace(query.Get("q"))
 		dateFrom := query.Get("from")
 		dateTo := query.Get("to")
+		if dateFrom != "" {
+			if _, err := time.Parse("2006-01-02", dateFrom); err != nil {
+				http.Error(w, "invalid from date", http.StatusBadRequest)
+				return
+			}
+		}
+		if dateTo != "" {
+			if _, err := time.Parse("2006-01-02", dateTo); err != nil {
+				http.Error(w, "invalid to date", http.StatusBadRequest)
+				return
+			}
+		}
 
 		// Get all domains with stats
 		domains, err := deps.DB.GetDomainsWithStats()
@@ -584,25 +603,42 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, `{"status":"error","message":"failed to encode response"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, `{"status":"ok"}`)
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
 }
 
 func makeStatsHandler(deps *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
 		stats, err := deps.DB.GetStats()
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"status":"error","message":"failed to load stats"}`))
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"status":  "error",
+				"message": "failed to load stats",
+			})
 			return
 		}
 
-		findings, _ := deps.DB.GetFindingSeverityCounts()
+		findings, err := deps.DB.GetFindingSeverityCounts()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"status":  "error",
+				"message": "failed to load finding counts",
+			})
+			return
+		}
 
-		resp := map[string]interface{}{
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":        "ok",
 			"domains":       stats.Domains,
 			"subdomains":    stats.Subdomains,
 			"ports":         stats.Ports,
@@ -620,10 +656,7 @@ func makeStatsHandler(deps *Deps) http.HandlerFunc {
 				"info":     findings.Info,
 			},
 			"takeovers": stats.Takeovers,
-		}
-
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		})
 	}
 }
 
@@ -691,9 +724,10 @@ func getDomainDetailPageData(deps *Deps, domainName string) dashboard.PageData {
 		LastScanned: domain.LastScanned,
 	}
 
-	// Get stats
-	stats, _ := deps.DB.GetDomainDetailStats(domainName)
-	if stats != nil {
+	stats, err := deps.DB.GetDomainDetailStats(domainName)
+	if err != nil {
+		data.Warning = "Failed to load domain statistics"
+	} else if stats != nil {
 		detail.Stats = dashboard.DomainDetailStats{
 			SubdomainCount:   stats.SubdomainCount,
 			PortCount:        stats.PortCount,

@@ -14,6 +14,9 @@
     <div class="layout">
         {{template "sidebar" .}}
         <main class="main-content">
+            {{if .Warning}}
+            <div class="alert alert-warning mb-md">{{.Warning}}</div>
+            {{end}}
             {{template "list-content" .}}
         </main>
     </div>

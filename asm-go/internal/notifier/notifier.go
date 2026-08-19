@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asm-tool/asm-go/internal/httpclient"
 	"github.com/asm-tool/asm-go/internal/parallel"
 )
 
@@ -31,11 +32,19 @@ type Notifier struct {
 // DefaultNotifier creates a notifier with default HTTP client and TLS enabled
 func DefaultNotifier() *Notifier {
 	return &Notifier{
-		HTTPClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		HTTPClient: httpclient.New(httpclient.Options{
+			Timeout:      10 * time.Second,
+			MaxRedirects: 2,
+		}),
 		UseTLS: true, // Enable TLS by default for secure credential transmission
 	}
+}
+
+func (n *Notifier) smtpAuth() smtp.Auth {
+	if n.SMTPUser == "" || n.SMTPPassword == "" {
+		return nil
+	}
+	return smtp.PlainAuth("", n.SMTPUser, n.SMTPPassword, n.SMTPHost)
 }
 
 // NotifySlack sends a scan summary to Slack
@@ -233,12 +242,7 @@ func (n *Notifier) NotifyEmail(result *parallel.ScanResult) error {
 	}
 
 	// Fallback to plain SMTP (not recommended)
-	var auth smtp.Auth
-	if n.SMTPUser != "" && n.SMTPPassword != "" {
-		auth = smtp.PlainAuth("", n.SMTPUser, n.SMTPPassword, n.SMTPHost)
-	}
-
-	err := smtp.SendMail(addr, auth, n.EmailFrom, n.EmailTo, []byte(msg))
+	err := smtp.SendMail(addr, n.smtpAuth(), n.EmailFrom, n.EmailTo, []byte(msg))
 	if err != nil {
 		return fmt.Errorf("sending email: %w", err)
 	}
@@ -294,8 +298,7 @@ func (n *Notifier) sendMailTLS(addr string, msg []byte) error {
 // sendWithClient sends email using an established SMTP client
 func (n *Notifier) sendWithClient(client *smtp.Client, msg []byte) error {
 	// Authenticate if credentials provided
-	if n.SMTPUser != "" && n.SMTPPassword != "" {
-		auth := smtp.PlainAuth("", n.SMTPUser, n.SMTPPassword, n.SMTPHost)
+	if auth := n.smtpAuth(); auth != nil {
 		if err := client.Auth(auth); err != nil {
 			return fmt.Errorf("authentication failed: %w", err)
 		}
@@ -377,7 +380,7 @@ th { background: #f5f5f5; }
 <p>Scan Time: %s | Duration: %s</p>
 </div>
 <div class="content">
-`, html.EscapeString(result.Domain), result.StartTime.Format("2006-01-02 15:04:05"), result.Duration.Round(time.Millisecond)))
+`, html.EscapeString(result.Domain), result.StartTime.UTC().Format(time.RFC3339), result.Duration.Round(time.Millisecond)))
 
 	// Stats
 	sb.WriteString(`<h2>Summary</h2>`)

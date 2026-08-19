@@ -29,6 +29,7 @@ type PageData struct {
 	Operations   *OperationsData
 	ChangeEvents []ChangeEventView
 	Error        string
+	Warning      string
 }
 
 // OperationsData holds command runner state for the operations dashboard.

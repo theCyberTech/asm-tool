@@ -53,7 +53,7 @@ func TestNewCreatesDirectory(t *testing.T) {
 	}
 }
 
-func TestNewRecordsSchemaVersion5(t *testing.T) {
+func TestNewRecordsSchemaVersion6(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	db, err := New(dbPath)
 	if err != nil {
@@ -64,8 +64,8 @@ func TestNewRecordsSchemaVersion5(t *testing.T) {
 	if err := db.Raw().Get(&version, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"); err != nil {
 		t.Fatalf("querying schema version: %v", err)
 	}
-	if version != 5 {
-		t.Fatalf("schema version = %d, want 5", version)
+	if version != 6 {
+		t.Fatalf("schema version = %d, want 6", version)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -79,8 +79,8 @@ func TestNewRecordsSchemaVersion5(t *testing.T) {
 	if err := reopened.Raw().Get(&version, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"); err != nil {
 		t.Fatalf("querying schema version after reopen: %v", err)
 	}
-	if version != 5 {
-		t.Fatalf("schema version after reopen = %d, want 5", version)
+	if version != 6 {
+		t.Fatalf("schema version after reopen = %d, want 6", version)
 	}
 }
 
@@ -367,3 +367,112 @@ func TestDatabaseClose(t *testing.T) {
 		t.Error("expected error after close, got nil")
 	}
 }
+
+func TestQueryIndexesExist(t *testing.T) {
+	db, err := New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer db.Close()
+
+	wanted := []string{
+		"idx_certificates_host",
+		"idx_certificates_expiry",
+		"idx_ports_host_state",
+		"idx_findings_host_status",
+		"idx_cloud_storage_domain",
+		"idx_cloud_storage_status",
+		"idx_takeovers_subdomain",
+	}
+	var names []string
+	if err := db.Raw().Select(&names, `SELECT name FROM sqlite_master WHERE type = 'index'`); err != nil {
+		t.Fatalf("listing indexes: %v", err)
+	}
+	have := map[string]bool{}
+	for _, name := range names {
+		have[name] = true
+	}
+	for _, name := range wanted {
+		if !have[name] {
+			t.Errorf("missing index %s", name)
+		}
+	}
+}
+
+func TestDomainScopedQueriesRejectSuffixCollision(t *testing.T) {
+	db, err := New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Domains.Add("example.com"); err != nil {
+		t.Fatalf("Add example.com: %v", err)
+	}
+	now := time.Now()
+	if err := db.Certificates.Add(&Certificate{
+		Host: "notexample.com", Port: 443, Subject: "notexample.com",
+		Issuer: "test", NotBefore: now, NotAfter: now.Add(24 * time.Hour),
+		DaysUntilExpiry: 1,
+	}); err != nil {
+		t.Fatalf("Add colliding cert: %v", err)
+	}
+	if err := db.Certificates.Add(&Certificate{
+		Host: "www.example.com", Port: 443, Subject: "www.example.com",
+		Issuer: "test", NotBefore: now, NotAfter: now.Add(24 * time.Hour),
+		DaysUntilExpiry: 1,
+	}); err != nil {
+		t.Fatalf("Add subdomain cert: %v", err)
+	}
+	if err := db.Findings.Add(&Finding{
+		TemplateID: "t1", Name: "xss", Severity: "high", Host: "notexample.com", Status: "open",
+	}); err != nil {
+		t.Fatalf("Add colliding finding: %v", err)
+	}
+	if err := db.Findings.Add(&Finding{
+		TemplateID: "t2", Name: "sqli", Severity: "high", Host: "api.example.com", Status: "open",
+	}); err != nil {
+		t.Fatalf("Add domain finding: %v", err)
+	}
+	if _, err := db.Raw().Exec(`
+		INSERT INTO takeovers (subdomain, cname, service, takeover_type, confidence, evidence, documentation, status)
+		VALUES (?, 'cname', 'github', 'dangling', 'HIGH', 'evidence', '', 'open'),
+		       (?, 'cname', 'github', 'dangling', 'HIGH', 'evidence', '', 'open')
+	`, "notexample.com", "dev.example.com"); err != nil {
+		t.Fatalf("insert takeovers: %v", err)
+	}
+
+	certs, err := db.GetCertificatesForDomain("example.com")
+	if err != nil {
+		t.Fatalf("GetCertificatesForDomain: %v", err)
+	}
+	if len(certs) != 1 || certs[0].Host != "www.example.com" {
+		t.Fatalf("certificates = %+v, want only www.example.com", certs)
+	}
+
+	findings, err := db.GetVulnerabilitiesForDomain("example.com")
+	if err != nil {
+		t.Fatalf("GetVulnerabilitiesForDomain: %v", err)
+	}
+	if len(findings) != 1 || findings[0].Host != "api.example.com" {
+		t.Fatalf("findings = %+v, want only api.example.com", findings)
+	}
+
+	takeovers, err := db.GetTakeoversForDomain("example.com")
+	if err != nil {
+		t.Fatalf("GetTakeoversForDomain: %v", err)
+	}
+	if len(takeovers) != 1 || takeovers[0].Subdomain != "dev.example.com" {
+		t.Fatalf("takeovers = %+v, want only dev.example.com", takeovers)
+	}
+
+	stats, err := db.GetDomainDetailStats("example.com")
+	if err != nil {
+		t.Fatalf("GetDomainDetailStats: %v", err)
+	}
+	if stats.CertificateCount != 1 || stats.VulnCount != 1 || stats.TakeoverCount != 1 {
+		t.Fatalf("stats certs=%d vulns=%d takeovers=%d, want 1/1/1",
+			stats.CertificateCount, stats.VulnCount, stats.TakeoverCount)
+	}
+}
+

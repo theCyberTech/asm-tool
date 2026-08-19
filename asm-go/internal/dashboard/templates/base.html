@@ -33,6 +33,8 @@
                 </svg>
                 {{.Error}}
             </div>
+            {{else if .Warning}}
+            <div class="alert alert-warning mb-md">{{.Warning}}</div>
             {{end}}
             {{block "content" .}}{{end}}
         </main>

@@ -199,7 +199,9 @@
                        hx-trigger="keyup changed delay:300ms, search"
                        hx-target="#domains-table-body"
                        hx-include="#date-from, #date-to"
+                       hx-indicator="#domain-filter-spinner"
                        name="q">
+                <span id="domain-filter-spinner" class="htmx-indicator"><span class="spinner"></span></span>
             </div>
             <div class="filter-group">
                 <label class="filter-label">Scanned after:</label>
