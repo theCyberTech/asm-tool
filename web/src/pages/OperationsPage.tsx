@@ -15,7 +15,7 @@ export function OperationsPage() {
 
   const selectedDefault = data?.actions[0]?.id ?? "status";
   const [actionId, setActionId] = useState(selectedDefault);
-  const [target, setTarget] = useState("");
+  const [target, setTarget] = useState("crewai.com");
   const [allKnown, setAllKnown] = useState(false);
   const [ports, setPorts] = useState("");
   const [outputFormat, setOutputFormat] = useState("");
@@ -77,7 +77,7 @@ export function OperationsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Operations</h1>
-          <p className="page-description">Run and monitor ASM scans from this host</p>
+          <p className="page-description">Run and monitor scans for crewai.com from this host</p>
         </div>
         <button type="button" className="btn btn-secondary" onClick={() => void reload()}>
           Refresh
@@ -242,7 +242,7 @@ function ActionFields({
             value={target}
             onChange={(event) => setTarget(event.target.value)}
             disabled={disabled || allKnown}
-            placeholder="example.com"
+            placeholder="crewai.com"
           />
         </div>
       ) : null}

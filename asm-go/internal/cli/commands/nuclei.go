@@ -47,10 +47,10 @@ Requires nuclei to be installed:
   go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
 Examples:
-  asm nuclei example.com
-  asm nuclei example.com --severity critical,high
+  asm nuclei crewai.com
+  asm nuclei crewai.com --severity critical,high
   asm nuclei --all-known --tags cve
-  asm nuclei example.com --templates cves/2024/`,
+  asm nuclei crewai.com --templates cves/2024/`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Handle template update
@@ -58,23 +58,10 @@ Examples:
 				return runNucleiUpdate()
 			}
 
-			var targets []string
-			if len(args) > 0 {
-				targets = args
-			} else if allKnown {
-				// Get all subdomains from database
-				dbDomains, err := deps.DB.Domains.List()
-				if err != nil {
-					return fmt.Errorf("listing domains: %w", err)
-				}
-				for _, d := range dbDomains {
-					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
-					targets = append(targets, subs...)
-				}
-			} else {
-				return fmt.Errorf("specify targets or use --all-known")
+			targets, err := resolveNucleiScanTargets(deps.DB, args, allKnown)
+			if err != nil {
+				return err
 			}
-
 			if len(targets) == 0 {
 				fmt.Println("No targets to scan")
 				return nil

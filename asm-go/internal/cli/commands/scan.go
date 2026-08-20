@@ -52,6 +52,8 @@ func ScanCmd(deps *Deps) *cobra.Command {
 - Cloud storage detection
 - Vulnerability scanning (optional, requires nuclei)
 
+Scanning is restricted to crewai.com and its subdomains.
+
 Modules run in parallel where possible for optimal performance.
 Results can be output to JSON, Markdown, or HTML reports.`,
 		Args: cobra.ExactArgs(1),
@@ -109,7 +111,7 @@ type scanOptions struct {
 }
 
 func runFullScan(db *database.Database, cfg *config.Config, domain string, opts scanOptions) error {
-	normalizedDomain, err := target.NormalizeTarget(domain)
+	normalizedDomain, err := target.NormalizeScanTarget(domain)
 	if err != nil {
 		return err
 	}
