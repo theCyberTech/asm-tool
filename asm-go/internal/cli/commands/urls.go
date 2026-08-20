@@ -41,21 +41,10 @@ Use --probe to actively check which discovered URLs are still live.
 Use --probe-all to probe every URL (not just interesting ones).`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var domains []string
-			if len(args) > 0 {
-				domains = []string{args[0]}
-			} else if allKnown {
-				dbDomains, err := deps.DB.Domains.List()
-				if err != nil {
-					return fmt.Errorf("listing domains: %w", err)
-				}
-				for _, d := range dbDomains {
-					domains = append(domains, d.Domain)
-				}
-			} else {
-				return fmt.Errorf("specify a domain or use --all-known")
+			domains, err := resolveScanDomains(deps.DB, args, allKnown)
+			if err != nil {
+				return err
 			}
-
 			if len(domains) == 0 {
 				fmt.Println("No domains to enumerate")
 				return nil

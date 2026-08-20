@@ -209,7 +209,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 		if req.AllKnown {
 			args = append(args, "--all-known")
 		} else {
-			normalized, err := target.NormalizeTarget(req.Target)
+			normalized, err := target.NormalizeScanTarget(req.Target)
 			if err != nil {
 				return commandSpec{}, err
 			}
@@ -228,7 +228,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 		{
 			OperationOption: dashboard.OperationOption{ID: "scan", Label: "Full scan", RequiresTarget: true, SupportsOutputFormat: true, SupportsNuclei: true},
 			build: func(req operationRequest) (commandSpec, error) {
-				normalized, err := target.NormalizeTarget(req.Target)
+				normalized, err := target.NormalizeScanTarget(req.Target)
 				if err != nil {
 					return commandSpec{}, err
 				}

@@ -22,7 +22,7 @@ cd web && npm test && npm run build
 ./asm.sh init
 
 # Run a scan
-./asm.sh scan example.com
+./asm.sh scan crewai.com
 
 # Check status
 ./asm.sh status

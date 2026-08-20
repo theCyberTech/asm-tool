@@ -1,9 +1,10 @@
 # ASM Tool Configuration
 # Copy this file to config.yaml and customize
 
-# Domains to monitor
+# Domains to monitor. Scans are hardcoded to crewai.com (and its subdomains);
+# other entries in this list are ignored.
 domains:
-  - example.com
+  - crewai.com
 
 # Notification settings
 notifications:

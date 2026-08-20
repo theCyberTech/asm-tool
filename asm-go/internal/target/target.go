@@ -7,6 +7,10 @@ import (
 )
 
 const (
+	// AllowedRootDomain is the only apex domain this tool may scan.
+	// Subdomains of this root (for example app.crewai.com) are in scope.
+	AllowedRootDomain = "crewai.com"
+
 	maxDomainLength       = 253
 	maxFilenamePartLength = 120
 )
@@ -34,6 +38,44 @@ func NormalizeTarget(raw string) (string, error) {
 	}
 
 	return domain, nil
+}
+
+// NormalizeScanTarget canonicalizes a user-supplied scan target and rejects
+// hosts that are not AllowedRootDomain or a subdomain of it.
+func NormalizeScanTarget(raw string) (string, error) {
+	domain, err := NormalizeTarget(raw)
+	if err != nil {
+		return "", err
+	}
+	if !IsSubdomainOf(domain, AllowedRootDomain) {
+		return "", fmt.Errorf("scanning is restricted to %s and its subdomains (got %q)", AllowedRootDomain, domain)
+	}
+	return domain, nil
+}
+
+// IsAllowedScanTarget reports whether raw is a valid in-scope scan hostname.
+func IsAllowedScanTarget(raw string) bool {
+	_, err := NormalizeScanTarget(raw)
+	return err == nil
+}
+
+// FilterAllowedScanTargets returns the unique in-scope hostnames from raw,
+// skipping invalid or out-of-scope values.
+func FilterAllowedScanTargets(raw []string) []string {
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, item := range raw {
+		normalized, err := NormalizeScanTarget(item)
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
 }
 
 // ValidateDomain reports whether raw can be normalized to a valid DNS domain.
