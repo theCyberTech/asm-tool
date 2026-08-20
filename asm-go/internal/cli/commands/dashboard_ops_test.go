@@ -24,13 +24,34 @@ func newTestDashboardOps(t *testing.T, script string) *dashboardOps {
 	if err := os.MkdirAll(filepath.Join(root, "logs"), 0755); err != nil {
 		t.Fatalf("creating logs dir: %v", err)
 	}
-	return &dashboardOps{
+	ops := &dashboardOps{
 		rootDir:    root,
 		goDir:      goDir,
 		binaryPath: script,
 		configPath: filepath.Join(root, "config.yaml"),
 		dbPath:     filepath.Join(root, "data", "asm.db"),
 		logPath:    filepath.Join(root, "logs", "dashboard-runs.jsonl"),
+	}
+	t.Cleanup(func() {
+		waitForDashboardOpsIdle(ops)
+	})
+	return ops
+}
+
+func waitForDashboardOpsIdle(ops *dashboardOps) {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		running := false
+		for _, run := range ops.pageData().Runs {
+			if run.Status == "running" {
+				running = true
+				break
+			}
+		}
+		if !running {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
