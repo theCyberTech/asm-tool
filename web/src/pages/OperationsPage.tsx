@@ -89,7 +89,7 @@ export function OperationsPage() {
       {loading && !data ? <LoadingState label="Loading operations" /> : null}
 
       {data && !data.enabled ? (
-        <WarningAlert message="Operations are disabled. Start the dashboard with --enable-ops to run scans from the UI." />
+        <WarningAlert message="Operations are disabled." />
       ) : null}
 
       {data ? (
@@ -151,7 +151,7 @@ export function OperationsPage() {
                   {busy ? "Starting…" : "Start run"}
                 </button>
               </form>
-              <p className="text-muted mt-md">Binary: {data.binary_path || "unknown"}</p>
+              <p className="text-muted mt-md">Backend: {data.binary_path || "typescript"} · Database: {data.database_path}</p>
             </div>
           </div>
 
@@ -164,7 +164,7 @@ export function OperationsPage() {
               {data.runs.length === 0 ? (
                 <div className="empty-state">
                   <h3>No runs yet</h3>
-                  <p>Start a scan to see command output here</p>
+                  <p>Start a scan to see progress and output here</p>
                 </div>
               ) : (
                 data.runs.map((run) => (

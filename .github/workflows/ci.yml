@@ -8,9 +8,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: asm-go
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -20,10 +17,9 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Test and build TypeScript frontend
-        working-directory: web
+      - name: Install, test, and build the web app
         run: |
           npm ci
           npm test
@@ -34,8 +30,10 @@ jobs:
         with:
           go-version-file: asm-go/go.mod
 
-      - name: Vet
+      - name: Vet Go (legacy CLI)
+        working-directory: asm-go
         run: go vet ./...
 
-      - name: Test
+      - name: Test Go (legacy CLI)
+        working-directory: asm-go
         run: go test ./...

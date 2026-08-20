@@ -30,9 +30,10 @@ Thumbs.db
 # Project data (contains scan results)
 asm-go/data/
 !asm-go/data/.gitkeep
-
-# Legacy Python data directory
-data/
+# SQLite databases
+data/*
+!data/.gitkeep
+server/data/
 
 # Generated reports
 reports/
@@ -51,8 +52,9 @@ config.yaml
 .env.local
 .env.*.local
 
-# Node / TypeScript frontend
-web/node_modules/
+# Node / TypeScript app
+node_modules/
+web/dist/
 
 # Temporary files
 *.tmp

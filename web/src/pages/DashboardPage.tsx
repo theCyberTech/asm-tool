@@ -59,7 +59,7 @@ export function DashboardPage() {
               {data.domains.length === 0 ? (
                 <div className="empty-state">
                   <h3>No domains yet</h3>
-                  <p>Run a scan to start monitoring a domain</p>
+                  <p>Open Operations and run a scan for crewai.com</p>
                 </div>
               ) : (
                 <div className="table-container">
