@@ -17,7 +17,8 @@ with Slack/email notifications.
 - `asm-go/internal/persistence/` - Transactional save of scan results
 - `asm-go/internal/scanner/` - Discovery and security scanning modules
 - `asm-go/internal/cli/commands/` - Cobra command implementations
-- `asm-go/internal/dashboard/` - Embedded HTML dashboard and ops UI
+- `asm-go/internal/dashboard/` - Embedded TypeScript SPA and HTML templates
+- `web/` - TypeScript + React dashboard source (Vite)
 - `asm-go/internal/scheduler/` - Cron-based scheduled scan jobs
 - `asm-go/internal/reporter/` - JSON, Markdown, and HTML reports
 - `asm-go/internal/notifier/` - Slack and email notifications
@@ -36,6 +37,9 @@ go build -o asm-go ./cmd/asm
 
 # Run tests
 go test ./... -v
+
+# TypeScript dashboard (from repo root)
+cd ../web && npm test && npm run build
 
 # Init, scan, and status via wrapper (repo root)
 ../asm.sh init

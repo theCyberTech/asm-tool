@@ -15,6 +15,9 @@ cd asm-go && go build -o asm-go ./cmd/asm
 # Run tests
 go test ./... -v
 
+# TypeScript dashboard
+cd web && npm test && npm run build
+
 # Initialize project (repo root)
 ./asm.sh init
 
@@ -33,6 +36,7 @@ go test ./... -v
 ### Layer Structure
 
 ```
+web/                             # TypeScript + React dashboard (Vite)
 asm-go/
 ├── cmd/asm/main.go              # CLI entry point (Cobra)
 ├── internal/
@@ -53,8 +57,8 @@ asm-go/
 │   │   ├── emails/              # Email enumeration
 │   │   ├── cloud/               # Cloud storage detection
 │   │   └── nuclei/              # Nuclei integration
-│   ├── cli/commands/            # CLI command implementations
-│   ├── dashboard/               # Embedded HTML dashboard and ops UI
+│   ├── cli/commands/            # CLI command handlers
+│   ├── dashboard/               # Embedded TypeScript SPA and JSON types
 │   ├── scheduler/               # Cron-based scheduled scan jobs
 │   ├── reporter/                # JSON/Markdown/HTML reports
 │   ├── notifier/                # Slack/email notifications

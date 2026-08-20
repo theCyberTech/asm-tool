@@ -18,13 +18,14 @@ A fast, local-first attack surface management tool for security teams. Find and 
 - **Email & Cloud Enumeration** — Find exposed email addresses and public cloud buckets (S3, Azure, GCS)
 - **Reporting** — Export findings as JSON, Markdown, or HTML
 - **Scheduled Scans** — Run scans on a cron schedule, with Slack or email notifications
-- **Dashboard** — Browse findings in a lightweight web UI
+- **Dashboard** — Browse findings in a TypeScript web UI served by the Go CLI
 
 ## Installation
 
 ### Prerequisites
 
 - **Go 1.25+** (see `asm-go/go.mod`)
+- **Node.js 22+** to build the TypeScript dashboard (optional if you use a prebuilt `webdist`)
 - Optional: [Nuclei](https://github.com/projectdiscovery/nuclei) for vulnerability scanning
 
 ### Linux / macOS
@@ -37,6 +38,12 @@ cd asm-tool
 # Build the CLI binary (asm.sh expects asm-go/asm-go)
 cd asm-go
 go build -o asm-go ./cmd/asm
+cd ..
+
+# Optional: rebuild the TypeScript dashboard (embedded into the Go binary)
+cd web
+npm install
+npm run build
 cd ..
 
 # Initialize the project (creates config, data dirs)
@@ -204,6 +211,7 @@ hunter:
 ## Architecture
 
 ```
+web/                             # TypeScript + React dashboard (Vite)
 asm-go/
 ├── cmd/asm/main.go              # CLI entry point (Cobra)
 ├── internal/
@@ -226,10 +234,13 @@ asm-go/
 │   ├── reporter/                # JSON/Markdown/HTML reports
 │   ├── notifier/                # Slack/email alerts
 │   ├── scheduler/               # Cron-based scheduling
+│   ├── dashboard/               # SPA embed + JSON API types
 │   └── cli/commands/            # CLI command handlers
 ├── data/                        # SQLite database
 └── reports/                     # Generated reports
 ```
+
+The dashboard is a TypeScript SPA in `web/`. `npm run build` writes hashed assets to `asm-go/internal/dashboard/webdist/`, which the Go server embeds and serves from `asm dashboard`. JSON APIs live under `/api/`. For local UI development, run `./asm.sh dashboard` and `npm run dev` in `web/` (Vite proxies `/api` to the Go server).
 
 ## Data Storage
 
