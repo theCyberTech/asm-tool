@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [react()],
   base: "/",
   build: {
-    outDir: resolve(rootDir, "../asm-go/internal/dashboard/webdist"),
+    outDir: resolve(rootDir, "dist"),
     emptyOutDir: true,
     sourcemap: false,
   },

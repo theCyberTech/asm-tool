@@ -2,66 +2,40 @@
 
 ## Project Overview
 
-ASM Tool is a Go-based attack surface management tool. It monitors domains for
-subdomains, open ports, certificates, technologies, DNS records, vulnerabilities,
-URLs, subdomain takeovers, API endpoints, email addresses, and cloud storage
-buckets. It also provides a local web dashboard and cron-based scheduled scans
-with Slack/email notifications.
+ASM Tool is a TypeScript web app for attack surface management. It monitors
+crewai.com (and its subdomains) for subdomains, open ports, certificates,
+technologies, DNS records, URLs, APIs, emails, cloud buckets, and takeover
+risks. The React UI talks to a Node/Hono backend that runs scans in-process
+and stores results in SQLite.
 
 ## Repository Layout
 
-- `asm.sh` - Shell wrapper around the Go CLI (preferred entry point)
-- `asm-go/cmd/asm/` - CLI entry point
-- `asm-go/internal/config/` - YAML configuration
-- `asm-go/internal/database/` - SQLite database facade and migrations
-- `asm-go/internal/persistence/` - Transactional save of scan results
-- `asm-go/internal/scanner/` - Discovery and security scanning modules
-- `asm-go/internal/cli/commands/` - Cobra command implementations
-- `asm-go/internal/dashboard/` - Embedded TypeScript SPA and HTML templates
-- `web/` - TypeScript + React dashboard source (Vite)
-- `asm-go/internal/scheduler/` - Cron-based scheduled scan jobs
-- `asm-go/internal/reporter/` - JSON, Markdown, and HTML reports
-- `asm-go/internal/notifier/` - Slack and email notifications
-- `asm-go/internal/parallel/` - Concurrent scan orchestration
-- `asm-go/internal/target/` - Domain normalization and validation
-- `asm-go/internal/httpclient/` - Shared HTTP client construction
-- `asm-go/internal/ratelimit/` - Outbound HTTP rate limiting
+- `web/` - TypeScript + React dashboard (Vite)
+- `server/` - TypeScript HTTP API, SQLite store, scanners, and job runner
+- `data/` - SQLite database (`data/asm.db`)
+- `asm-go/` - Legacy Go CLI (not the primary product)
 
 ## Development Commands
 
-Run Go commands from `asm-go/` unless noted otherwise:
-
 ```bash
-# Build the binary
-go build -o asm-go ./cmd/asm
-
-# Run tests
-go test ./... -v
-
-# TypeScript dashboard (from repo root)
-cd ../web && npm test && npm run build
-
-# Init, scan, and status via wrapper (repo root)
-../asm.sh init
-../asm.sh scan crewai.com
-../asm.sh status
-../asm.sh dashboard
+npm install
+npm test
+npm run dev     # API on :8080, Vite on :5173
+npm start       # production: build UI and serve it from the API
 ```
+
+Run workspace tests directly with `npm test -w asm-server` or `npm test -w asm-dashboard`.
 
 ## Coding Guidelines
 
-- Follow existing Go conventions and package structure.
-- Keep scanner modules self-contained and use their existing `Scan()` or
-  `Enumerate()` interfaces.
-- Preserve the database facade and repository boundaries when changing
-  persistence behavior; prefer `internal/persistence` for saving scan results.
-- Normalize and validate domains via `internal/target` before scanner requests.
-- Scan entry points must use `target.NormalizeScanTarget` so only `crewai.com`
-  and its subdomains can be scanned. Do not enforce this inside `NormalizeTarget`.
-- Prefer `internal/httpclient` over ad-hoc `http.Client` construction in scanners.
+- Keep scanner modules in `server/src/scanners` and persist through `Store`.
+- Scan entry points must use `normalizeScanTarget` so only `crewai.com` and
+  its subdomains can be scanned. Do not put that allowlist in `normalizeTarget`.
+- The JSON API under `/api` must stay compatible with `web/src/api`.
 - Add or update tests for behavior changes.
-- Do not commit generated databases, build artifacts, or secrets.
+- Do not commit generated databases, `web/dist`, or secrets.
 
 ## External Dependencies
 
-`nuclei` is an optional external dependency used for vulnerability scanning.
+Nuclei is optional and not required for the web app. Header-based findings are
+collected during fingerprinting.
