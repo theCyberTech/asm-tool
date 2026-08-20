@@ -49,13 +49,13 @@ type operationDefinition struct {
 }
 
 type operationRequest struct {
-	Action       string
-	Target       string
-	AllKnown     bool
-	Ports        string
-	OutputFormat string
-	Nuclei       bool
-	Verbose      bool
+	Action       string `json:"action"`
+	Target       string `json:"target"`
+	AllKnown     bool   `json:"all_known"`
+	Ports        string `json:"ports"`
+	OutputFormat string `json:"output_format"`
+	Nuclei       bool   `json:"nuclei"`
+	Verbose      bool   `json:"verbose"`
 }
 
 type commandSpec struct {
@@ -393,6 +393,18 @@ func (o *dashboardOps) handleRunsPartial(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+func (o *dashboardOps) handleOperationsJSON(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if o.enabled && !o.authorize(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, dashboard.OperationsJSON(o.pageData()))
+}
+
 func (o *dashboardOps) handleRunsJSON(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -402,17 +414,10 @@ func (o *dashboardOps) handleRunsJSON(w http.ResponseWriter, r *http.Request) {
 	if !o.requireEnabled(w, r) || !o.authorize(w, r) {
 		return
 	}
-	body, err := json.Marshal(o.pageData().Runs)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"status":  "error",
-			"message": "failed to encode runs",
-		})
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"runs":   dashboard.RunsJSON(o.pageData().Runs),
+	})
 }
 
 func (o *dashboardOps) handleStartRun(w http.ResponseWriter, r *http.Request) {
@@ -424,9 +429,13 @@ func (o *dashboardOps) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	if !o.requireEnabled(w, r) {
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
-		return
+
+	isJSON := strings.Contains(r.Header.Get("Content-Type"), "application/json")
+	if !isJSON {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
 	}
 	if !o.authorize(w, r) {
 		return
@@ -436,18 +445,44 @@ func (o *dashboardOps) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req := operationRequest{
-		Action:       r.FormValue("action"),
-		Target:       r.FormValue("target"),
-		AllKnown:     r.FormValue("all_known") == "on",
-		Ports:        r.FormValue("ports"),
-		OutputFormat: r.FormValue("output_format"),
-		Nuclei:       r.FormValue("nuclei") == "on",
-		Verbose:      r.FormValue("verbose") == "on",
+	var req operationRequest
+	if isJSON {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"status":  "error",
+				"message": "invalid json",
+			})
+			return
+		}
+	} else {
+		req = operationRequest{
+			Action:       r.FormValue("action"),
+			Target:       r.FormValue("target"),
+			AllKnown:     r.FormValue("all_known") == "on",
+			Ports:        r.FormValue("ports"),
+			OutputFormat: r.FormValue("output_format"),
+			Nuclei:       r.FormValue("nuclei") == "on",
+			Verbose:      r.FormValue("verbose") == "on",
+		}
 	}
 
-	if _, err := o.start(req); err != nil {
+	run, err := o.start(req)
+	if err != nil {
+		if isJSON || wantsJSON(r) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"status":  "error",
+				"message": err.Error(),
+			})
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if isJSON || wantsJSON(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "ok",
+			"run":    dashboard.RunsJSON([]dashboard.RunRecord{run})[0],
+		})
 		return
 	}
 	o.handleRunsPartial(w, r)

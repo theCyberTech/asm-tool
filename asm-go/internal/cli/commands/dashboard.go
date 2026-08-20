@@ -107,44 +107,13 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 		return err
 	}
 
-	// Create router
-	mux := http.NewServeMux()
 	ops := newDashboardOps(deps)
 	ops.enabled = opts.enableOps
 	ops.token = opts.token
 
-	// Register routes
-	mux.HandleFunc("/", makeIndexHandler(deps))
-	mux.HandleFunc("/domains", makeDomainsHandler(deps))
-	mux.HandleFunc("/domains/", makeDomainDetailHandler(deps))
-	mux.HandleFunc("/operations", makeOperationsHandler(deps, ops))
-	mux.HandleFunc("/health", handleHealth)
-	mux.HandleFunc("/api/stats", makeStatsHandler(deps))
-	mux.HandleFunc("/api/runs", ops.handleRunsJSON)
-	mux.HandleFunc("/api/runs/start", ops.handleStartRun)
-	mux.HandleFunc("/partials/stats", makeStatsPartialHandler(deps))
-	mux.HandleFunc("/partials/domains", makeDomainsPartialHandler(deps))
-	mux.HandleFunc("/partials/runs", ops.handleRunsPartial)
-
-	// Asset list pages
-	for _, route := range []struct{ path, page, title string }{
-		{"/subdomains", "subdomains", "Subdomains"},
-		{"/ports", "ports", "Open Ports"},
-		{"/certificates", "certificates", "Certificates"},
-		{"/urls", "urls", "URLs"},
-		{"/apis", "apis", "API Endpoints"},
-		{"/emails", "emails", "Email Addresses"},
-		{"/cloud", "cloud", "Cloud Storage"},
-		{"/findings", "findings", "Findings"},
-		{"/takeovers", "takeovers", "Takeovers"},
-	} {
-		mux.HandleFunc(route.path, makeListHandler(deps, route.page, route.title))
-	}
-
-	// Create server
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      newDashboardMux(deps, ops),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -213,6 +182,28 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 
 	fmt.Println(labelStyle.Render("Server stopped"))
 	return nil
+}
+
+func newDashboardMux(deps *Deps, ops *dashboardOps) *http.ServeMux {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/api/stats", makeStatsHandler(deps))
+	mux.HandleFunc("/api/overview", makeOverviewHandler(deps))
+	mux.HandleFunc("/api/domains", makeDomainsJSONHandler(deps))
+	mux.HandleFunc("/api/domains/", makeDomainAPIHandler(deps))
+	mux.HandleFunc("/api/assets/", makeAssetsJSONHandler(deps))
+	mux.HandleFunc("/api/operations", ops.handleOperationsJSON)
+	mux.HandleFunc("/api/runs", ops.handleRunsJSON)
+	mux.HandleFunc("/api/runs/start", ops.handleStartRun)
+
+	mux.HandleFunc("/partials/stats", makeStatsPartialHandler(deps))
+	mux.HandleFunc("/partials/domains", makeDomainsPartialHandler(deps))
+	mux.HandleFunc("/partials/runs", ops.handleRunsPartial)
+	mux.HandleFunc("/domains/", makeDomainDetailOrSPA(deps))
+	mux.HandleFunc("/", dashboard.ServeSPA)
+
+	return mux
 }
 
 // findAvailableAddr returns the address for the requested host and port.
@@ -364,70 +355,16 @@ func makeDomainsPartialHandler(deps *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-		// Parse query params for filtering
-		query := r.URL.Query()
-		searchTerm := strings.TrimSpace(query.Get("q"))
-		dateFrom := query.Get("from")
-		dateTo := query.Get("to")
-		if dateFrom != "" {
-			if _, err := time.Parse("2006-01-02", dateFrom); err != nil {
-				http.Error(w, "invalid from date", http.StatusBadRequest)
-				return
-			}
-		}
-		if dateTo != "" {
-			if _, err := time.Parse("2006-01-02", dateTo); err != nil {
-				http.Error(w, "invalid to date", http.StatusBadRequest)
-				return
-			}
-		}
-
-		// Get all domains with stats
-		domains, err := deps.DB.GetDomainsWithStats()
+		rows, err := deps.DB.GetDomainsWithStats()
 		if err != nil {
 			http.Error(w, "Failed to get domains: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Apply filters
-		filteredDomains := make([]dashboard.DomainStats, 0)
-		for _, d := range domains {
-			// Search filter (case-insensitive domain name match)
-			if searchTerm != "" && !strings.Contains(strings.ToLower(d.Domain), strings.ToLower(searchTerm)) {
-				continue
-			}
-
-			// Date from filter (scanned after)
-			if dateFrom != "" && d.LastScanned != nil {
-				fromDate, err := time.Parse("2006-01-02", dateFrom)
-				if err == nil && d.LastScanned.Before(fromDate) {
-					continue
-				}
-			}
-
-			// Date to filter (scanned before)
-			if dateTo != "" && d.LastScanned != nil {
-				toDate, err := time.Parse("2006-01-02", dateTo)
-				if err == nil && d.LastScanned.After(toDate.Add(24*time.Hour)) {
-					continue
-				}
-			}
-
-			// If no LastScanned and date filters are set, skip domains that have never been scanned
-			if (dateFrom != "" || dateTo != "") && d.LastScanned == nil {
-				continue
-			}
-
-			filteredDomains = append(filteredDomains, dashboard.DomainStats{
-				ID:             d.ID,
-				Domain:         d.Domain,
-				AddedAt:        d.AddedAt,
-				LastScanned:    d.LastScanned,
-				SubdomainCount: d.SubdomainCount,
-				PortCount:      d.PortCount,
-				CriticalCount:  d.CriticalCount,
-				HighCount:      d.HighCount,
-			})
+		filteredDomains, err := filterDomainStats(domainStatsFromRows(rows), r.URL.Query())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 
 		data := dashboard.PageData{
@@ -446,159 +383,171 @@ func makeListHandler(deps *Deps, activePage, title string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 		data := getPageData(deps, activePage)
-		list := &dashboard.GlobalListData{Title: title}
-
-		switch activePage {
-		case "subdomains":
-			rows, err := deps.DB.GetAllSubdomains()
-			if err != nil {
-				http.Error(w, "Failed to load subdomains: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, s := range rows {
-				list.Subdomains = append(list.Subdomains, dashboard.SubdomainView{
-					Subdomain:    s.Subdomain,
-					DiscoveredAt: s.DiscoveredAt,
-					LastSeen:     s.LastSeen,
-				})
-			}
-		case "ports":
-			rows, err := deps.DB.GetAllPorts()
-			if err != nil {
-				http.Error(w, "Failed to load ports: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, p := range rows {
-				list.Ports = append(list.Ports, dashboard.PortView{
-					Host:         p.Host,
-					Port:         p.Port,
-					Protocol:     p.Protocol,
-					Service:      p.Service,
-					Version:      p.Version,
-					Banner:       p.Banner,
-					State:        p.State,
-					DiscoveredAt: p.DiscoveredAt,
-				})
-			}
-		case "certificates":
-			rows, err := deps.DB.GetAllCertificates()
-			if err != nil {
-				http.Error(w, "Failed to load certificates: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, c := range rows {
-				list.Certificates = append(list.Certificates, dashboard.CertificateView{
-					Host:            c.Host,
-					Port:            c.Port,
-					Subject:         c.Subject,
-					Issuer:          c.Issuer,
-					NotAfter:        c.NotAfter,
-					DaysUntilExpiry: c.DaysUntilExpiry,
-					SAN:             c.SAN,
-				})
-			}
-		case "urls":
-			rows, err := deps.DB.GetAllURLs()
-			if err != nil {
-				http.Error(w, "Failed to load URLs: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, u := range rows {
-				list.URLs = append(list.URLs, dashboard.URLView{
-					URL:          u.URL,
-					Domain:       u.Domain,
-					Category:     u.Category,
-					Interesting:  u.Interesting > 0,
-					Source:       u.Source,
-					DiscoveredAt: u.DiscoveredAt,
-				})
-			}
-		case "apis":
-			rows, err := deps.DB.GetAllAPIs()
-			if err != nil {
-				http.Error(w, "Failed to load APIs: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, a := range rows {
-				list.APIs = append(list.APIs, dashboard.APIView{
-					URL:          a.URL,
-					Type:         a.Type,
-					Title:        a.Title,
-					Version:      a.Version,
-					DiscoveredAt: a.DiscoveredAt,
-				})
-			}
-		case "emails":
-			rows, err := deps.DB.GetAllEmails()
-			if err != nil {
-				http.Error(w, "Failed to load emails: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, e := range rows {
-				list.Emails = append(list.Emails, dashboard.EmailView{
-					Address:      e.Address,
-					Source:       e.Source,
-					DiscoveredAt: e.DiscoveredAt,
-				})
-			}
-		case "cloud":
-			rows, err := deps.DB.GetAllCloudStorage()
-			if err != nil {
-				http.Error(w, "Failed to load cloud storage: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, c := range rows {
-				list.CloudStorage = append(list.CloudStorage, dashboard.CloudStorageView{
-					Provider:    c.Provider,
-					BucketName:  c.BucketName,
-					URL:         c.URL,
-					AccessLevel: c.AccessLevel,
-					Severity:    c.Severity,
-					Evidence:    c.Evidence,
-					Status:      c.Status,
-				})
-			}
-		case "findings":
-			rows, err := deps.DB.GetAllFindings()
-			if err != nil {
-				http.Error(w, "Failed to load findings: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, f := range rows {
-				list.Findings = append(list.Findings, dashboard.FindingView{
-					ID:           f.ID,
-					Name:         f.Name,
-					Severity:     f.Severity,
-					Description:  f.Description,
-					Host:         f.Host,
-					MatchedAt:    f.MatchedAt,
-					Tags:         f.Tags,
-					DiscoveredAt: f.DiscoveredAt,
-				})
-			}
-		case "takeovers":
-			rows, err := deps.DB.GetAllTakeovers()
-			if err != nil {
-				http.Error(w, "Failed to load takeovers: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, t := range rows {
-				list.Takeovers = append(list.Takeovers, dashboard.TakeoverView{
-					Subdomain:    t.Subdomain,
-					CNAME:        t.CNAME,
-					Service:      t.Service,
-					TakeoverType: t.TakeoverType,
-					Confidence:   t.Confidence,
-					Evidence:     t.Evidence,
-					DiscoveredAt: t.DiscoveredAt,
-				})
-			}
+		list, err := loadGlobalList(deps, activePage, title)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-
 		data.GlobalList = list
 		if err := dashboard.RenderPage(w, "list-base", data); err != nil {
 			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 		}
+	}
+}
+
+func loadGlobalList(deps *Deps, activePage, title string) (*dashboard.GlobalListData, error) {
+	list := &dashboard.GlobalListData{Title: title}
+
+	switch activePage {
+	case "subdomains":
+		rows, err := deps.DB.GetAllSubdomains()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load subdomains: %w", err)
+		}
+		for _, s := range rows {
+			list.Subdomains = append(list.Subdomains, dashboard.SubdomainView{
+				Subdomain:    s.Subdomain,
+				DiscoveredAt: s.DiscoveredAt,
+				LastSeen:     s.LastSeen,
+			})
+		}
+	case "ports":
+		rows, err := deps.DB.GetAllPorts()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load ports: %w", err)
+		}
+		for _, p := range rows {
+			list.Ports = append(list.Ports, dashboard.PortView{
+				Host:         p.Host,
+				Port:         p.Port,
+				Protocol:     p.Protocol,
+				Service:      p.Service,
+				Version:      p.Version,
+				Banner:       p.Banner,
+				State:        p.State,
+				DiscoveredAt: p.DiscoveredAt,
+			})
+		}
+	case "certificates":
+		rows, err := deps.DB.GetAllCertificates()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load certificates: %w", err)
+		}
+		for _, c := range rows {
+			list.Certificates = append(list.Certificates, dashboard.CertificateView{
+				Host:            c.Host,
+				Port:            c.Port,
+				Subject:         c.Subject,
+				Issuer:          c.Issuer,
+				NotAfter:        c.NotAfter,
+				DaysUntilExpiry: c.DaysUntilExpiry,
+				SAN:             c.SAN,
+			})
+		}
+	case "urls":
+		rows, err := deps.DB.GetAllURLs()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load URLs: %w", err)
+		}
+		for _, u := range rows {
+			list.URLs = append(list.URLs, dashboard.URLView{
+				URL:          u.URL,
+				Domain:       u.Domain,
+				Category:     u.Category,
+				Interesting:  u.Interesting > 0,
+				Source:       u.Source,
+				DiscoveredAt: u.DiscoveredAt,
+			})
+		}
+	case "apis":
+		rows, err := deps.DB.GetAllAPIs()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load APIs: %w", err)
+		}
+		for _, a := range rows {
+			list.APIs = append(list.APIs, dashboard.APIView{
+				URL:          a.URL,
+				Type:         a.Type,
+				Title:        a.Title,
+				Version:      a.Version,
+				DiscoveredAt: a.DiscoveredAt,
+			})
+		}
+	case "emails":
+		rows, err := deps.DB.GetAllEmails()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load emails: %w", err)
+		}
+		for _, e := range rows {
+			list.Emails = append(list.Emails, dashboard.EmailView{
+				Address:      e.Address,
+				Source:       e.Source,
+				DiscoveredAt: e.DiscoveredAt,
+			})
+		}
+	case "cloud":
+		rows, err := deps.DB.GetAllCloudStorage()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load cloud storage: %w", err)
+		}
+		for _, c := range rows {
+			list.CloudStorage = append(list.CloudStorage, dashboard.CloudStorageView{
+				Provider:    c.Provider,
+				BucketName:  c.BucketName,
+				URL:         c.URL,
+				AccessLevel: c.AccessLevel,
+				Severity:    c.Severity,
+				Evidence:    c.Evidence,
+				Status:      c.Status,
+			})
+		}
+	case "findings":
+		rows, err := deps.DB.GetAllFindings()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load findings: %w", err)
+		}
+		for _, f := range rows {
+			list.Findings = append(list.Findings, dashboard.FindingView{
+				ID:           f.ID,
+				Name:         f.Name,
+				Severity:     f.Severity,
+				Description:  f.Description,
+				Host:         f.Host,
+				MatchedAt:    f.MatchedAt,
+				Tags:         f.Tags,
+				DiscoveredAt: f.DiscoveredAt,
+			})
+		}
+	case "takeovers":
+		rows, err := deps.DB.GetAllTakeovers()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load takeovers: %w", err)
+		}
+		for _, t := range rows {
+			list.Takeovers = append(list.Takeovers, dashboard.TakeoverView{
+				Subdomain:    t.Subdomain,
+				CNAME:        t.CNAME,
+				Service:      t.Service,
+				TakeoverType: t.TakeoverType,
+				Confidence:   t.Confidence,
+				Evidence:     t.Evidence,
+				DiscoveredAt: t.DiscoveredAt,
+			})
+		}
+	}
+
+	return list, nil
+}
+
+func makeDomainDetailOrSPA(deps *Deps) http.HandlerFunc {
+	html := makeDomainDetailHandler(deps)
+	return func(w http.ResponseWriter, r *http.Request) {
+		route, ok := parseDomainDetailPath(r.URL.Path)
+		if ok && route.action != "" {
+			html(w, r)
+			return
+		}
+		dashboard.ServeIndex(w, r)
 	}
 }
 
