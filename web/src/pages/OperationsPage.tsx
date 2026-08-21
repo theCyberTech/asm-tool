@@ -9,7 +9,7 @@ import { formatDateTime, severityClass } from "../lib/format";
 export function OperationsPage() {
   const [token, setToken] = useState("");
   const overviewLoader = useCallback(() => fetchOverview(), []);
-  const { data: overview } = useApi(overviewLoader);
+  const { data: overview, reload: reloadOverview } = useApi(overviewLoader);
   const loader = useCallback(() => fetchOperations(token || undefined), [token]);
   const { data, error, loading, reload } = useApi(loader);
 
@@ -41,9 +41,10 @@ export function OperationsPage() {
     }
     const timer = window.setInterval(() => {
       void reload();
+      void reloadOverview();
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [data?.running_count, reload]);
+  }, [data?.running_count, reload, reloadOverview]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -187,6 +188,9 @@ export function OperationsPage() {
                       {run.duration ? ` · ${run.duration}` : ""}
                       {run.target ? ` · ${run.target}` : ""}
                     </p>
+                    {run.status === "running" && !run.stdout ? (
+                      <p className="text-muted">Working… output appears as each module finishes</p>
+                    ) : null}
                     {run.stdout ? <pre className="run-output">{run.stdout}</pre> : null}
                     {run.stderr ? <pre className="run-output">{run.stderr}</pre> : null}
                     {run.error ? <p className="alert alert-danger">{run.error}</p> : null}

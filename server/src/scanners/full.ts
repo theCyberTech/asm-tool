@@ -42,6 +42,9 @@ export async function runModule(
 ): Promise<void> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   store.ensureDomain(domain);
+  if (moduleId !== "scan" && moduleId !== "status") {
+    log.info(`${moduleId}: starting for ${domain}`);
+  }
 
   switch (moduleId) {
     case "status":
@@ -192,6 +195,7 @@ export async function runModule(
       log.warn("Nuclei is optional and not bundled; header-based findings are collected during fingerprinting");
       return;
     case "scan": {
+      log.info("full scan: discover, then dns/urls, ports, and host checks");
       await runModule(store, "discover", domain, log, deps);
       await Promise.all([
         runModule(store, "dns", domain, log, deps),

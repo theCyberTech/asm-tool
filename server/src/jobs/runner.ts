@@ -99,9 +99,21 @@ export class JobRunner {
   private async execute(id: number, action: string, targets: string[], ports: number[]): Promise<void> {
     const logs: string[] = [];
     const warnings: string[] = [];
+    const flush = () => {
+      this.store.updateRun(id, {
+        stdout: logs.join("\n"),
+        stderr: warnings.join("\n"),
+      });
+    };
     const log = {
-      info: (message: string) => logs.push(message),
-      warn: (message: string) => warnings.push(message),
+      info: (message: string) => {
+        logs.push(message);
+        flush();
+      },
+      warn: (message: string) => {
+        warnings.push(message);
+        flush();
+      },
     };
     try {
       for (const target of targets) {
