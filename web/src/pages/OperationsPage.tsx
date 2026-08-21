@@ -13,7 +13,7 @@ export function OperationsPage() {
   const loader = useCallback(() => fetchOperations(token || undefined), [token]);
   const { data, error, loading, reload } = useApi(loader);
 
-  const selectedDefault = data?.actions.find((item) => item.id === "scan")?.id ?? data?.actions[0]?.id ?? "scan";
+  const selectedDefault = data?.actions?.find((item) => item.id === "scan")?.id ?? data?.actions?.[0]?.id ?? "scan";
   const [actionId, setActionId] = useState("scan");
   const [target, setTarget] = useState("crewai.com");
   const [allKnown, setAllKnown] = useState(false);
@@ -25,7 +25,7 @@ export function OperationsPage() {
   const [busy, setBusy] = useState(false);
 
   const action = useMemo(
-    () => data?.actions.find((item) => item.id === actionId) ?? data?.actions[0],
+    () => data?.actions?.find((item) => item.id === actionId) ?? data?.actions?.[0],
     [actionId, data?.actions],
   );
 
@@ -125,7 +125,7 @@ export function OperationsPage() {
                     value={action?.id ?? ""}
                     onChange={(event) => setActionId(event.target.value)}
                   >
-                    {data.actions.map((item) => (
+                    {(data.actions ?? []).map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.label}
                       </option>
@@ -158,16 +158,16 @@ export function OperationsPage() {
           <div className="card">
             <div className="card-header">
               <h2 className="card-title">Recent runs</h2>
-              {data.running_count > 0 ? <span className="badge badge-blue">{data.running_count} running</span> : null}
+              {(data.running_count ?? 0) > 0 ? <span className="badge badge-blue">{data.running_count} running</span> : null}
             </div>
             <div className="card-body">
-              {data.runs.length === 0 ? (
+              {(data.runs ?? []).length === 0 ? (
                 <div className="empty-state">
                   <h3>No runs yet</h3>
                   <p>Start a scan to see command output here</p>
                 </div>
               ) : (
-                data.runs.map((run) => (
+                (data.runs ?? []).map((run) => (
                   <div key={run.id} className="card" style={{ padding: "1rem" }}>
                     <div className="flex items-center justify-between gap-sm">
                       <strong>{run.label}</strong>
