@@ -22,6 +22,16 @@ export type ScanDeps = {
 };
 
 const DEFAULT_PORTS = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 3306, 3389, 5432, 8080, 8443];
+const HOST_SCAN_LIMIT = 25;
+
+function scanHosts(store: Store, domain: string): string[] {
+  const hosts = store.hostsForDomain(domain);
+  if (hosts.length <= HOST_SCAN_LIMIT) {
+    return hosts;
+  }
+  const rest = hosts.filter((host) => host !== domain).slice(0, HOST_SCAN_LIMIT - 1);
+  return [domain, ...rest];
+}
 
 export async function runModule(
   store: Store,
@@ -61,7 +71,7 @@ export async function runModule(
       return;
     }
     case "certificates": {
-      const hosts = store.hostsForDomain(domain);
+      const hosts = scanHosts(store, domain);
       let saved = 0;
       for (const host of hosts) {
         try {
@@ -87,7 +97,7 @@ export async function runModule(
       return;
     }
     case "portscan": {
-      const hosts = store.hostsForDomain(domain);
+      const hosts = scanHosts(store, domain);
       const ports = deps.ports?.length ? deps.ports : DEFAULT_PORTS;
       let open = 0;
       for (const host of hosts) {
@@ -100,7 +110,7 @@ export async function runModule(
       return;
     }
     case "fingerprint": {
-      const hosts = store.hostsForDomain(domain);
+      const hosts = scanHosts(store, domain);
       for (const host of hosts) {
         try {
           const tech = await fingerprintHost(host, fetchImpl);
@@ -119,7 +129,7 @@ export async function runModule(
       return;
     }
     case "apis": {
-      const hosts = store.hostsForDomain(domain);
+      const hosts = scanHosts(store, domain);
       let count = 0;
       for (const host of hosts) {
         const apis = await discoverApis(host, fetchImpl);
@@ -132,7 +142,7 @@ export async function runModule(
       return;
     }
     case "emails": {
-      const hosts = store.hostsForDomain(domain);
+      const hosts = scanHosts(store, domain);
       let count = 0;
       for (const host of hosts) {
         try {
@@ -157,7 +167,7 @@ export async function runModule(
       return;
     }
     case "takeover": {
-      const hosts = store.hostsForDomain(domain);
+      const hosts = scanHosts(store, domain);
       let count = 0;
       for (const host of hosts) {
         const finding = await checkTakeover(host, fetchImpl);

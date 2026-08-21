@@ -78,6 +78,15 @@ describe("api", () => {
     expect(finished.status).toBe("succeeded");
     expect(store.listSubdomains("crewai.com").map((row) => row.subdomain)).toContain("app.crewai.com");
   });
+
+  it("lists full scan as the default operations action", async () => {
+    const store = new Store(openDatabase(":memory:"));
+    const app = createApp(store, testConfig());
+    const response = await app.request("/api/operations");
+    const body = (await response.json()) as { actions: Array<{ id: string }> };
+    expect(body.actions[0]?.id).toBe("scan");
+    expect(body.actions.some((item) => item.id === "status")).toBe(false);
+  });
 });
 
 async function waitForRun(app: ReturnType<typeof createApp>, id: number) {
