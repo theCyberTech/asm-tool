@@ -129,6 +129,7 @@ export async function runModule(
           log.warn(`${host}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      log.info("fingerprint complete");
       return;
     }
     case "apis": {

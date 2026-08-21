@@ -24,7 +24,7 @@ export async function discoverApis(host: string, fetchImpl: typeof fetch = fetch
       try {
         const { status, body } = await fetchText(url, { redirect: "follow" }, fetchImpl);
         if (status >= 400) {
-          continue;
+          break;
         }
         const looksUseful =
           spec.type === "graphql"

@@ -1,19 +1,25 @@
 export const USER_AGENT = "ASM-Tool/3.0";
+export const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+
+export type FetchTextInit = RequestInit & { timeoutMs?: number };
 
 export async function fetchText(
   url: string,
-  init: RequestInit = {},
+  init: FetchTextInit = {},
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ status: number; body: string; headers: Headers }> {
+  const { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, signal: userSignal, ...rest } = init;
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = userSignal ? AbortSignal.any([userSignal, timeoutSignal]) : timeoutSignal;
   const response = await fetchImpl(url, {
-    ...init,
+    ...rest,
     headers: {
       "User-Agent": USER_AGENT,
       Accept: "*/*",
-      ...(init.headers ?? {}),
+      ...(rest.headers ?? {}),
     },
-    redirect: init.redirect ?? "follow",
-    signal: init.signal,
+    redirect: rest.redirect ?? "follow",
+    signal,
   });
   const body = await response.text();
   return { status: response.status, body, headers: response.headers };
