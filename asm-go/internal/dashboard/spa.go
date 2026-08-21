@@ -33,15 +33,10 @@ func ServeSPA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writePreviewHeaders(w)
-
 	rel := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 	if rel != "" && rel != "." && !strings.Contains(rel, "..") {
 		if f, err := fsys.Open(rel); err == nil {
 			_ = f.Close()
-			if path.Ext(rel) == ".js" {
-				w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-			}
 			http.FileServer(httpFS).ServeHTTP(w, r)
 			return
 		}
@@ -66,14 +61,9 @@ func ServeIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "frontend unavailable", http.StatusInternalServerError)
 		return
 	}
-	writePreviewHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(data)
-}
-
-func writePreviewHeaders(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 }
 
 func looksLikeStaticAsset(rel string) bool {
