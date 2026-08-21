@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  emailsFromTxt,
-  enumerateEmails,
-  extractEmails,
-  extractFromHtml,
-  parseSecurityTxt,
-  soaRnameToEmail,
-} from "./emails.ts";
+import { emailsFromTxt, enumerateEmails, extractEmails, extractFromHtml, soaRnameToEmail } from "./emails.ts";
 
 describe("email discovery", () => {
   it("keeps in-scope addresses and drops file-extension false positives", () => {
@@ -17,7 +10,7 @@ describe("email discovery", () => {
     expect(extractEmails("background-image: url(icon@2x.png)", "crewai.com")).toEqual([]);
   });
 
-  it("prefers mailto and json-ld over raw html matches", () => {
+  it("still parses mailto and json-ld on pages fingerprinting already fetched", () => {
     const html = `
       <a href="mailto:security@crewai.com">mail</a>
       <script type="application/ld+json">{"email":"press@crewai.com"}</script>
@@ -30,49 +23,49 @@ describe("email discovery", () => {
     ]);
   });
 
-  it("decodes Cloudflare cfemail obfuscation", () => {
-    // security@crewai.com encoded with key 0x0a
-    const encoded = encodeCfEmail("security@crewai.com", 0x0a);
-    const html = `<a href="/cdn-cgi/l/email-protection" data-cfemail="${encoded}">email</a>`;
-    expect(extractFromHtml(html, "crewai.com")).toEqual([{ address: "security@crewai.com", source: "mailto" }]);
-  });
-
-  it("parses security.txt contact mailtos", () => {
-    expect(
-      parseSecurityTxt(
-        ["# comment", "Contact: mailto:security@crewai.com", "Contact: https://crewai.com/security", "Encryption: https://crewai.com/pgp"].join("\n"),
-        "crewai.com",
-      ),
-    ).toEqual(["security@crewai.com"]);
-  });
-
-  it("converts SOA rname and DMARC rua into emails", () => {
+  it("converts public DNS records into emails", () => {
     expect(soaRnameToEmail("hostmaster.crewai.com.", "crewai.com")).toBe("hostmaster@crewai.com");
     expect(emailsFromTxt([["v=DMARC1; rua=mailto:dmarc@crewai.com"]], "crewai.com")).toEqual(["dmarc@crewai.com"]);
   });
 
-  it("enumerates first-party pages, DNS, and hunter without guessing mailboxes", async () => {
+  it("enumerates OSINT sources and does not crawl first-party contact pages", async () => {
+    const requested: string[] = [];
     const fetchImpl: typeof fetch = async (input) => {
       const url = String(input);
+      requested.push(url);
       if (url.includes("hunter.io")) {
         return new Response(JSON.stringify({ data: { emails: [{ value: "jane@crewai.com" }, { value: "other@gmail.com" }] } }), { status: 200 });
       }
-      if (url.includes("api.github.com")) {
+      if (url.includes("api.github.com/search/commits")) {
         return new Response(JSON.stringify({ items: [{ commit: { author: { email: "dev@crewai.com" } } }] }), { status: 200 });
       }
-      if (url.endsWith("/.well-known/security.txt")) {
-        return new Response("Contact: mailto:security@crewai.com\n", { status: 200 });
+      if (url.includes("api.github.com")) {
+        return new Response(JSON.stringify({ items: [] }), { status: 200 });
       }
-      if (url.endsWith("/contact")) {
-        return new Response('<a href="mailto:hello@crewai.com">Hello</a>', { status: 200 });
+      if (url.includes("keyserver.ubuntu.com") || url.includes("pgp.mit.edu")) {
+        return new Response("uid Jane Doe <pgp@crewai.com>", { status: 200 });
       }
-      return new Response("", { status: 404 });
+      if (url.includes("bing.com")) {
+        return new Response("index of sales@crewai.com", { status: 200 });
+      }
+      if (url.includes("duckduckgo.com")) {
+        return new Response("careers listing jobs@crewai.com", { status: 200 });
+      }
+      if (url.includes("skymem.info")) {
+        return new Response("skymem result media@crewai.com", { status: 200 });
+      }
+      if (url.includes("urlscan.io")) {
+        return new Response(JSON.stringify({ results: [{ page: { url: "https://crewai.com" } }], emails: ["osint@crewai.com"] }), { status: 200 });
+      }
+      if (url.includes("rdap.org")) {
+        return new Response(JSON.stringify({ entities: [{ vcardArray: ["vcard", [["email", {}, "text", "admin@crewai.com"]]] }] }), { status: 200 });
+      }
+      return new Response("unexpected " + url, { status: 500 });
     };
 
     const result = await enumerateEmails("crewai.com", {
       fetchImpl,
       hunterApiKey: "test-key",
-      extraUrls: ["https://docs.crewai.com/privacy", "https://google.com/contact"],
       resolveSoa: async () => ({
         nsname: "ns.crewai.com",
         hostmaster: "hostmaster.crewai.com",
@@ -90,19 +83,21 @@ describe("email discovery", () => {
       },
     });
 
-    expect(result.emails).toEqual([
-      { address: "dev@crewai.com", source: "github" },
-      { address: "dmarc@crewai.com", source: "dmarc" },
-      { address: "hello@crewai.com", source: "mailto" },
-      { address: "hostmaster@crewai.com", source: "dns-soa" },
-      { address: "jane@crewai.com", source: "hunter" },
-      { address: "security@crewai.com", source: "security.txt" },
-    ]);
-    expect(result.emails.some((item) => item.source === "guessed" || item.address.startsWith("info@"))).toBe(false);
+    expect(requested.some((url) => url.includes("crewai.com/contact") || url.includes("/.well-known/security.txt"))).toBe(false);
+    expect(result.emails.map((item) => `${item.source}:${item.address}`).sort()).toEqual(
+      [
+        "bing:sales@crewai.com",
+        "dns:dmarc@crewai.com",
+        "dns:hostmaster@crewai.com",
+        "duckduckgo:jobs@crewai.com",
+        "github:dev@crewai.com",
+        "hunter:jane@crewai.com",
+        "pgp:pgp@crewai.com",
+        "rdap:admin@crewai.com",
+        "skymem:media@crewai.com",
+        "urlscan:osint@crewai.com",
+      ].sort(),
+    );
+    expect(result.emails.some((item) => item.address.endsWith("@gmail.com") || item.source === "guessed")).toBe(false);
   });
 });
-
-function encodeCfEmail(email: string, key: number): string {
-  const bytes = [key, ...[...email].map((char) => char.charCodeAt(0) ^ key)];
-  return bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}

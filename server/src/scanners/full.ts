@@ -145,8 +145,7 @@ export async function runModule(
       return;
     }
     case "emails": {
-      const extraUrls = store.listUrls(domain).map((row) => String(row.url ?? ""));
-      const result = await enumerateEmails(domain, { fetchImpl, extraUrls });
+      const result = await enumerateEmails(domain, { fetchImpl });
       for (const err of result.errors) {
         log.warn(err);
       }
