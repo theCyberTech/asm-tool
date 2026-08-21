@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -96,11 +95,10 @@ func isLoopbackHost(host string) bool {
 }
 
 func runDashboard(deps *Deps, opts dashboardOptions) error {
-	ln, err := listenDashboard(opts.host, opts.port)
+	addr, err := findAvailableAddr(opts.host, opts.port)
 	if err != nil {
 		return err
 	}
-	addr := ln.Addr().String()
 
 	ops := newDashboardOps(deps)
 	ops.token = opts.token
@@ -116,7 +114,7 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 	serverErrors := make(chan error, 1)
 
 	go func() {
-		serverErrors <- server.Serve(ln)
+		serverErrors <- server.ListenAndServe()
 	}()
 
 	fmt.Println()
@@ -200,46 +198,20 @@ func newDashboardMux(deps *Deps, ops *dashboardOps) *http.ServeMux {
 	return mux
 }
 
-// listenNetwork returns tcp4 for IPv4/unspecified hosts so the socket appears
-// in /proc/net/tcp. Dual-stack tcp listeners on Linux show up only in
-// /proc/net/tcp6, which Cursor's preview port-forwarder does not pick up.
-func listenNetwork(host string) string {
-	trimmed := strings.Trim(host, "[]")
-	if ip := net.ParseIP(trimmed); ip != nil && ip.To4() == nil {
-		return "tcp6"
-	}
-	return "tcp4"
-}
-
-// listenDashboard binds the requested host and port. If the requested port is
-// already in use, it scans upward for the next available port. Port 0 lets the
-// OS choose.
-func listenDashboard(host string, port int) (net.Listener, error) {
-	network := listenNetwork(host)
-	if port == 0 {
-		return net.Listen(network, net.JoinHostPort(host, "0"))
-	}
-	for p := port; p <= port+100; p++ {
-		ln, err := net.Listen(network, net.JoinHostPort(host, strconv.Itoa(p)))
-		if err != nil {
-			continue
-		}
-		return ln, nil
-	}
-	return nil, fmt.Errorf("no available port found starting from %d", port)
-}
-
 // findAvailableAddr returns the address for the requested host and port.
 // If the requested port is already in use, it scans upward for the next
 // available port.
 func findAvailableAddr(host string, port int) (string, error) {
-	ln, err := listenDashboard(host, port)
-	if err != nil {
-		return "", err
+	for p := port; p <= port+100; p++ {
+		addr := fmt.Sprintf("%s:%d", host, p)
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			continue
+		}
+		ln.Close()
+		return addr, nil
 	}
-	addr := ln.Addr().String()
-	_ = ln.Close()
-	return addr, nil
+	return "", fmt.Errorf("no available port found starting from %d", port)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
