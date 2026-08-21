@@ -95,3 +95,15 @@ and in `README.md`. Notes below cover non-obvious environment behavior.
 - `./asm.sh init` creates `config.yaml` (from `config.example.yaml`), `data/`,
   `reports/`, `logs/`, and builds the binary if missing. `config.yaml` and
   `asm-go/data/` are gitignored.
+- Nuclei is optional and is **not** installed by the update script. Dashboard
+  Operations → Nuclei and `./asm.sh nuclei` fail with `nuclei not found in PATH`
+  until the binary exists. Install once with
+  `go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest` (current
+  `latest` needs Go 1.26; the Go toolchain auto-downloads it). The binary lands
+  in `$HOME/go/bin`. `findNucleiBinary` also checks `$HOME/go/bin/nuclei`, and
+  this VM has a `/usr/local/bin/nuclei` symlink so PATH-less dashboard children
+  can find it. After install, run `./asm.sh nuclei --update` once to fetch
+  templates into `$HOME/nuclei-templates`. `$HOME/go/bin` is on PATH via
+  `~/.bashrc`. Do not use `--all-known` as a first smoke test: it scans every
+  discovered subdomain with the default template set and can run for a long
+  time.
