@@ -13,8 +13,8 @@ export function OperationsPage() {
   const loader = useCallback(() => fetchOperations(token || undefined), [token]);
   const { data, error, loading, reload } = useApi(loader);
 
-  const selectedDefault = data?.actions[0]?.id ?? "status";
-  const [actionId, setActionId] = useState(selectedDefault);
+  const selectedDefault = data?.actions.find((item) => item.id === "scan")?.id ?? data?.actions[0]?.id ?? "scan";
+  const [actionId, setActionId] = useState("scan");
   const [target, setTarget] = useState("crewai.com");
   const [allKnown, setAllKnown] = useState(false);
   const [ports, setPorts] = useState("");
@@ -28,6 +28,12 @@ export function OperationsPage() {
     () => data?.actions.find((item) => item.id === actionId) ?? data?.actions[0],
     [actionId, data?.actions],
   );
+
+  useEffect(() => {
+    if (selectedDefault && actionId !== selectedDefault && !data?.actions.some((item) => item.id === actionId)) {
+      setActionId(selectedDefault);
+    }
+  }, [actionId, data?.actions, selectedDefault]);
 
   useEffect(() => {
     if (!data?.running_count) {
@@ -77,7 +83,7 @@ export function OperationsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Operations</h1>
-          <p className="page-description">Run and monitor scans for crewai.com from this host</p>
+          <p className="page-description">Run a full scan of crewai.com, then watch modules fill the dashboard</p>
         </div>
         <button type="button" className="btn btn-secondary" onClick={() => void reload()}>
           Refresh
@@ -148,7 +154,7 @@ export function OperationsPage() {
                   disabled={!data.enabled}
                 />
                 <button type="submit" className="btn btn-primary" disabled={!data.enabled || busy}>
-                  {busy ? "Starting…" : "Start run"}
+                  {busy ? "Starting…" : action?.id === "scan" ? "Start full scan" : "Start run"}
                 </button>
               </form>
               <p className="text-muted mt-md">Backend: {data.binary_path || "typescript"} · Database: {data.database_path}</p>
