@@ -54,6 +54,7 @@ describe("dashboard pages", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Attack Surface Overview" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /CrewAI - ASM/ })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "View domains" })).toHaveAttribute("href", "/domains");
     expect(screen.getByRole("link", { name: "example.com" })).toHaveAttribute("href", "/domains/example.com");
     expect(screen.getByText("1 Critical")).toBeInTheDocument();
