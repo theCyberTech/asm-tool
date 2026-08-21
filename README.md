@@ -15,7 +15,7 @@ A fast, local-first attack surface management tool for security teams. Find and 
 - **Technology Fingerprinting** — Identify frameworks, CDNs, libraries, and servers
 - **DNS Monitoring** — Track DNS record changes and check email security (SPF, DKIM, DMARC)
 - **Subdomain Takeover Detection** — Find DNS records that point to unclaimed services
-- **Email & Cloud Enumeration** — Find exposed email addresses and public cloud buckets (S3, Azure, GCS)
+- **Cloud Enumeration** — Find public cloud buckets (S3, Azure, GCS)
 - **Reporting** — Export findings as JSON, Markdown, or HTML
 - **Scheduled Scans** — Run scans on a cron schedule, with Slack or email notifications
 - **Dashboard** — Browse findings in a TypeScript web UI served by the Go CLI
@@ -113,7 +113,6 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 ./asm.sh fingerprint example.com       # Technology fingerprinting
 ./asm.sh urls example.com              # URL enumeration
 ./asm.sh apis example.com              # API endpoint discovery
-./asm.sh emails example.com            # Email enumeration
 ./asm.sh cloudstorage example.com      # Cloud bucket detection
 ./asm.sh nuclei example.com            # Vulnerability scanning
 ```
@@ -199,10 +198,6 @@ notifications:
 schedule:
   full_scan: "0 6 * * *"       # Daily at 6 AM
   cert_check: "0 */6 * * *"   # Every 6 hours
-
-# External API keys (optional)
-hunter:
-  api_key: "your-hunter-api-key"
 ```
 
 ## Architecture
@@ -214,7 +209,7 @@ asm-go/
 ├── internal/
 │   ├── config/                  # YAML config (Viper)
 │   ├── database/                # SQLite ORM (sqlx)
-│   ├── scanner/                 # 11 scanning modules
+│   ├── scanner/                 # 10 scanning modules
 │   │   ├── subdomains/          # Multi-source enumeration
 │   │   ├── ports/               # Native TCP scanning
 │   │   ├── certificates/        # TLS monitoring
@@ -223,7 +218,6 @@ asm-go/
 │   │   ├── technologies/        # Tech fingerprinting
 │   │   ├── urls/                # URL discovery
 │   │   ├── apis/                # API detection
-│   │   ├── emails/              # Email enumeration
 │   │   ├── cloud/               # Cloud bucket detection
 │   │   └── nuclei/              # Vuln scanning
 │   ├── persistence/             # Unified Store interface

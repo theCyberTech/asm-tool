@@ -11,7 +11,6 @@ const STAT_LINKS = [
   { key: "certificates", label: "Certificates", href: "/certificates" },
   { key: "urls", label: "URLs", href: "/urls" },
   { key: "apis", label: "APIs", href: "/apis" },
-  { key: "emails", label: "Emails", href: "/emails" },
   { key: "cloud_buckets", label: "Cloud Buckets", href: "/cloud" },
 ] as const;
 

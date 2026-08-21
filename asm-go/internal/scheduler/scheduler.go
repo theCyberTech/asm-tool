@@ -503,9 +503,6 @@ func (s *Scheduler) buildConfig(jobType JobType) parallel.RunConfig {
 	cfg.Nuclei.RateLimit = s.cfg.Scanning.RateLimit
 	cfg.Nuclei.ExcludeTags = splitCSV(s.cfg.Nuclei.ExcludeTags)
 
-	// Email / Hunter
-	cfg.Emails.HunterAPIKey = s.cfg.Hunter.APIKey
-
 	// Cloud
 	cfg.Cloud.InsecureSkipVerify = s.cfg.Scanning.InsecureSkipVerify
 

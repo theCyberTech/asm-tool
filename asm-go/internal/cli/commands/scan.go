@@ -48,7 +48,6 @@ func ScanCmd(deps *Deps) *cobra.Command {
 - Technology fingerprinting
 - URL enumeration
 - API discovery
-- Email enumeration
 - Cloud storage detection
 - Vulnerability scanning (optional, requires nuclei)
 
@@ -76,7 +75,7 @@ Results can be output to JSON, Markdown, or HTML reports.`,
 		},
 	}
 
-	cmd.Flags().StringSliceVar(&skipModules, "skip", nil, "Modules to skip (subdomains,ports,certificates,dns,takeover,technologies,urls,apis,emails,cloudstorage,nuclei)")
+	cmd.Flags().StringSliceVar(&skipModules, "skip", nil, "Modules to skip (subdomains,ports,certificates,dns,takeover,technologies,urls,apis,cloudstorage,nuclei)")
 	cmd.Flags().StringSliceVar(&onlyModules, "only", nil, "Only run these modules")
 	cmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format: json, markdown, html (default: no file output)")
 	cmd.Flags().StringVar(&outputDir, "output-dir", "reports", "Directory for report output")
@@ -312,9 +311,6 @@ func buildScanConfig(cfg *config.Config, opts scanOptions) parallel.RunConfig {
 	out.Nuclei.RateLimit = cfg.Scanning.RateLimit
 	out.Nuclei.ExcludeTags = splitCSV(cfg.Nuclei.ExcludeTags)
 
-	// Email / Hunter
-	out.Emails.HunterAPIKey = cfg.Hunter.APIKey
-
 	// Insecure
 	out.Certificates.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
 	out.Takeover.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
@@ -466,8 +462,6 @@ func parseModule(name string) (parallel.ModuleType, bool) {
 		return parallel.ModuleURLs, true
 	case "apis", "api":
 		return parallel.ModuleAPIs, true
-	case "emails", "email":
-		return parallel.ModuleEmails, true
 	case "cloudstorage", "cloud", "buckets", "bucket":
 		return parallel.ModuleCloudStorage, true
 	case "nuclei", "vuln", "vulns", "vulnerability", "vulnerabilities":
@@ -509,7 +503,6 @@ func printScanSummary(result *parallel.ScanResult) {
 
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("URLs:", 20)), len(result.URLs))
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("APIs:", 20)), len(result.APIs))
-	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Emails:", 20)), len(result.Emails))
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Cloud Buckets:", 20)), len(result.CloudStorage))
 
 	// Count nuclei vulnerabilities by severity

@@ -23,9 +23,6 @@ type Config struct {
 	// Timeout settings
 	Timeouts TimeoutConfig `mapstructure:"timeouts"`
 
-	// External APIs
-	Hunter HunterConfig `mapstructure:"hunter"`
-
 	// Screenshot settings
 	Screenshots ScreenshotConfig `mapstructure:"screenshots"`
 
@@ -81,10 +78,6 @@ type TimeoutConfig struct {
 	Gau       time.Duration `mapstructure:"gau"`
 	HTTP      time.Duration `mapstructure:"http"`
 	DNS       time.Duration `mapstructure:"dns"`
-}
-
-type HunterConfig struct {
-	APIKey string `mapstructure:"api_key"`
 }
 
 type ScreenshotConfig struct {

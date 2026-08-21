@@ -17,7 +17,6 @@ var assetTitles = map[string]string{
 	"certificates":    "Certificates",
 	"urls":            "URLs",
 	"apis":            "API Endpoints",
-	"emails":          "Email Addresses",
 	"cloud":           "Cloud Storage",
 	"findings":        "Findings",
 	"takeovers":       "Takeovers",
@@ -32,7 +31,6 @@ var globalAssetKinds = map[string]struct{}{
 	"certificates": {},
 	"urls":         {},
 	"apis":         {},
-	"emails":       {},
 	"cloud":        {},
 	"findings":     {},
 	"takeovers":    {},
@@ -231,8 +229,6 @@ func domainAssetItems(detail *dashboard.DomainDetailData, kind string) (any, int
 		return assetItems(detail.URLs)
 	case "apis":
 		return assetItems(detail.APIs)
-	case "emails":
-		return assetItems(detail.Emails)
 	case "cloud":
 		return assetItems(detail.CloudStorage)
 	case "takeovers":
@@ -254,8 +250,6 @@ func globalAssetItems(list *dashboard.GlobalListData, kind string) (any, int) {
 		return assetItems(list.URLs)
 	case "apis":
 		return assetItems(list.APIs)
-	case "emails":
-		return assetItems(list.Emails)
 	case "cloud":
 		return assetItems(list.CloudStorage)
 	case "findings":

@@ -34,6 +34,9 @@ var migration005 string
 //go:embed migrations/006_query_indexes.sql
 var migration006 string
 
+//go:embed migrations/007_drop_emails.sql
+var migration007 string
+
 // Database is the main database facade
 type Database struct {
 	db *sqlx.DB
@@ -193,6 +196,12 @@ func (d *Database) migrate() error {
 		}
 	}
 
+	if version < 7 {
+		if _, err = d.db.Exec(migration007); err != nil {
+			return fmt.Errorf("running migration 007: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -206,7 +215,6 @@ type Stats struct {
 	Takeovers    int `db:"takeover_count"`
 	URLs         int `db:"url_count"`
 	APIs         int `db:"api_count"`
-	Emails       int `db:"email_count"`
 	CloudBuckets int `db:"bucket_count"`
 }
 
@@ -226,7 +234,6 @@ func (d *Database) GetStats() (*Stats, error) {
 		{"SELECT COUNT(*) FROM takeovers WHERE status = 'open'", &stats.Takeovers},
 		{"SELECT COUNT(*) FROM urls", &stats.URLs},
 		{"SELECT COUNT(*) FROM apis", &stats.APIs},
-		{"SELECT COUNT(*) FROM emails", &stats.Emails},
 		{"SELECT COUNT(*) FROM cloud_storage WHERE status = 'open'", &stats.CloudBuckets},
 	}
 
@@ -719,15 +726,6 @@ type API struct {
 	DiscoveredAt time.Time      `db:"discovered_at"`
 }
 
-// Email represents a discovered email address
-type Email struct {
-	ID           int64     `db:"id"`
-	Address      string    `db:"email"`
-	Domain       string    `db:"domain"`
-	Source       string    `db:"source"`
-	DiscoveredAt time.Time `db:"discovered_at"`
-}
-
 // CloudStorage represents a cloud storage bucket
 type CloudStorage struct {
 	ID           int64          `db:"id"`
@@ -811,17 +809,6 @@ func (d *Database) GetAPIsForDomain(domain string) ([]API, error) {
 		ORDER BY url
 	`, "%"+domain+"%")
 	return apis, err
-}
-
-// GetEmailsForDomain returns all emails for a domain
-func (d *Database) GetEmailsForDomain(domain string) ([]Email, error) {
-	var emails []Email
-	err := d.db.Select(&emails, `
-		SELECT id, email, domain, source, discovered_at FROM emails
-		WHERE domain = ?
-		ORDER BY email
-	`, domain)
-	return emails, err
 }
 
 // GetCloudStorageForDomain returns all cloud storage buckets for a domain
@@ -1034,7 +1021,6 @@ type DomainDetailStats struct {
 	VulnCount        int `db:"vuln_count"`
 	URLCount         int `db:"url_count"`
 	APICount         int `db:"api_count"`
-	EmailCount       int `db:"email_count"`
 	CloudCount       int `db:"cloud_count"`
 	TakeoverCount    int `db:"takeover_count"`
 }
@@ -1170,24 +1156,6 @@ func saveAPI(db queryExecutor, url, apiType, title, version string, endpointsCou
 	return err
 }
 
-// SaveEmail upserts a discovered email address
-func (d *Database) SaveEmail(domain, email, source string) error {
-	return saveEmail(d.db, domain, email, source)
-}
-
-// SaveEmail upserts a discovered email address in this transaction.
-func (tx *Transaction) SaveEmail(domain, email, source string) error {
-	return saveEmail(tx.db, domain, email, source)
-}
-
-func saveEmail(db queryExecutor, domain, email, source string) error {
-	return saveEmails(db, []EmailRecord{{
-		Domain:  domain,
-		Address: email,
-		Source:  source,
-	}})
-}
-
 // SaveCloudBucket upserts a cloud storage bucket
 func (d *Database) SaveCloudBucket(provider, bucketName, url, domain, accessLevel, severity, evidence string) error {
 	return saveCloudBucket(d.db, provider, bucketName, url, domain, accessLevel, severity, evidence)
@@ -1235,8 +1203,6 @@ func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, erro
 			 WHERE domain = ? OR domain LIKE ?) AS url_count,
 			(SELECT COUNT(*) FROM apis
 			 WHERE url LIKE ?) AS api_count,
-			(SELECT COUNT(*) FROM emails
-			 WHERE domain = ?) AS email_count,
 			(SELECT COUNT(*) FROM cloud_storage
 			 WHERE domain = ?) AS cloud_count,
 			(SELECT COUNT(*) FROM takeovers
@@ -1249,7 +1215,6 @@ func (d *Database) GetDomainDetailStats(domain string) (*DomainDetailStats, erro
 		domain, hostSuffix,
 		domain, hostSuffix,
 		urlNeedle,
-		domain,
 		domain,
 		domain, hostSuffix)
 	if err != nil {
@@ -1299,15 +1264,6 @@ func (d *Database) GetAllURLs() ([]URL, error) {
 func (d *Database) GetAllAPIs() ([]API, error) {
 	var rows []API
 	err := d.db.Select(&rows, `SELECT id, url, api_type, title, version, discovered_at FROM apis ORDER BY url`)
-	if err != nil && isTableNotExistsError(err) {
-		return nil, nil
-	}
-	return rows, err
-}
-
-func (d *Database) GetAllEmails() ([]Email, error) {
-	var rows []Email
-	err := d.db.Select(&rows, `SELECT id, email, domain, source, discovered_at FROM emails ORDER BY domain, email`)
 	if err != nil && isTableNotExistsError(err) {
 		return nil, nil
 	}

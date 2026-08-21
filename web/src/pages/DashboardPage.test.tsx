@@ -12,7 +12,6 @@ const overview = {
     certificates: 0,
     urls: 0,
     apis: 0,
-    emails: 0,
     cloud_buckets: 0,
     takeovers: 0,
   },

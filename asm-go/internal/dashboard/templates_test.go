@@ -65,9 +65,6 @@ func TestDomainDetailRenderEscapesScanDataOutsideJSStrings(t *testing.T) {
 				Title:        payload,
 				DiscoveredAt: now,
 			}},
-			Emails: []EmailView{{
-				Address: payload, Source: payload, DiscoveredAt: now,
-			}},
 			CloudStorage: []CloudStorageView{{
 				Provider: payload, BucketName: payload, URL: payload,
 				Severity: payload, Evidence: payload,

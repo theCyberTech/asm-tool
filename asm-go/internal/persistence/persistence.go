@@ -16,7 +16,6 @@ import (
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
 	"github.com/asm-tool/asm-go/internal/scanner/dns"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 	"github.com/asm-tool/asm-go/internal/scanner/takeover"
@@ -234,20 +233,6 @@ func saveTx(tx *database.Transaction, result *parallel.ScanResult) error {
 		if err := tx.SaveAPI(a.URL, a.Type, a.Title, a.Version, a.EndpointsCount, string(endpointsJSON)); err != nil {
 			collect(err, "saving API %q", a.URL)
 		}
-	}
-
-	// Emails
-	emailRecords := make([]database.EmailRecord, 0, len(result.Emails))
-	for _, e := range result.Emails {
-		ensureDomain(e.Domain)
-		emailRecords = append(emailRecords, database.EmailRecord{
-			Domain:  e.Domain,
-			Address: e.Address,
-			Source:  e.Source,
-		})
-	}
-	if err := tx.SaveEmails(emailRecords); err != nil {
-		collect(err, "saving emails")
 	}
 
 	// Cloud storage
@@ -701,18 +686,6 @@ func SaveDNSResult(store any, result *dns.Result) error {
 		return nil
 	}
 	return SaveDNSResults(store, []*dns.Result{result})
-}
-
-// SaveEmails persists email enumeration results.
-func SaveEmails(store any, results []emails.Email) (int, error) {
-	s, err := newStore(store)
-	if err != nil || s == nil {
-		return 0, err
-	}
-	err = s.SaveAll(&parallel.ScanResult{
-		Emails: results,
-	})
-	return 0, err
 }
 
 // SaveCloudBuckets persists cloud storage detection results.

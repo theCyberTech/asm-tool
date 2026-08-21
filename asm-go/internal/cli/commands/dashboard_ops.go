@@ -279,12 +279,6 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 			},
 		},
 		{
-			OperationOption: dashboard.OperationOption{ID: "emails", Label: "Email enumeration", RequiresTarget: true, SupportsAllKnown: true},
-			build: func(req operationRequest) (commandSpec, error) {
-				return buildDomainCommand("emails", req)
-			},
-		},
-		{
 			OperationOption: dashboard.OperationOption{ID: "cloudstorage", Label: "Cloud storage", RequiresTarget: true, SupportsAllKnown: true},
 			build: func(req operationRequest) (commandSpec, error) {
 				return buildDomainCommand("cloudstorage", req)
@@ -340,7 +334,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 func (o *dashboardOps) operationOptions() []dashboard.OperationOption {
 	order := []string{
 		"status", "scan", "discover", "dns", "urls",
-		"certificates", "takeover", "fingerprint", "apis", "emails",
+		"certificates", "takeover", "fingerprint", "apis",
 		"cloudstorage", "portscan", "nuclei", "report",
 	}
 	options := make([]dashboard.OperationOption, 0, len(order))

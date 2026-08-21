@@ -42,10 +42,6 @@ nuclei:
   exclude_tags: "dos,fuzz,brute"
   retries: 1
 
-# External API integrations (optional)
-hunter:
-  api_key: ""
-
 # Scheduling (cron expressions)
 schedule:
   # Full scan daily at 6 AM

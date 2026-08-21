@@ -4,7 +4,7 @@
 
 ASM Tool is a Go-based attack surface management tool. It monitors domains for
 subdomains, open ports, certificates, technologies, DNS records, vulnerabilities,
-URLs, subdomain takeovers, API endpoints, email addresses, and cloud storage
+URLs, subdomain takeovers, API endpoints, and cloud storage
 buckets. It also provides a local web dashboard and cron-based scheduled scans
 with Slack/email notifications.
 

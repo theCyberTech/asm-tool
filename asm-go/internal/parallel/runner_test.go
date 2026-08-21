@@ -110,8 +110,8 @@ func TestFlattenPortScanResultsPreservesBatchOrder(t *testing.T) {
 
 func TestAllModulesReturnsExpectedCount(t *testing.T) {
 	mods := AllModules()
-	if len(mods) != 11 {
-		t.Fatalf("expected 11 modules, got %d", len(mods))
+	if len(mods) != 10 {
+		t.Fatalf("expected 10 modules, got %d", len(mods))
 	}
 }
 

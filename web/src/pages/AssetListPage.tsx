@@ -14,7 +14,6 @@ const TITLES: Record<AssetKind, string> = {
   certificates: "Certificates",
   urls: "URLs",
   apis: "API Endpoints",
-  emails: "Email Addresses",
   cloud: "Cloud Storage",
   findings: "Findings",
   takeovers: "Takeovers",

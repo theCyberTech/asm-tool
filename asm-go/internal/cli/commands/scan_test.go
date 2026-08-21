@@ -91,7 +91,6 @@ func TestBuildScanConfigUsesConfig(t *testing.T) {
 	cfg.Nuclei.Concurrency = 18
 	cfg.Nuclei.Retries = 2
 	cfg.Nuclei.ExcludeTags = "dos,fuzz"
-	cfg.Hunter.APIKey = "hunter-key"
 
 	ports := cfg.ParsePorts()
 	if !reflect.DeepEqual(ports, []int{80, 443}) {
@@ -130,7 +129,6 @@ func TestBuildEnabledModules(t *testing.T) {
 		parallel.ModuleSubdomains,
 		parallel.ModuleDNS,
 		parallel.ModuleURLs,
-		parallel.ModuleEmails,
 	} {
 		if !enabled[mod] {
 			t.Fatalf("%s disabled in passive-only mode", mod)
