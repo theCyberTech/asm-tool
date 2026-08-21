@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { fetchOperations, fetchOverview, startRun } from "../api/client";
+import { fetchOperations, startRun } from "../api/client";
 import type { OperationAction } from "../api/types";
 import { Layout } from "../components/Layout";
 import { ErrorAlert, LoadingState, WarningAlert } from "../components/Status";
@@ -8,8 +8,6 @@ import { formatDateTime, severityClass } from "../lib/format";
 
 export function OperationsPage() {
   const [token, setToken] = useState("");
-  const overviewLoader = useCallback(() => fetchOverview(), []);
-  const { data: overview } = useApi(overviewLoader);
   const loader = useCallback(() => fetchOperations(token || undefined), [token]);
   const { data, error, loading, reload } = useApi(loader);
 
@@ -70,8 +68,6 @@ export function OperationsPage() {
   return (
     <Layout
       activePage="operations"
-      stats={overview?.stats}
-      findings={overview?.findings}
       runningCount={data?.running_count}
     >
       <div className="page-header">

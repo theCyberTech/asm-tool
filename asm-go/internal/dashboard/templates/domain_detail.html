@@ -758,7 +758,7 @@
                     {{range .DomainDetail.URLs}}
                     <tr>
                         <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
-                        <td>{{if .Category.Valid}}{{.Category.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td>{{if .Category}}{{.Category}}{{else}}<span class="text-muted">-</span>{{end}}</td>
                         <td>{{if .Interesting}}<span class="badge badge-yellow">Yes</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
                         <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                     </tr>
@@ -807,9 +807,9 @@
                     {{range .DomainDetail.APIs}}
                     <tr>
                         <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
-                        <td>{{if .Type.Valid}}<span class="badge badge-blue">{{.Type.String}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
-                        <td>{{if .Title.Valid}}{{.Title.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
-                        <td class="text-muted">{{if .Version.Valid}}{{.Version.String}}{{else}}-{{end}}</td>
+                        <td>{{if .Type}}<span class="badge badge-blue">{{.Type}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td>{{if .Title}}{{.Title}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td class="text-muted">{{if .Version}}{{.Version}}{{else}}-{{end}}</td>
                         <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                     </tr>
                     {{end}}
@@ -1540,7 +1540,7 @@
                         {{range .DomainDetail.URLs}}
                         <tr data-search="{{.URL}}" data-interesting="{{.Interesting}}" x-show="(!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())) && (!interestingOnly || $el.dataset.interesting === 'true')">
                             <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
-                            <td>{{if .Category.Valid}}{{.Category.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                            <td>{{if .Category}}{{.Category}}{{else}}<span class="text-muted">-</span>{{end}}</td>
                             <td>{{if .Interesting}}<span class="badge badge-yellow">Yes</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
                             <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                         </tr>
@@ -1603,11 +1603,11 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.APIs}}
-                        <tr data-search="{{.URL}} {{.Type.String}} {{.Title.String}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.URL}} {{.Type}} {{.Title}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
-                            <td>{{if .Type.Valid}}<span class="badge badge-blue">{{.Type.String}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
-                            <td>{{if .Title.Valid}}{{.Title.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
-                            <td class="text-muted">{{if .Version.Valid}}{{.Version.String}}{{else}}-{{end}}</td>
+                            <td>{{if .Type}}<span class="badge badge-blue">{{.Type}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
+                            <td>{{if .Title}}{{.Title}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                            <td class="text-muted">{{if .Version}}{{.Version}}{{else}}-{{end}}</td>
                             <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                         </tr>
                         {{end}}

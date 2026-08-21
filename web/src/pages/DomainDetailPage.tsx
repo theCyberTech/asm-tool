@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchDomain, fetchDomainAssets, fetchOverview } from "../api/client";
-import type { DomainAssetKind } from "../api/types";
-import { DataTable, type Column } from "../components/DataTable";
+import { fetchDomain, fetchDomainAssets } from "../api/client";
+import type { AssetRowByKind, DomainAssetKind, DomainDetailStats } from "../api/types";
+import { DataTable } from "../components/DataTable";
 import { Layout } from "../components/Layout";
 import { Modal } from "../components/Modal";
 import { ErrorAlert, LoadingState, WarningAlert } from "../components/Status";
@@ -10,7 +10,7 @@ import { useApi } from "../hooks/useApi";
 import { formatDate, formatDateTime, severityClass } from "../lib/format";
 import { domainAssetColumns } from "./assetColumns";
 
-const MODULES: Array<{ kind: DomainAssetKind; label: string; countKey: keyof import("../api/types").DomainDetailStats }> = [
+const MODULES: Array<{ kind: DomainAssetKind; label: string; countKey: keyof DomainDetailStats }> = [
   { kind: "subdomains", label: "Subdomains", countKey: "subdomain_count" },
   { kind: "ports", label: "Open Ports", countKey: "port_count" },
   { kind: "certificates", label: "Certificates", countKey: "certificate_count" },
@@ -26,14 +26,12 @@ const MODULES: Array<{ kind: DomainAssetKind; label: string; countKey: keyof imp
 
 export function DomainDetailPage() {
   const { name = "" } = useParams();
-  const overviewLoader = useCallback(() => fetchOverview(), []);
-  const { data: overview } = useApi(overviewLoader);
   const loader = useCallback(() => fetchDomain(name), [name]);
   const { data, error, loading, reload } = useApi(loader);
   const [modalKind, setModalKind] = useState<DomainAssetKind | null>(null);
 
   return (
-    <Layout activePage="domains" stats={overview?.stats} findings={overview?.findings}>
+    <Layout activePage="domains">
       <div className="breadcrumb">
         <Link to="/">Dashboard</Link>
         <span>/</span>
@@ -131,26 +129,35 @@ function AssetModal({
 }) {
   const loader = useCallback(async () => {
     if (!kind) {
-      return { status: "ok", kind: "", title: "", count: 0, items: [] };
+      return null;
     }
-    return fetchDomainAssets<Record<string, unknown>>(domain, kind);
+    return fetchDomainAssets(domain, kind);
   }, [domain, kind]);
   const { data, error, loading } = useApi(loader);
-  const columns = useMemo(() => (kind ? domainAssetColumns(kind) : []), [kind]);
   const module = MODULES.find((item) => item.kind === kind);
 
   return (
     <Modal title={module?.label ?? "Assets"} open={kind !== null} onClose={onClose}>
       {error ? <ErrorAlert message={error} /> : null}
       {loading ? <LoadingState label="Loading assets" /> : null}
-      {!loading && data ? (
-        <DataTable
-          rows={data.items}
-          columns={columns as Array<Column<Record<string, unknown>>>}
-          emptyTitle="No records"
-          emptyDescription="This module has no findings yet"
-        />
-      ) : null}
+      {!loading && data && kind ? <AssetTable kind={kind} items={data.items} /> : null}
     </Modal>
+  );
+}
+
+function AssetTable<K extends DomainAssetKind>({
+  kind,
+  items,
+}: {
+  kind: K;
+  items: AssetRowByKind[K][];
+}) {
+  return (
+    <DataTable
+      rows={items}
+      columns={domainAssetColumns(kind)}
+      emptyTitle="No records"
+      emptyDescription="This module has no findings yet"
+    />
   );
 }

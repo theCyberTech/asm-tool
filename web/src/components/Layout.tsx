@@ -2,16 +2,18 @@ import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import type { FindingCounts, Stats } from "../api/types";
+import { useOverview } from "../hooks/useOverview";
 
 type LayoutProps = {
   activePage: string;
-  stats?: Stats;
-  findings?: FindingCounts;
   runningCount?: number;
   children: ReactNode;
 };
 
-export function Layout({ activePage, stats, findings, runningCount, children }: LayoutProps) {
+export function Layout({ activePage, runningCount, children }: LayoutProps) {
+  const { data } = useOverview();
+  const stats = data?.stats;
+  const findings = data?.findings;
   useEffect(() => {
     const titles: Record<string, string> = {
       dashboard: "Dashboard",

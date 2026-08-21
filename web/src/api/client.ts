@@ -1,6 +1,7 @@
 import type {
   AssetKind,
   AssetListResponse,
+  AssetRowByKind,
   DomainAssetKind,
   DomainDetail,
   DomainListResponse,
@@ -69,17 +70,19 @@ export async function fetchDomain(name: string): Promise<DomainDetail> {
   return getJSON<DomainDetail>(`/api/domains/${encodeURIComponent(name)}`);
 }
 
-export async function fetchDomainAssets<T>(
+export async function fetchDomainAssets<K extends DomainAssetKind>(
   name: string,
-  kind: DomainAssetKind,
-): Promise<AssetListResponse<T>> {
-  return getJSON<AssetListResponse<T>>(
+  kind: K,
+): Promise<AssetListResponse<AssetRowByKind[K]>> {
+  return getJSON<AssetListResponse<AssetRowByKind[K]>>(
     `/api/domains/${encodeURIComponent(name)}/assets/${kind}`,
   );
 }
 
-export async function fetchAssets<T>(kind: AssetKind): Promise<AssetListResponse<T>> {
-  return getJSON<AssetListResponse<T>>(`/api/assets/${kind}`);
+export async function fetchAssets<K extends AssetKind>(
+  kind: K,
+): Promise<AssetListResponse<AssetRowByKind[K]>> {
+  return getJSON<AssetListResponse<AssetRowByKind[K]>>(`/api/assets/${kind}`);
 }
 
 export async function fetchOperations(token?: string): Promise<OperationsResponse> {

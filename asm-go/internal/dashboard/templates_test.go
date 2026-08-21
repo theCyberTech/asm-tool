@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"bytes"
-	"database/sql"
 	"regexp"
 	"strings"
 	"testing"
@@ -62,8 +61,8 @@ func TestDomainDetailRenderEscapesScanDataOutsideJSStrings(t *testing.T) {
 			}},
 			APIs: []APIView{{
 				URL:          payload,
-				Type:         sql.NullString{String: payload, Valid: true},
-				Title:        sql.NullString{String: payload, Valid: true},
+				Type:         payload,
+				Title:        payload,
 				DiscoveredAt: now,
 			}},
 			Emails: []EmailView{{

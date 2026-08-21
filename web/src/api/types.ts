@@ -265,3 +265,18 @@ export type DomainAssetKind =
   | "technologies"
   | "dns"
   | "vulnerabilities";
+
+export type AssetRowByKind = {
+  subdomains: Subdomain;
+  ports: Port;
+  certificates: Certificate;
+  urls: DiscoveredURL;
+  apis: APIEndpoint;
+  emails: Email;
+  cloud: CloudStorage;
+  findings: Finding;
+  takeovers: Takeover;
+  technologies: Technology;
+  dns: DNSRecord;
+  vulnerabilities: Finding;
+};

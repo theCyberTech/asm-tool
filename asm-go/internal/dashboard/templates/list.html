@@ -142,7 +142,7 @@
                         </td>
                         <td class="text-muted">{{.Domain}}</td>
                         <td class="text-muted">{{if .Source}}{{.Source}}{{else}}-{{end}}</td>
-                        <td>{{if .Category.Valid}}{{.Category.String}}{{else}}-{{end}}</td>
+                        <td>{{if .Category}}{{.Category}}{{else}}-{{end}}</td>
                         <td>{{if .Interesting}}<span class="severity severity-medium">yes</span>{{else}}-{{end}}</td>
                         <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                     </tr>
@@ -171,9 +171,9 @@
                         <td style="max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                             <span class="text-mono">{{.URL}}</span>
                         </td>
-                        <td>{{if .Type.Valid}}{{.Type.String}}{{else}}-{{end}}</td>
-                        <td>{{if .Title.Valid}}{{.Title.String}}{{else}}-{{end}}</td>
-                        <td class="text-muted">{{if .Version.Valid}}{{.Version.String}}{{else}}-{{end}}</td>
+                        <td>{{if .Type}}{{.Type}}{{else}}-{{end}}</td>
+                        <td>{{if .Title}}{{.Title}}{{else}}-{{end}}</td>
+                        <td class="text-muted">{{if .Version}}{{.Version}}{{else}}-{{end}}</td>
                         <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                     </tr>
                     {{end}}
