@@ -4,7 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CrewAI - ASM</title>
-    <script type="module" crossorigin src="/assets/index-BwEZgskj.js"></script>
+    <script>
+      window.addEventListener(
+        "error",
+        function (event) {
+          var target = event.target;
+          if (!target || (target.tagName !== "SCRIPT" && target.tagName !== "LINK")) {
+            return;
+          }
+          var root = document.getElementById("root");
+          if (!root || root.childElementCount) {
+            return;
+          }
+          root.innerHTML =
+            '<div style="font-family:sans-serif;padding:2rem;color:#c9d1d9;background:#0d1117;min-height:100vh">' +
+            "<h1>Dashboard failed to load</h1>" +
+            "<p>The UI bundle is missing or blocked. Hard-refresh this page (Ctrl+Shift+R).</p>" +
+            "</div>";
+        },
+        true,
+      );
+    </script>
+    <script type="module" crossorigin src="/assets/index-Cqamktds.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-By1PgP6k.css">
   </head>
   <body>

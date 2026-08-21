@@ -10,7 +10,7 @@ export default defineConfig({
   base: "/",
   build: {
     outDir: resolve(rootDir, "../asm-go/internal/dashboard/webdist"),
-    emptyOutDir: true,
+    emptyOutDir: false,
     sourcemap: false,
   },
   server: {

@@ -93,4 +93,39 @@ describe("dashboard pages", () => {
     expect(screen.getByRole("heading", { name: "Domains", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "example.com" })).toHaveAttribute("href", "/domains/example.com");
   });
+
+  it("renders operations when the payload omits actions and runs", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo): Promise<{
+        ok: boolean;
+        json: () => Promise<unknown>;
+        text: () => Promise<string>;
+      }> => {
+        const url = String(input);
+        if (url.startsWith("/api/operations")) {
+          return {
+            ok: true,
+            json: async () => ({ status: "ok", running_count: 0, binary_path: "/bin/asm" }),
+            text: async () => "",
+          };
+        }
+        return {
+          ok: true,
+          json: async () => overview,
+          text: async () => "",
+        };
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/operations"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Operations" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start run" })).toBeInTheDocument();
+    expect(screen.getByText("No runs yet")).toBeInTheDocument();
+  });
 });

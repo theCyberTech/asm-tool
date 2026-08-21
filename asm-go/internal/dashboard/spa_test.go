@@ -14,6 +14,9 @@ func TestServeSPAReturnsIndex(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("cache-control = %q, want no-store", rec.Header().Get("Cache-Control"))
+	}
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
 		t.Fatalf("content-type = %q, want text/html", ct)
 	}
@@ -70,5 +73,17 @@ func TestServeSPAMissingAssetIsNotFound(t *testing.T) {
 	ServeSPA(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestServeSPAKeepsPreviousHashedBundle(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/assets/index-D9AbP2Oy.js", nil)
+	rec := httptest.NewRecorder()
+	ServeSPA(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("previous hashed bundle status = %d, want 200 so cached index.html can still boot", rec.Code)
+	}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "javascript") && rec.Body.Len() < 1000 {
+		t.Fatalf("previous bundle content-type = %q len=%d", rec.Header().Get("Content-Type"), rec.Body.Len())
 	}
 }
