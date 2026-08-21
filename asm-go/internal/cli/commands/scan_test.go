@@ -66,12 +66,22 @@ func TestPersistScanResultNilDatabaseIsNoop(t *testing.T) {
 }
 
 func TestRunFullScanRejectsInvalidDomainBeforeScanning(t *testing.T) {
-	err := runFullScan(nil, nil, "example.com/path", scanOptions{})
+	err := runFullScan(nil, nil, "crewai.com/path", scanOptions{})
 	if err == nil {
 		t.Fatal("runFullScan accepted an invalid domain")
 	}
 	if !strings.Contains(err.Error(), "invalid target domain") {
 		t.Fatalf("runFullScan error = %q, want invalid target domain", err.Error())
+	}
+}
+
+func TestRunFullScanRejectsOutOfScopeDomain(t *testing.T) {
+	err := runFullScan(nil, nil, "google.com", scanOptions{})
+	if err == nil {
+		t.Fatal("runFullScan accepted google.com")
+	}
+	if !strings.Contains(err.Error(), "restricted to crewai.com") {
+		t.Fatalf("runFullScan error = %q, want restricted to crewai.com", err.Error())
 	}
 }
 

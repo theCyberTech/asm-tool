@@ -7,6 +7,13 @@ import (
 )
 
 const (
+	// AllowedRootDomain is the only apex domain this tool may scan.
+	// Subdomains of this root (for example app.crewai.com) are in scope.
+	AllowedRootDomain = "crewai.com"
+
+	// HostScanLimit caps live host modules (ports, certs, fingerprint, APIs, takeover, nuclei).
+	HostScanLimit = 25
+
 	maxDomainLength       = 253
 	maxFilenamePartLength = 120
 )
@@ -34,6 +41,65 @@ func NormalizeTarget(raw string) (string, error) {
 	}
 
 	return domain, nil
+}
+
+// NormalizeScanTarget canonicalizes a user-supplied scan target and rejects
+// hosts that are not AllowedRootDomain or a subdomain of it.
+func NormalizeScanTarget(raw string) (string, error) {
+	domain, err := NormalizeTarget(raw)
+	if err != nil {
+		return "", err
+	}
+	if !IsSubdomainOf(domain, AllowedRootDomain) {
+		return "", fmt.Errorf("scanning is restricted to %s and its subdomains (got %q)", AllowedRootDomain, domain)
+	}
+	return domain, nil
+}
+
+// IsAllowedScanTarget reports whether raw is a valid in-scope scan hostname.
+func IsAllowedScanTarget(raw string) bool {
+	_, err := NormalizeScanTarget(raw)
+	return err == nil
+}
+
+// FilterAllowedScanTargets returns the unique in-scope hostnames from raw,
+// skipping invalid or out-of-scope values.
+func FilterAllowedScanTargets(raw []string) []string {
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, item := range raw {
+		normalized, err := NormalizeScanTarget(item)
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+// CapScanHosts keeps the apex first, then up to HostScanLimit-1 other hosts.
+func CapScanHosts(domain string, hosts []string) []string {
+	if len(hosts) <= HostScanLimit {
+		return hosts
+	}
+	out := make([]string, 0, HostScanLimit)
+	if domain != "" {
+		out = append(out, domain)
+	}
+	for _, host := range hosts {
+		if host == domain {
+			continue
+		}
+		out = append(out, host)
+		if len(out) >= HostScanLimit {
+			break
+		}
+	}
+	return out
 }
 
 // ValidateDomain reports whether raw can be normalized to a valid DNS domain.

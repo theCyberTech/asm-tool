@@ -53,29 +53,9 @@ Use --ports to specify custom ports, or --top100 for the top 100 ports.`,
 				return fmt.Errorf("no ports specified")
 			}
 
-			// Get target hosts
-			var hosts []string
-			if len(args) > 0 {
-				target := args[0]
-				// Check if it's a domain with known subdomains
-				subs, err := deps.DB.Domains.GetSubdomainsByDomainName(target)
-				if err == nil && len(subs) > 0 {
-					hosts = subs
-				} else {
-					hosts = []string{target}
-				}
-			} else if allKnown {
-				// Get all subdomains from all domains
-				dbDomains, err := deps.DB.Domains.List()
-				if err != nil {
-					return fmt.Errorf("listing domains: %w", err)
-				}
-				for _, d := range dbDomains {
-					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
-					hosts = append(hosts, subs...)
-				}
-			} else {
-				return fmt.Errorf("specify a target or use --all-known")
+			hosts, err := resolveScanHosts(deps.DB, args, allKnown)
+			if err != nil {
+				return err
 			}
 
 			if len(hosts) == 0 {

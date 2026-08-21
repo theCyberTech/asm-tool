@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { fetchOperations, startRun } from "../api/client";
+import { fetchOperations, fetchOverview, startRun } from "../api/client";
 import type { OperationAction } from "../api/types";
 import { Layout } from "../components/Layout";
 import { ErrorAlert, LoadingState } from "../components/Status";
@@ -8,12 +8,14 @@ import { formatDateTime, severityClass } from "../lib/format";
 
 export function OperationsPage() {
   const [token, setToken] = useState("");
+  const overviewLoader = useCallback(() => fetchOverview(), []);
+  const { reload: reloadOverview } = useApi(overviewLoader);
   const loader = useCallback(() => fetchOperations(token || undefined), [token]);
   const { data, error, loading, reload } = useApi(loader);
 
-  const selectedDefault = data?.actions[0]?.id ?? "status";
-  const [actionId, setActionId] = useState(selectedDefault);
-  const [target, setTarget] = useState("");
+  const selectedDefault = data?.actions.find((item) => item.id === "scan")?.id ?? data?.actions[0]?.id ?? "scan";
+  const [actionId, setActionId] = useState("scan");
+  const [target, setTarget] = useState("crewai.com");
   const [allKnown, setAllKnown] = useState(false);
   const [ports, setPorts] = useState("");
   const [outputFormat, setOutputFormat] = useState("");
@@ -28,14 +30,22 @@ export function OperationsPage() {
   );
 
   useEffect(() => {
+    const actions = data?.actions ?? [];
+    if (selectedDefault && actionId !== selectedDefault && !actions.some((item) => item.id === actionId)) {
+      setActionId(selectedDefault);
+    }
+  }, [actionId, data?.actions, selectedDefault]);
+
+  useEffect(() => {
     if (!data?.running_count) {
       return;
     }
     const timer = window.setInterval(() => {
       void reload();
+      void reloadOverview();
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [data?.running_count, reload]);
+  }, [data?.running_count, reload, reloadOverview]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -73,7 +83,7 @@ export function OperationsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Operations</h1>
-          <p className="page-description">Run and monitor ASM scans from this host</p>
+          <p className="page-description">Run a full scan of crewai.com, then watch modules fill the dashboard</p>
         </div>
         <button type="button" className="btn btn-secondary" onClick={() => void reload()}>
           Refresh
@@ -138,7 +148,7 @@ export function OperationsPage() {
                   setVerbose={setVerbose}
                 />
                 <button type="submit" className="btn btn-primary" disabled={busy}>
-                  {busy ? "Starting…" : "Start run"}
+                  {busy ? "Starting…" : action?.id === "scan" ? "Start full scan" : "Start run"}
                 </button>
               </form>
               <p className="text-muted mt-md">Binary: {data.binary_path || "unknown"}</p>
@@ -171,6 +181,9 @@ export function OperationsPage() {
                       {run.duration ? ` · ${run.duration}` : ""}
                       {run.target ? ` · ${run.target}` : ""}
                     </p>
+                    {run.status === "running" && !run.stdout ? (
+                      <p className="text-muted">Working… output appears as each module finishes</p>
+                    ) : null}
                     {run.stdout ? <pre className="run-output">{run.stdout}</pre> : null}
                     {run.stderr ? <pre className="run-output">{run.stderr}</pre> : null}
                     {run.error ? <p className="alert alert-danger">{run.error}</p> : null}
@@ -230,7 +243,7 @@ function ActionFields({
             value={target}
             onChange={(event) => setTarget(event.target.value)}
             disabled={allKnown}
-            placeholder="example.com"
+            placeholder="crewai.com"
           />
         </div>
       ) : null}

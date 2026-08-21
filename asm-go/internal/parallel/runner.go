@@ -18,22 +18,23 @@ import (
 	"github.com/asm-tool/asm-go/internal/scanner/takeover"
 	"github.com/asm-tool/asm-go/internal/scanner/technologies"
 	"github.com/asm-tool/asm-go/internal/scanner/urls"
+	"github.com/asm-tool/asm-go/internal/target"
 )
 
 // ModuleType identifies a scanner module.
 type ModuleType string
 
 const (
-	ModuleSubdomains    ModuleType = "subdomains"
-	ModulePorts         ModuleType = "ports"
-	ModuleCertificates  ModuleType = "certificates"
-	ModuleDNS           ModuleType = "dns"
-	ModuleTakeover      ModuleType = "takeover"
-	ModuleTechnologies  ModuleType = "technologies"
-	ModuleURLs          ModuleType = "urls"
-	ModuleAPIs          ModuleType = "apis"
-	ModuleCloudStorage  ModuleType = "cloudstorage"
-	ModuleNuclei        ModuleType = "nuclei"
+	ModuleSubdomains   ModuleType = "subdomains"
+	ModulePorts        ModuleType = "ports"
+	ModuleCertificates ModuleType = "certificates"
+	ModuleDNS          ModuleType = "dns"
+	ModuleTakeover     ModuleType = "takeover"
+	ModuleTechnologies ModuleType = "technologies"
+	ModuleURLs         ModuleType = "urls"
+	ModuleAPIs         ModuleType = "apis"
+	ModuleCloudStorage ModuleType = "cloudstorage"
+	ModuleNuclei       ModuleType = "nuclei"
 )
 
 // ProgressCallback is called when a module completes.
@@ -93,6 +94,7 @@ func (r *Runner) Run(ctx context.Context, domain string, cfg RunConfig, enabled 
 	if len(hosts) == 0 {
 		hosts = []string{domain}
 	}
+	hosts = target.CapScanHosts(domain, hosts)
 
 	// Phase 2: Independent modules in parallel.
 	var wg sync.WaitGroup

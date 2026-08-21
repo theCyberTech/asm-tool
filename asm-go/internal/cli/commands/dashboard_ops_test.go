@@ -47,12 +47,25 @@ func TestDashboardOpsRejectsInvalidTarget(t *testing.T) {
 	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
 	ops.defs = ops.operationDefinitions()
 
-	_, err := ops.start(operationRequest{Action: "discover", Target: "example.com/path"})
+	_, err := ops.start(operationRequest{Action: "discover", Target: "crewai.com/path"})
 	if err == nil {
 		t.Fatal("expected invalid target to be rejected")
 	}
 	if !strings.Contains(err.Error(), "invalid target domain") {
 		t.Fatalf("error = %q, want invalid target domain", err.Error())
+	}
+}
+
+func TestDashboardOpsRejectsOutOfScopeTarget(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
+	ops.defs = ops.operationDefinitions()
+
+	_, err := ops.start(operationRequest{Action: "scan", Target: "google.com"})
+	if err == nil {
+		t.Fatal("expected out-of-scope target to be rejected")
+	}
+	if !strings.Contains(err.Error(), "restricted to crewai.com") {
+		t.Fatalf("error = %q, want restricted to crewai.com", err.Error())
 	}
 }
 

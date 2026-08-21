@@ -35,31 +35,10 @@ By default, checks certificates for all discovered subdomains of the specified d
 Highlights certificates that are expired or expiring soon.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Get target hosts
-			var hosts []string
-			if len(args) > 0 {
-				target := args[0]
-				// Check if it's a domain with known subdomains
-				subs, err := deps.DB.Domains.GetSubdomainsByDomainName(target)
-				if err == nil && len(subs) > 0 {
-					hosts = subs
-				} else {
-					hosts = []string{target}
-				}
-			} else if allKnown {
-				// Get all subdomains from all domains
-				dbDomains, err := deps.DB.Domains.List()
-				if err != nil {
-					return fmt.Errorf("listing domains: %w", err)
-				}
-				for _, d := range dbDomains {
-					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
-					hosts = append(hosts, subs...)
-				}
-			} else {
-				return fmt.Errorf("specify a target or use --all-known")
+			hosts, err := resolveScanHosts(deps.DB, args, allKnown)
+			if err != nil {
+				return err
 			}
-
 			if len(hosts) == 0 {
 				fmt.Println("No hosts to check")
 				return nil

@@ -118,7 +118,7 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 	}()
 
 	fmt.Println()
-	fmt.Println(titleStyle.Render("ASM Dashboard"))
+	fmt.Println(titleStyle.Render("CrewAI - ASM"))
 	fmt.Println()
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Server:"),

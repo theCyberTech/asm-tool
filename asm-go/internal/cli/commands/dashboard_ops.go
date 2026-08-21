@@ -200,7 +200,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 		if req.AllKnown {
 			args = append(args, "--all-known")
 		} else {
-			normalized, err := target.NormalizeTarget(req.Target)
+			normalized, err := target.NormalizeScanTarget(req.Target)
 			if err != nil {
 				return commandSpec{}, err
 			}
@@ -219,7 +219,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 		{
 			OperationOption: dashboard.OperationOption{ID: "scan", Label: "Full scan", RequiresTarget: true, SupportsOutputFormat: true, SupportsNuclei: true},
 			build: func(req operationRequest) (commandSpec, error) {
-				normalized, err := target.NormalizeTarget(req.Target)
+				normalized, err := target.NormalizeScanTarget(req.Target)
 				if err != nil {
 					return commandSpec{}, err
 				}
@@ -310,7 +310,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 		{
 			OperationOption: dashboard.OperationOption{ID: "report", Label: "Generate report", RequiresTarget: true, SupportsOutputFormat: true},
 			build: func(req operationRequest) (commandSpec, error) {
-				normalized, err := target.NormalizeTarget(req.Target)
+				normalized, err := target.NormalizeScanTarget(req.Target)
 				if err != nil {
 					return commandSpec{}, err
 				}
@@ -333,7 +333,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 
 func (o *dashboardOps) operationOptions() []dashboard.OperationOption {
 	order := []string{
-		"status", "scan", "discover", "dns", "urls",
+		"scan", "discover", "dns", "urls",
 		"certificates", "takeover", "fingerprint", "apis",
 		"cloudstorage", "portscan", "nuclei", "report",
 	}
@@ -530,9 +530,20 @@ func (o *dashboardOps) execute(id int64, spec commandSpec) {
 	cmd := exec.CommandContext(ctx, spec.Name, spec.Args...)
 	cmd.Dir = spec.Dir
 
-	var stdout, stderr limitedBuffer
+	var stdout, stderr liveBuffer
 	stdout.limit = maxDashboardOutputBytes
 	stderr.limit = maxDashboardOutputBytes
+	flush := func() {
+		out, outTrunc := stdout.snapshot()
+		errOut, errTrunc := stderr.snapshot()
+		o.updateRun(id, func(run *dashboard.RunRecord) {
+			run.Stdout = out
+			run.Stderr = errOut
+			run.Truncated = outTrunc || errTrunc
+		})
+	}
+	stdout.onChange = flush
+	stderr.onChange = flush
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -552,15 +563,17 @@ func (o *dashboardOps) execute(id int64, spec commandSpec) {
 	}
 
 	var finishedRun dashboard.RunRecord
+	out, outTrunc := stdout.snapshot()
+	errOut, errTrunc := stderr.snapshot()
 	o.updateRun(id, func(run *dashboard.RunRecord) {
 		run.Status = status
 		run.ExitCode = exitCode
 		run.FinishedAt = &finished
 		run.Duration = finished.Sub(run.StartedAt).Round(time.Millisecond).String()
-		run.Stdout = stdout.String()
-		run.Stderr = stderr.String()
+		run.Stdout = out
+		run.Stderr = errOut
 		run.Error = errorMessage
-		run.Truncated = stdout.truncated || stderr.truncated
+		run.Truncated = outTrunc || errTrunc
 		finishedRun = *run
 	})
 	o.appendHistory(finishedRun)
@@ -638,6 +651,28 @@ func shellQuote(value string) string {
 		return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 	}
 	return value
+}
+
+type liveBuffer struct {
+	mu sync.Mutex
+	limitedBuffer
+	onChange func()
+}
+
+func (b *liveBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	n, err := b.limitedBuffer.Write(p)
+	b.mu.Unlock()
+	if b.onChange != nil {
+		b.onChange()
+	}
+	return n, err
+}
+
+func (b *liveBuffer) snapshot() (string, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.limitedBuffer.String(), b.truncated
 }
 
 type limitedBuffer struct {
