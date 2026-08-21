@@ -162,7 +162,6 @@ func (n *Notifier) buildSlackMessage(result *parallel.ScanResult) SlackMessage {
 			Fields: []SlackText{
 				{Type: "mrkdwn", Text: fmt.Sprintf("*URLs:* %d", len(result.URLs))},
 				{Type: "mrkdwn", Text: fmt.Sprintf("*APIs:* %d", len(result.APIs))},
-				{Type: "mrkdwn", Text: fmt.Sprintf("*Emails:* %d", len(result.Emails))},
 				{Type: "mrkdwn", Text: fmt.Sprintf("*Buckets:* %d", len(result.CloudStorage))},
 			},
 		},
@@ -391,7 +390,6 @@ th { background: #f5f5f5; }
 <div class="stat"><div class="stat-number">%d</div><div class="stat-label">Technologies</div></div>
 <div class="stat"><div class="stat-number">%d</div><div class="stat-label">URLs</div></div>
 <div class="stat"><div class="stat-number">%d</div><div class="stat-label">APIs</div></div>
-<div class="stat"><div class="stat-number">%d</div><div class="stat-label">Emails</div></div>
 <div class="stat"><div class="stat-number">%d</div><div class="stat-label">Buckets</div></div>
 `,
 		len(result.Subdomains),
@@ -400,7 +398,6 @@ th { background: #f5f5f5; }
 		techCount,
 		len(result.URLs),
 		len(result.APIs),
-		len(result.Emails),
 		len(result.CloudStorage)))
 
 	// Warnings

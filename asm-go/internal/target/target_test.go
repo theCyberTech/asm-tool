@@ -1,6 +1,7 @@
 package target
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -40,6 +41,81 @@ func TestNormalizeTarget(t *testing.T) {
 				t.Fatalf("NormalizeTarget(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormalizeScanTargetRestrictsToCrewAI(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr string
+	}{
+		{name: "apex allowed", input: " CrewAI.COM. ", want: "crewai.com"},
+		{name: "subdomain allowed", input: "app.crewai.com", want: "app.crewai.com"},
+		{name: "nested subdomain allowed", input: "api.staging.crewai.com", want: "api.staging.crewai.com"},
+		{name: "suffix without boundary rejected", input: "notcrewai.com", wantErr: "restricted to crewai.com"},
+		{name: "other domain rejected", input: "google.com", wantErr: "restricted to crewai.com"},
+		{name: "lookalike subdomain rejected", input: "crewai.com.attacker.com", wantErr: "restricted to crewai.com"},
+		{name: "invalid still rejected", input: "https://crewai.com", wantErr: "invalid target domain"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeScanTarget(tt.input)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("NormalizeScanTarget(%q) succeeded, want error", tt.input)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("NormalizeScanTarget(%q) error = %q, want %q", tt.input, err.Error(), tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NormalizeScanTarget(%q) returned error: %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Fatalf("NormalizeScanTarget(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+			if !IsAllowedScanTarget(tt.input) {
+				t.Fatalf("IsAllowedScanTarget(%q) = false, want true", tt.input)
+			}
+		})
+	}
+}
+
+func TestFilterAllowedScanTargets(t *testing.T) {
+	got := FilterAllowedScanTargets([]string{
+		"google.com",
+		" CrewAI.com. ",
+		"app.crewai.com",
+		"crewai.com",
+		"https://crewai.com",
+		"api.crewai.com",
+	})
+	want := []string{"crewai.com", "app.crewai.com", "api.crewai.com"}
+	if len(got) != len(want) {
+		t.Fatalf("FilterAllowedScanTargets = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("FilterAllowedScanTargets[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestCapScanHostsKeepsApexAndLimit(t *testing.T) {
+	hosts := []string{"crewai.com"}
+	for i := 0; i < 40; i++ {
+		hosts = append(hosts, fmt.Sprintf("h%d.crewai.com", i))
+	}
+	got := CapScanHosts("crewai.com", hosts)
+	if len(got) != HostScanLimit {
+		t.Fatalf("len = %d, want %d", len(got), HostScanLimit)
+	}
+	if got[0] != "crewai.com" {
+		t.Fatalf("first host = %q, want crewai.com", got[0])
 	}
 }
 

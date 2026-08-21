@@ -84,11 +84,6 @@ export const assetColumns = {
     col("title", "Title"),
     col("version", "Version"),
   ],
-  emails: [
-    col("address", "Address"),
-    col("source", "Source"),
-    col("discovered_at", "Discovered", { value: (row) => formatDate(row.discovered_at) }),
-  ],
   cloud: [
     col("provider", "Provider"),
     col("bucket_name", "Bucket"),

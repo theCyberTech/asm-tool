@@ -46,7 +46,6 @@ print_help() {
     echo "  fingerprint        Identify technologies"
     echo "  urls <domain>      Enumerate historical URLs"
     echo "  apis               Discover API endpoints"
-    echo "  emails             Enumerate email addresses"
     echo "  cloudstorage       Detect cloud storage buckets"
     echo "  nuclei             Run Nuclei vulnerability scan"
     echo "  report             Generate a report"
@@ -99,7 +98,7 @@ case "${1:-help}" in
     help|--help|-h)
         print_help
         ;;
-    status|dashboard|scan|discover|portscan|ports|certificates|certs|dns|takeover|fingerprint|urls|apis|emails|cloudstorage|cloud|nuclei|report|migrate|diff|schedule)
+    status|dashboard|scan|discover|portscan|ports|certificates|certs|dns|takeover|fingerprint|urls|apis|cloudstorage|cloud|nuclei|report|migrate|diff|schedule)
         cmd="$1"
         shift
         # Normalize command aliases

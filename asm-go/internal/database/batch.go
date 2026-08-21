@@ -19,13 +19,6 @@ type URLRecord struct {
 	Interesting int
 }
 
-// EmailRecord is the write-side shape for persisting discovered emails.
-type EmailRecord struct {
-	Domain  string
-	Address string
-	Source  string
-}
-
 func insertBatchSize(columns int) int {
 	if columns < 1 {
 		return 1
@@ -200,55 +193,6 @@ func saveURLs(db queryExecutor, records []URLRecord) error {
 		_, err := db.Exec(query, args...)
 		if err != nil {
 			return fmt.Errorf("inserting URLs: %w", err)
-		}
-		return nil
-	})
-}
-
-// SaveEmails upserts many discovered emails in multi-row INSERT batches.
-func (d *Database) SaveEmails(records []EmailRecord) error {
-	return saveEmails(d.db, records)
-}
-
-// SaveEmails upserts many discovered emails in this transaction.
-func (tx *Transaction) SaveEmails(records []EmailRecord) error {
-	return saveEmails(tx.db, records)
-}
-
-func saveEmails(db queryExecutor, records []EmailRecord) error {
-	if len(records) == 0 {
-		return nil
-	}
-
-	seen := make(map[string]struct{}, len(records))
-	unique := make([]EmailRecord, 0, len(records))
-	for _, rec := range records {
-		if rec.Address == "" {
-			continue
-		}
-		if _, ok := seen[rec.Address]; ok {
-			continue
-		}
-		seen[rec.Address] = struct{}{}
-		unique = append(unique, rec)
-	}
-	if len(unique) == 0 {
-		return nil
-	}
-
-	const cols = 3
-	return forInsertBatches(len(unique), cols, func(start, end int) error {
-		batch := unique[start:end]
-		args := make([]interface{}, 0, len(batch)*cols)
-		for _, rec := range batch {
-			args = append(args, rec.Domain, rec.Address, rec.Source)
-		}
-		query := `INSERT INTO emails (domain, email, source) VALUES ` +
-			valuePlaceholders(len(batch), cols) +
-			` ON CONFLICT(email) DO NOTHING`
-		_, err := db.Exec(query, args...)
-		if err != nil {
-			return fmt.Errorf("inserting emails: %w", err)
 		}
 		return nil
 	})

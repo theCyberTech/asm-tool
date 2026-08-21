@@ -9,7 +9,7 @@ describe("api client", () => {
   it("fetches overview JSON", async () => {
     const payload = {
       status: "ok",
-      stats: { domains: 1, subdomains: 0, ports: 0, certificates: 0, urls: 0, apis: 0, emails: 0, cloud_buckets: 0, takeovers: 0 },
+      stats: { domains: 1, subdomains: 0, ports: 0, certificates: 0, urls: 0, apis: 0, cloud_buckets: 0, takeovers: 0 },
       findings: { total: 0, critical: 0, high: 0, medium: 0, low: 0, info: 0 },
       domains: [{ id: 1, domain: "example.com", added_at: "2026-01-01T00:00:00Z", subdomain_count: 0, port_count: 0, critical_count: 0, high_count: 0 }],
       change_events: [],

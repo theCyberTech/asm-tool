@@ -12,7 +12,6 @@ const overview = {
     certificates: 0,
     urls: 0,
     apis: 0,
-    emails: 0,
     cloud_buckets: 0,
     takeovers: 0,
   },
@@ -54,6 +53,7 @@ describe("dashboard pages", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Attack Surface Overview" })).toBeInTheDocument();
+    expect(screen.getByText("CrewAI - ASM")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "View domains" })).toHaveAttribute("href", "/domains");
     expect(screen.getByRole("link", { name: "example.com" })).toHaveAttribute("href", "/domains/example.com");
     expect(screen.getByText("1 Critical")).toBeInTheDocument();

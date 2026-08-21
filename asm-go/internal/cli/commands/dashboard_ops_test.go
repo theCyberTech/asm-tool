@@ -47,12 +47,25 @@ func TestDashboardOpsRejectsInvalidTarget(t *testing.T) {
 	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
 	ops.defs = ops.operationDefinitions()
 
-	_, err := ops.start(operationRequest{Action: "discover", Target: "example.com/path"})
+	_, err := ops.start(operationRequest{Action: "discover", Target: "crewai.com/path"})
 	if err == nil {
 		t.Fatal("expected invalid target to be rejected")
 	}
 	if !strings.Contains(err.Error(), "invalid target domain") {
 		t.Fatalf("error = %q, want invalid target domain", err.Error())
+	}
+}
+
+func TestDashboardOpsRejectsOutOfScopeTarget(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
+	ops.defs = ops.operationDefinitions()
+
+	_, err := ops.start(operationRequest{Action: "scan", Target: "google.com"})
+	if err == nil {
+		t.Fatal("expected out-of-scope target to be rejected")
+	}
+	if !strings.Contains(err.Error(), "restricted to crewai.com") {
+		t.Fatalf("error = %q, want restricted to crewai.com", err.Error())
 	}
 }
 
@@ -318,15 +331,21 @@ func TestDashboardOpsOmitsBuildAndTestActions(t *testing.T) {
 	}
 }
 
-func TestResolveDashboardOptionsRequiresTokenOffLoopback(t *testing.T) {
+func TestResolveDashboardOptionsAllowsOffLoopbackWithoutToken(t *testing.T) {
 	deps := &Deps{Cfg: config.Default()}
 	cmd := DashboardCmd(deps)
 	if err := cmd.ParseFlags([]string{"--host", "0.0.0.0"}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
-	_, err := resolveDashboardOptions(cmd, deps)
-	if err == nil {
-		t.Fatal("expected token requirement when binding to 0.0.0.0")
+	opts, err := resolveDashboardOptions(cmd, deps)
+	if err != nil {
+		t.Fatalf("resolveDashboardOptions: %v", err)
+	}
+	if opts.host != "0.0.0.0" {
+		t.Fatalf("host = %q, want 0.0.0.0", opts.host)
+	}
+	if opts.token != "" {
+		t.Fatalf("token = %q, want empty", opts.token)
 	}
 }
 

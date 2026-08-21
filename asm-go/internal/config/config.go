@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/asm-tool/asm-go/internal/target"
 	"github.com/spf13/viper"
 )
 
@@ -22,9 +23,6 @@ type Config struct {
 
 	// Timeout settings
 	Timeouts TimeoutConfig `mapstructure:"timeouts"`
-
-	// External APIs
-	Hunter HunterConfig `mapstructure:"hunter"`
 
 	// Screenshot settings
 	Screenshots ScreenshotConfig `mapstructure:"screenshots"`
@@ -83,10 +81,6 @@ type TimeoutConfig struct {
 	DNS       time.Duration `mapstructure:"dns"`
 }
 
-type HunterConfig struct {
-	APIKey string `mapstructure:"api_key"`
-}
-
 type ScreenshotConfig struct {
 	Width   int `mapstructure:"width"`
 	Height  int `mapstructure:"height"`
@@ -108,7 +102,7 @@ type DashboardConfig struct {
 // Default returns a Config with sensible defaults
 func Default() *Config {
 	return &Config{
-		Domains: []string{},
+		Domains: []string{target.AllowedRootDomain},
 		Notifications: NotificationConfig{
 			Slack: SlackConfig{Enabled: false},
 			Email: EmailConfig{SMTPPort: 587},
@@ -157,6 +151,7 @@ func Load(path string) (*Config, error) {
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		applyEnvOverrides(cfg)
+		pinScanDomains(cfg)
 		return cfg, nil
 	}
 
@@ -218,7 +213,17 @@ func Load(path string) (*Config, error) {
 	}
 
 	applyEnvOverrides(cfg)
+	pinScanDomains(cfg)
 	return cfg, nil
+}
+
+// pinScanDomains forces the configured monitor list to the hardcoded scan
+// root so YAML cannot expand the tool to other domains.
+func pinScanDomains(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	cfg.Domains = []string{target.AllowedRootDomain}
 }
 
 // ApplyEnvOverrides overlays environment variables onto cfg. Non-empty env

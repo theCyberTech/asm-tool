@@ -31,7 +31,6 @@ This command reads the TinyDB JSON file and imports all data including:
 - Technologies fingerprints
 - DNS records
 - URLs and APIs
-- Emails
 - WHOIS records
 
 Example:
@@ -201,7 +200,6 @@ func runMigration(db *database.Database, tinydbPath string, dryRun bool) error {
 	fmt.Printf("  %-20s %d\n", "DNS Records:", len(tinydb.DNSRecords))
 	fmt.Printf("  %-20s %d\n", "URLs:", len(tinydb.URLs))
 	fmt.Printf("  %-20s %d\n", "APIs:", len(tinydb.APIs))
-	fmt.Printf("  %-20s %d\n", "Emails:", len(tinydb.Emails))
 	fmt.Printf("  %-20s %d\n", "WHOIS Records:", len(tinydb.WHOISRecords))
 
 	if dryRun {
@@ -379,21 +377,6 @@ func runMigration(db *database.Database, tinydbPath string, dryRun bool) error {
 		migratedAPIs++
 	}
 	fmt.Printf("  %s APIs: %d migrated\n", lowStyle.Render("[+]"), migratedAPIs)
-
-	// Migrate emails
-	migratedEmails := 0
-	for _, e := range tinydb.Emails {
-		_, err := db.Exec(`
-			INSERT INTO emails (domain, email, source)
-			VALUES (?, ?, ?)
-			ON CONFLICT(email) DO NOTHING
-		`, e.Domain, e.Email, e.Source)
-		if err != nil {
-			continue
-		}
-		migratedEmails++
-	}
-	fmt.Printf("  %s Emails: %d migrated\n", lowStyle.Render("[+]"), migratedEmails)
 
 	// Migrate WHOIS records
 	migratedWHOIS := 0

@@ -88,7 +88,6 @@ func (d DomainDetailData) withEmptySlices() DomainDetailData {
 	d.Findings = orEmpty(d.Findings)
 	d.URLs = orEmpty(d.URLs)
 	d.APIs = orEmpty(d.APIs)
-	d.Emails = orEmpty(d.Emails)
 	d.CloudStorage = orEmpty(d.CloudStorage)
 	d.Takeovers = orEmpty(d.Takeovers)
 	d.ChangeEvents = orEmpty(d.ChangeEvents)

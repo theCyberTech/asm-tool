@@ -34,28 +34,10 @@ func TakeoverCmd(deps *Deps) *cobra.Command {
 Supports 30+ services including AWS S3, GitHub Pages, Heroku, Azure, etc.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var subdomains []string
-			if len(args) > 0 {
-				target := args[0]
-				subs, err := deps.DB.Domains.GetSubdomainsByDomainName(target)
-				if err == nil && len(subs) > 0 {
-					subdomains = subs
-				} else {
-					subdomains = []string{target}
-				}
-			} else if allKnown {
-				dbDomains, err := deps.DB.Domains.List()
-				if err != nil {
-					return fmt.Errorf("listing domains: %w", err)
-				}
-				for _, d := range dbDomains {
-					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
-					subdomains = append(subdomains, subs...)
-				}
-			} else {
-				return fmt.Errorf("specify a domain or use --all-known")
+			subdomains, err := resolveScanHosts(deps.DB, args, allKnown)
+			if err != nil {
+				return err
 			}
-
 			if len(subdomains) == 0 {
 				fmt.Println("No subdomains to check")
 				return nil

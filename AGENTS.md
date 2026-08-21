@@ -4,7 +4,7 @@
 
 ASM Tool is a Go-based attack surface management tool. It monitors domains for
 subdomains, open ports, certificates, technologies, DNS records, vulnerabilities,
-URLs, subdomain takeovers, API endpoints, email addresses, and cloud storage
+URLs, subdomain takeovers, API endpoints, and cloud storage
 buckets. It also provides a local web dashboard and cron-based scheduled scans
 with Slack/email notifications.
 
@@ -43,7 +43,7 @@ cd ../web && npm test && npm run build
 
 # Init, scan, and status via wrapper (repo root)
 ../asm.sh init
-../asm.sh scan example.com
+../asm.sh scan crewai.com
 ../asm.sh status
 ../asm.sh dashboard
 ```
@@ -56,6 +56,8 @@ cd ../web && npm test && npm run build
 - Preserve the database facade and repository boundaries when changing
   persistence behavior; prefer `internal/persistence` for saving scan results.
 - Normalize and validate domains via `internal/target` before scanner requests.
+- Scan entry points must use `target.NormalizeScanTarget` so only `crewai.com`
+  and its subdomains can be scanned. Do not enforce this inside `NormalizeTarget`.
 - Prefer `internal/httpclient` over ad-hoc `http.Client` construction in scanners.
 - Add or update tests for behavior changes.
 - Do not commit generated databases, build artifacts, or secrets.

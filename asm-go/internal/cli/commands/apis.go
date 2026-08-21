@@ -36,28 +36,10 @@ Checks for publicly accessible API documentation that may
 reveal internal endpoints and data structures.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var hosts []string
-			if len(args) > 0 {
-				target := args[0]
-				subs, err := deps.DB.Domains.GetSubdomainsByDomainName(target)
-				if err == nil && len(subs) > 0 {
-					hosts = subs
-				} else {
-					hosts = []string{target}
-				}
-			} else if allKnown {
-				dbDomains, err := deps.DB.Domains.List()
-				if err != nil {
-					return fmt.Errorf("listing domains: %w", err)
-				}
-				for _, d := range dbDomains {
-					subs, _ := deps.DB.Domains.GetSubdomainsByDomainName(d.Domain)
-					hosts = append(hosts, subs...)
-				}
-			} else {
-				return fmt.Errorf("specify a target or use --all-known")
+			hosts, err := resolveScanHosts(deps.DB, args, allKnown)
+			if err != nil {
+				return err
 			}
-
 			if len(hosts) == 0 {
 				fmt.Println("No hosts to check")
 				return nil

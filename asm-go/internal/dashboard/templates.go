@@ -79,7 +79,6 @@ type GlobalListData struct {
 	Certificates []CertificateView
 	URLs         []URLView
 	APIs         []APIView
-	Emails       []EmailView
 	CloudStorage []CloudStorageView
 	Findings     []FindingView
 	Takeovers    []TakeoverView
@@ -105,7 +104,6 @@ type Stats struct {
 	Certificates int `json:"certificates"`
 	URLs         int `json:"urls"`
 	APIs         int `json:"apis"`
-	Emails       int `json:"emails"`
 	CloudBuckets int `json:"cloud_buckets"`
 	Takeovers    int `json:"takeovers"`
 }
@@ -134,7 +132,6 @@ type DomainDetailData struct {
 	Findings     []FindingView      `json:"findings"`
 	URLs         []URLView          `json:"urls"`
 	APIs         []APIView          `json:"apis"`
-	Emails       []EmailView        `json:"emails"`
 	CloudStorage []CloudStorageView `json:"cloud_storage"`
 	Takeovers    []TakeoverView     `json:"takeovers"`
 	ChangeEvents []ChangeEventView  `json:"change_events"`
@@ -161,7 +158,6 @@ type DomainDetailStats struct {
 	VulnCount        int `json:"vuln_count"`
 	URLCount         int `json:"url_count"`
 	APICount         int `json:"api_count"`
-	EmailCount       int `json:"email_count"`
 	CloudCount       int `json:"cloud_count"`
 	TakeoverCount    int `json:"takeover_count"`
 }
@@ -242,13 +238,6 @@ type APIView struct {
 	Type         string    `json:"type,omitempty"`
 	Title        string    `json:"title,omitempty"`
 	Version      string    `json:"version,omitempty"`
-	DiscoveredAt time.Time `json:"discovered_at"`
-}
-
-// EmailView represents an email address for display
-type EmailView struct {
-	Address      string    `json:"address"`
-	Source       string    `json:"source"`
 	DiscoveredAt time.Time `json:"discovered_at"`
 }
 

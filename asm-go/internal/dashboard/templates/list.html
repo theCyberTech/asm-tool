@@ -184,32 +184,6 @@
     </div>
 </div>
 
-{{else if eq .ActivePage "emails"}}
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">All Emails</h2>
-        <span class="badge badge-blue">{{len .GlobalList.Emails}}</span>
-    </div>
-    <div class="card-body">
-        {{if .GlobalList.Emails}}
-        <div class="table-container">
-            <table>
-                <thead><tr><th>Address</th><th>Source</th><th>Discovered</th></tr></thead>
-                <tbody>
-                    {{range .GlobalList.Emails}}
-                    <tr>
-                        <td><span class="text-mono">{{.Address}}</span></td>
-                        <td class="text-muted">{{.Source}}</td>
-                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-        </div>
-        {{else}}<div class="empty-state"><h3>No emails found</h3><p>Run an email enumeration scan</p></div>{{end}}
-    </div>
-</div>
-
 {{else if eq .ActivePage "cloud"}}
 <div class="card">
     <div class="card-header">

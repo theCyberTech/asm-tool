@@ -53,7 +53,7 @@ func DashboardCmd(deps *Deps) *cobra.Command {
 
 	cmd.Flags().IntVarP(&dashboardPort, "port", "p", 8080, "port to listen on")
 	cmd.Flags().StringVar(&dashboardHost, "host", "127.0.0.1", "host to bind to")
-	cmd.Flags().StringVar(&dashboardOpsToken, "ops-token", "", "Shared secret for Operations (ASM_DASHBOARD_TOKEN preferred)")
+	cmd.Flags().StringVar(&dashboardOpsToken, "ops-token", "", "Optional shared secret for Operations (ASM_DASHBOARD_TOKEN preferred)")
 
 	return cmd
 }
@@ -76,10 +76,6 @@ func resolveDashboardOptions(cmd *cobra.Command, deps *Deps) (dashboardOptions, 
 		}
 	}
 	opts.token = strings.TrimSpace(opts.token)
-
-	if !isLoopbackHost(opts.host) && opts.token == "" {
-		return opts, fmt.Errorf("operations require a token when binding to %s; set ASM_DASHBOARD_TOKEN or --ops-token", opts.host)
-	}
 	return opts, nil
 }
 
@@ -122,7 +118,7 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 	}()
 
 	fmt.Println()
-	fmt.Println(titleStyle.Render("ASM Dashboard"))
+	fmt.Println(titleStyle.Render("CrewAI - ASM"))
 	fmt.Println()
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Server:"),

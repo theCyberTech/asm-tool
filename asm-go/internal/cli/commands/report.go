@@ -10,7 +10,6 @@ import (
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 	"github.com/asm-tool/asm-go/internal/scanner/takeover"
@@ -177,19 +176,6 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 		}
 	}
 	fmt.Printf("  %s %d APIs\n", labelStyle.Render("Loaded:"), len(result.APIs))
-
-	// Get emails
-	dbEmails, err := db.GetEmailsForDomain(domain)
-	if err == nil {
-		for _, e := range dbEmails {
-			result.Emails = append(result.Emails, emails.Email{
-				Address: e.Address,
-				Domain:  e.Domain,
-				Source:  e.Source,
-			})
-		}
-	}
-	fmt.Printf("  %s %d emails\n", labelStyle.Render("Loaded:"), len(result.Emails))
 
 	// Get cloud storage
 	buckets, err := db.GetCloudStorageForDomain(domain)

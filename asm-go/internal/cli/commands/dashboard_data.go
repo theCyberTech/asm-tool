@@ -79,12 +79,6 @@ func loadGlobalList(deps *Deps, kind, title string) (*dashboard.GlobalListData, 
 			return nil, fmt.Errorf("failed to load APIs: %w", err)
 		}
 		list.APIs = mapSlice(rows, apiView)
-	case "emails":
-		rows, err := deps.DB.GetAllEmails()
-		if err != nil {
-			return nil, fmt.Errorf("failed to load emails: %w", err)
-		}
-		list.Emails = mapSlice(rows, emailView)
 	case "cloud":
 		rows, err := deps.DB.GetAllCloudStorage()
 		if err != nil {
@@ -138,7 +132,6 @@ func loadDomainDetailPageData(deps *Deps, domainName, only string, previewLimit,
 			VulnCount:        stats.VulnCount,
 			URLCount:         stats.URLCount,
 			APICount:         stats.APICount,
-			EmailCount:       stats.EmailCount,
 			CloudCount:       stats.CloudCount,
 			TakeoverCount:    stats.TakeoverCount,
 		}
@@ -175,10 +168,6 @@ func loadDomainDetailPageData(deps *Deps, domainName, only string, previewLimit,
 	if wantDomainAsset(only, "apis") {
 		detail.APIs = loadDomainAssets(&data, "Failed to load APIs", previewLimit,
 			func() ([]database.API, error) { return deps.DB.GetAPIsForDomain(domainName) }, apiView)
-	}
-	if wantDomainAsset(only, "emails") {
-		detail.Emails = loadDomainAssets(&data, "Failed to load emails", previewLimit,
-			func() ([]database.Email, error) { return deps.DB.GetEmailsForDomain(domainName) }, emailView)
 	}
 	if wantDomainAsset(only, "cloud") {
 		detail.CloudStorage = loadDomainAssets(&data, "Failed to load cloud storage", previewLimit,
@@ -248,7 +237,6 @@ func statsView(s *database.Stats) dashboard.Stats {
 		Certificates: s.Certificates,
 		URLs:         s.URLs,
 		APIs:         s.APIs,
-		Emails:       s.Emails,
 		CloudBuckets: s.CloudBuckets,
 		Takeovers:    s.Takeovers,
 	}
@@ -332,10 +320,6 @@ func apiView(a database.API) dashboard.APIView {
 		URL: a.URL, Type: nullString(a.Type), Title: nullString(a.Title),
 		Version: nullString(a.Version), DiscoveredAt: a.DiscoveredAt,
 	}
-}
-
-func emailView(e database.Email) dashboard.EmailView {
-	return dashboard.EmailView{Address: e.Address, Source: e.Source, DiscoveredAt: e.DiscoveredAt}
 }
 
 func cloudStorageView(c database.CloudStorage) dashboard.CloudStorageView {

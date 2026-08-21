@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ASM Tool is a Go-based attack surface management tool for security practitioners. It monitors domains for subdomains, open ports, certificates, technologies, DNS records, vulnerabilities, URLs, subdomain takeovers, API endpoints, email addresses, and cloud storage buckets. It also provides a local web dashboard and cron-based scheduled scans with Slack/email notifications.
+ASM Tool is a Go-based attack surface management tool for security practitioners. It monitors domains for subdomains, open ports, certificates, technologies, DNS records, vulnerabilities, URLs, subdomain takeovers, API endpoints, and cloud storage buckets. It also provides a local web dashboard and cron-based scheduled scans with Slack/email notifications.
 
 ## Common Commands
 
@@ -22,7 +22,7 @@ cd web && npm test && npm run build
 ./asm.sh init
 
 # Run a scan
-./asm.sh scan example.com
+./asm.sh scan crewai.com
 
 # Check status
 ./asm.sh status
@@ -54,7 +54,6 @@ asm-go/
 │   │   ├── technologies/        # Tech fingerprinting
 │   │   ├── urls/                # URL enumeration
 │   │   ├── apis/                # API discovery
-│   │   ├── emails/              # Email enumeration
 │   │   ├── cloud/               # Cloud storage detection
 │   │   └── nuclei/              # Nuclei integration
 │   ├── cli/commands/            # CLI command handlers

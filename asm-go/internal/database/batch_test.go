@@ -163,28 +163,6 @@ func TestSaveURLsBatch(t *testing.T) {
 	}
 }
 
-func TestSaveEmailsBatch(t *testing.T) {
-	db := newTestDB(t)
-
-	records := []EmailRecord{
-		{Domain: "example.com", Address: "a@example.com", Source: "hunter"},
-		{Domain: "example.com", Address: "b@example.com", Source: "github"},
-		{Domain: "example.com", Address: "a@example.com", Source: "skymem"},
-		{Domain: "example.com", Address: "", Source: "ignore"},
-	}
-	if err := db.SaveEmails(records); err != nil {
-		t.Fatalf("SaveEmails: %v", err)
-	}
-
-	got, err := db.GetEmailsForDomain("example.com")
-	if err != nil {
-		t.Fatalf("GetEmailsForDomain: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("got %d emails, want 2", len(got))
-	}
-}
-
 func TestDomainAddReturning(t *testing.T) {
 	db := newTestDB(t)
 

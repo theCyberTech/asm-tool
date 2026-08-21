@@ -82,7 +82,6 @@ func runStatus(db *database.Database, cfg *config.Config) error {
 		{"Certificates", fmt.Sprintf("%d", stats.Certificates)},
 		{"URLs", fmt.Sprintf("%d", stats.URLs)},
 		{"APIs", fmt.Sprintf("%d", stats.APIs)},
-		{"Emails", fmt.Sprintf("%d", stats.Emails)},
 		{"Cloud Buckets", fmt.Sprintf("%d", stats.CloudBuckets)},
 	}
 
