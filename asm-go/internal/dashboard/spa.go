@@ -70,41 +70,12 @@ func ServeIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	html := string(data)
-	if rel, ok := currentIndexJS(fsys); ok {
-		if js, err := fs.ReadFile(fsys, rel); err == nil {
-			html = inlineDashboardScript(html, string(js))
-		}
-	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors *")
 	_, _ = w.Write([]byte(html))
-}
-
-func inlineDashboardScript(html, js string) string {
-	safe := strings.ReplaceAll(js, "</script", "<\\/script")
-	start := strings.Index(html, "<script")
-	for start >= 0 {
-		endRel := strings.Index(html[start:], "</script>")
-		if endRel < 0 {
-			break
-		}
-		end := start + endRel + len("</script>")
-		tag := html[start:end]
-		if strings.Contains(tag, "/assets/") && strings.Contains(tag, ".js") {
-			return html[:start] + "<script>" + safe + "</script>" + html[end:]
-		}
-		next := strings.Index(html[start+1:], "<script")
-		if next < 0 {
-			break
-		}
-		start = start + 1 + next
-	}
-	if i := strings.LastIndex(html, "</body>"); i >= 0 {
-		return html[:i] + "<script>" + safe + "</script>\n" + html[i:]
-	}
-	return html + "<script>" + safe + "</script>"
 }
 
 func serveDashboardJS(w http.ResponseWriter, r *http.Request, fsys fs.FS, rel string) bool {

@@ -55,7 +55,7 @@ func TestServeSPAMissingAssetIsNotFound(t *testing.T) {
 	}
 }
 
-func TestServeIndexInlinesDashboardBundle(t *testing.T) {
+func TestServeIndexUsesExternalClassicScript(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	ServeIndex(rec, req)
@@ -63,25 +63,17 @@ func TestServeIndexInlinesDashboardBundle(t *testing.T) {
 	if rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store", rec.Header().Get("Cache-Control"))
 	}
-	if strings.Contains(body, `src="/assets/`) {
-		t.Fatalf("index still loads an external asset")
+	if rec.Body.Len() > 20000 {
+		t.Fatalf("index HTML too large for preview (%d); JS should be an external file", rec.Body.Len())
 	}
-	if rec.Body.Len() < 10000 {
-		t.Fatalf("inlined dashboard HTML too small: %d", rec.Body.Len())
+	if !strings.Contains(body, `src="/assets/index.js"`) && !strings.Contains(body, `src="/assets/index-`) {
+		t.Fatalf("index missing external dashboard script, body = %s", body)
 	}
-	if !strings.Contains(body, `id="root"`) {
-		t.Fatal("inlined index missing root mount")
+	if !strings.Contains(body, "CrewAI - ASM") {
+		t.Fatal("index missing visible dashboard chrome")
 	}
-}
-
-func TestInlineDashboardScriptReplacesExternalSrc(t *testing.T) {
-	html := `<html><body><div id="root"></div><script defer src="/assets/index.js"></script></body></html>`
-	out := inlineDashboardScript(html, "window.ASM_OK=1;</script>throw 1")
-	if strings.Contains(out, `src="/assets/index.js"`) {
-		t.Fatalf("src not inlined: %s", out)
-	}
-	if !strings.Contains(out, `<\/script>throw 1`) {
-		t.Fatalf("script close not escaped: %s", out)
+	if strings.Contains(body, `type="module"`) {
+		t.Fatal("index still uses type=module")
 	}
 }
 

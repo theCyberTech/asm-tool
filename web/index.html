@@ -13,10 +13,45 @@
         background: #0d1117;
         color: #c9d1d9;
       }
+      .preview-shell {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        min-height: 100vh;
+        background: #0d1117;
+        color: #c9d1d9;
+      }
+      .preview-shell-nav {
+        height: 56px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        display: flex;
+        align-items: center;
+        padding: 0 1.5rem;
+        font-weight: 600;
+      }
+      .preview-shell-main {
+        padding: 2rem;
+      }
+      .preview-shell-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 0 0 0.5rem;
+      }
+      .preview-shell-sub {
+        color: #8b949e;
+        margin: 0;
+      }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="preview-shell">
+        <div class="preview-shell-nav">CrewAI - ASM</div>
+        <div class="preview-shell-main">
+          <h1 class="preview-shell-title">Attack Surface Overview</h1>
+          <p class="preview-shell-sub">Real-time view of your attack surface.</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -124,7 +124,8 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 	fmt.Println()
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Server:"),
-		valueStyle.Render(fmt.Sprintf("http://%s", addr)))
+		valueStyle.Render(publicDashboardURL(addr)))
+	fmt.Println("  " + publicDashboardURL(addr))
 	if addr != fmt.Sprintf("%s:%d", opts.host, opts.port) {
 		fmt.Printf("  %s %s\n",
 			labelStyle.Render("Note:"),
@@ -224,6 +225,17 @@ func normalizeDashboardHost(host string) string {
 		return "0.0.0.0"
 	}
 	return h
+}
+
+func publicDashboardURL(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://" + addr
+	}
+	if host == "0.0.0.0" || host == "::" || host == "[::]" || host == "" {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 // findAvailableAddr returns the address for the requested host and port.

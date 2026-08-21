@@ -190,6 +190,15 @@ func TestListenDashboardAcceptsIPv4(t *testing.T) {
 	_ = conn.Close()
 }
 
+func TestPublicDashboardURLUsesLoopbackForWildcard(t *testing.T) {
+	if got := publicDashboardURL("0.0.0.0:8080"); got != "http://127.0.0.1:8080" {
+		t.Fatalf("got %q", got)
+	}
+	if got := publicDashboardURL("127.0.0.1:8080"); got != "http://127.0.0.1:8080" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestFindAvailableAddrSkipsInUsePort(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
