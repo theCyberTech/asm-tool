@@ -126,15 +126,6 @@ CREATE TABLE IF NOT EXISTS apis (
     discovered_at TEXT NOT NULL
 );
 
--- Unused leftover table: kept so existing asm.db files still open.
-CREATE TABLE IF NOT EXISTS emails (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    domain TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
-    source TEXT,
-    discovered_at TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS cloud_storage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     url TEXT NOT NULL UNIQUE,
