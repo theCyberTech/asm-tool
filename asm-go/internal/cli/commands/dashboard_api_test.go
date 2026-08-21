@@ -200,6 +200,22 @@ func TestStartRunJSONReturnsRun(t *testing.T) {
 	if payload.Status != "ok" || payload.Run.Action != "status" {
 		t.Fatalf("payload = %+v", payload)
 	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		statusReq := httptest.NewRequest(http.MethodGet, "/api/runs", nil)
+		statusRec := httptest.NewRecorder()
+		mux.ServeHTTP(statusRec, statusReq)
+		var runs struct {
+			Runs []struct {
+				Status string `json:"status"`
+			} `json:"runs"`
+		}
+		if err := json.Unmarshal(statusRec.Body.Bytes(), &runs); err == nil && len(runs.Runs) == 1 && runs.Runs[0].Status != "running" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func TestParseDomainAPIPath(t *testing.T) {

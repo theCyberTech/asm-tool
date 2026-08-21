@@ -8,11 +8,10 @@ import (
 	"time"
 
 	"github.com/asm-tool/asm-go/internal/dashboard"
-	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/target"
 )
 
-var globalAssetTitles = map[string]string{
+var assetTitles = map[string]string{
 	"subdomains":      "Subdomains",
 	"ports":           "Open Ports",
 	"certificates":    "Certificates",
@@ -27,16 +26,16 @@ var globalAssetTitles = map[string]string{
 	"vulnerabilities": "Findings",
 }
 
-var globalListKinds = map[string]string{
-	"subdomains":   "Subdomains",
-	"ports":        "Open Ports",
-	"certificates": "Certificates",
-	"urls":         "URLs",
-	"apis":         "API Endpoints",
-	"emails":       "Email Addresses",
-	"cloud":        "Cloud Storage",
-	"findings":     "Findings",
-	"takeovers":    "Takeovers",
+var globalAssetKinds = map[string]struct{}{
+	"subdomains":   {},
+	"ports":        {},
+	"certificates": {},
+	"urls":         {},
+	"apis":         {},
+	"emails":       {},
+	"cloud":        {},
+	"findings":     {},
+	"takeovers":    {},
 }
 
 func makeOverviewHandler(deps *Deps) http.HandlerFunc {
@@ -82,7 +81,7 @@ func makeDomainsJSONHandler(deps *Deps) http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":  "ok",
-			"domains": dashboard.DomainsJSON(filtered),
+			"domains": filtered,
 			"count":   len(filtered),
 		})
 	}
@@ -145,7 +144,7 @@ func makeDomainAPIHandler(deps *Deps) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, dashboard.JSONAssetList{
 			Status: "ok",
 			Kind:   route.kind,
-			Title:  globalAssetTitles[route.kind],
+			Title:  assetTitles[route.kind],
 			Count:  count,
 			Items:  items,
 		})
@@ -160,8 +159,12 @@ func makeAssetsJSONHandler(deps *Deps) http.HandlerFunc {
 			return
 		}
 		kind := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/assets/"), "/")
-		title, ok := globalListKinds[kind]
+		title, ok := assetTitles[kind]
 		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if _, allowed := globalAssetKinds[kind]; !allowed {
 			http.NotFound(w, r)
 			return
 		}
@@ -202,7 +205,7 @@ func parseDomainAPIPath(path string) (domainAPIRoute, bool) {
 		return domainAPIRoute{domain: parts[0]}, true
 	case 3:
 		if parts[1] == "assets" {
-			if _, ok := globalAssetTitles[parts[2]]; ok {
+			if _, ok := assetTitles[parts[2]]; ok {
 				return domainAPIRoute{domain: parts[0], kind: parts[2]}, true
 			}
 		}
@@ -213,38 +216,27 @@ func parseDomainAPIPath(path string) (domainAPIRoute, bool) {
 func domainAssetItems(detail *dashboard.DomainDetailData, kind string) (any, int) {
 	switch kind {
 	case "subdomains":
-		items := dashboard.SubdomainsJSON(detail.Subdomains)
-		return items, len(items)
+		return assetItems(detail.Subdomains)
 	case "ports":
-		items := dashboard.PortsJSON(detail.Ports)
-		return items, len(items)
+		return assetItems(detail.Ports)
 	case "certificates":
-		items := dashboard.CertificatesJSON(detail.Certificates)
-		return items, len(items)
+		return assetItems(detail.Certificates)
 	case "technologies":
-		items := dashboard.TechnologiesJSON(detail.Technologies)
-		return items, len(items)
+		return assetItems(detail.Technologies)
 	case "dns":
-		items := dashboard.DNSRecordsJSON(detail.DNSRecords)
-		return items, len(items)
+		return assetItems(detail.DNSRecords)
 	case "vulnerabilities", "findings":
-		items := dashboard.FindingsJSON(detail.Findings)
-		return items, len(items)
+		return assetItems(detail.Findings)
 	case "urls":
-		items := dashboard.URLsJSON(detail.URLs)
-		return items, len(items)
+		return assetItems(detail.URLs)
 	case "apis":
-		items := dashboard.APIsJSON(detail.APIs)
-		return items, len(items)
+		return assetItems(detail.APIs)
 	case "emails":
-		items := dashboard.EmailsJSON(detail.Emails)
-		return items, len(items)
+		return assetItems(detail.Emails)
 	case "cloud":
-		items := dashboard.CloudStorageJSON(detail.CloudStorage)
-		return items, len(items)
+		return assetItems(detail.CloudStorage)
 	case "takeovers":
-		items := dashboard.TakeoversJSON(detail.Takeovers)
-		return items, len(items)
+		return assetItems(detail.Takeovers)
 	default:
 		return []any{}, 0
 	}
@@ -253,52 +245,33 @@ func domainAssetItems(detail *dashboard.DomainDetailData, kind string) (any, int
 func globalAssetItems(list *dashboard.GlobalListData, kind string) (any, int) {
 	switch kind {
 	case "subdomains":
-		items := dashboard.SubdomainsJSON(list.Subdomains)
-		return items, len(items)
+		return assetItems(list.Subdomains)
 	case "ports":
-		items := dashboard.PortsJSON(list.Ports)
-		return items, len(items)
+		return assetItems(list.Ports)
 	case "certificates":
-		items := dashboard.CertificatesJSON(list.Certificates)
-		return items, len(items)
+		return assetItems(list.Certificates)
 	case "urls":
-		items := dashboard.URLsJSON(list.URLs)
-		return items, len(items)
+		return assetItems(list.URLs)
 	case "apis":
-		items := dashboard.APIsJSON(list.APIs)
-		return items, len(items)
+		return assetItems(list.APIs)
 	case "emails":
-		items := dashboard.EmailsJSON(list.Emails)
-		return items, len(items)
+		return assetItems(list.Emails)
 	case "cloud":
-		items := dashboard.CloudStorageJSON(list.CloudStorage)
-		return items, len(items)
+		return assetItems(list.CloudStorage)
 	case "findings":
-		items := dashboard.FindingsJSON(list.Findings)
-		return items, len(items)
+		return assetItems(list.Findings)
 	case "takeovers":
-		items := dashboard.TakeoversJSON(list.Takeovers)
-		return items, len(items)
+		return assetItems(list.Takeovers)
 	default:
 		return []any{}, 0
 	}
 }
 
-func domainStatsFromRows(rows []database.DomainWithStats) []dashboard.DomainStats {
-	out := make([]dashboard.DomainStats, len(rows))
-	for i, d := range rows {
-		out[i] = dashboard.DomainStats{
-			ID:             d.ID,
-			Domain:         d.Domain,
-			AddedAt:        d.AddedAt,
-			LastScanned:    d.LastScanned,
-			SubdomainCount: d.SubdomainCount,
-			PortCount:      d.PortCount,
-			CriticalCount:  d.CriticalCount,
-			HighCount:      d.HighCount,
-		}
+func assetItems[T any](items []T) (any, int) {
+	if items == nil {
+		items = []T{}
 	}
-	return out
+	return items, len(items)
 }
 
 func filterDomainStats(domains []dashboard.DomainStats, query url.Values) ([]dashboard.DomainStats, error) {

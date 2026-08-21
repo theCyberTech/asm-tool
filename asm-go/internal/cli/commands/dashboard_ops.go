@@ -361,27 +361,6 @@ func (o *dashboardOps) operationOptions() []dashboard.OperationOption {
 	return options
 }
 
-func makeOperationsHandler(deps *Deps, ops *dashboardOps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/operations" {
-			http.NotFound(w, r)
-			return
-		}
-		if ops.enabled && !ops.authorize(w, r) {
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-		data := getPageData(deps, "operations")
-		data.Operations = ops.pageData()
-
-		if err := dashboard.RenderPage(w, "operations-base", data); err != nil {
-			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-}
-
 func (o *dashboardOps) handleRunsPartial(w http.ResponseWriter, r *http.Request) {
 	if !o.requireEnabled(w, r) || !o.authorize(w, r) {
 		return
@@ -416,7 +395,7 @@ func (o *dashboardOps) handleRunsJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
-		"runs":   dashboard.RunsJSON(o.pageData().Runs),
+		"runs":   o.pageData().Runs,
 	})
 }
 
@@ -481,7 +460,7 @@ func (o *dashboardOps) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	if isJSON || wantsJSON(r) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "ok",
-			"run":    dashboard.RunsJSON([]dashboard.RunRecord{run})[0],
+			"run":    run,
 		})
 		return
 	}

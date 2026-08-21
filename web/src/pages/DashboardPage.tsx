@@ -1,9 +1,7 @@
-import { useCallback } from "react";
 import { Link } from "react-router-dom";
-import { fetchOverview } from "../api/client";
 import { Layout } from "../components/Layout";
 import { ErrorAlert, LoadingState, WarningAlert } from "../components/Status";
-import { useApi } from "../hooks/useApi";
+import { useOverview } from "../hooks/useOverview";
 import { formatDate, severityClass } from "../lib/format";
 
 const STAT_LINKS = [
@@ -18,11 +16,10 @@ const STAT_LINKS = [
 ] as const;
 
 export function DashboardPage() {
-  const loader = useCallback(() => fetchOverview(), []);
-  const { data, error, loading, reload } = useApi(loader);
+  const { data, error, loading, reload } = useOverview();
 
   return (
-    <Layout activePage="dashboard" stats={data?.stats} findings={data?.findings}>
+    <Layout activePage="dashboard">
       <div className="page-header">
         <div>
           <h1 className="page-title">Attack Surface Overview</h1>

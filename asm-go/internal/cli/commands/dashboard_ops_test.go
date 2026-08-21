@@ -138,36 +138,19 @@ func TestDashboardOpsStartHandlerReturnsRunsPartial(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "Status") {
 		t.Fatalf("response body does not include status run: %s", rec.Body.String())
 	}
+	waitForRunIdle(t, ops)
 }
 
-func TestDomainsRouteRendersDomainsPage(t *testing.T) {
-	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
-	if err != nil {
-		t.Fatalf("creating database: %v", err)
-	}
-	defer db.Close()
-
-	cfg := config.Default()
-	cfg.DatabasePath = filepath.Join(t.TempDir(), "asm.db")
-	handler := makeDomainsHandler(&Deps{DB: db, Cfg: cfg})
-
+func TestDomainsRouteServesSPA(t *testing.T) {
+	mux, _ := testDashboardMux(t)
 	req := httptest.NewRequest(http.MethodGet, "/domains", nil)
 	rec := httptest.NewRecorder()
-
-	handler(rec, req)
-
+	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/domains status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `<h1 class="page-title">Domains</h1>`) {
-		t.Fatalf("/domains body does not contain domains page title")
-	}
-	if !strings.Contains(body, "All Domains") {
-		t.Fatalf("/domains body does not contain domains table")
-	}
-	if strings.Contains(body, "Attack Surface Overview") {
-		t.Fatalf("/domains rendered the overview page instead of the domains page")
+	if !strings.Contains(rec.Body.String(), `id="root"`) {
+		t.Fatalf("/domains should serve the TypeScript SPA, body = %s", rec.Body.String())
 	}
 }
 
@@ -212,40 +195,16 @@ func portFromAddr(t *testing.T, addr string) int {
 	return port
 }
 
-func TestDashboardOverviewStatCardsLinkToAssetPages(t *testing.T) {
-	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
-	if err != nil {
-		t.Fatalf("creating database: %v", err)
-	}
-	defer db.Close()
-
-	cfg := config.Default()
-	cfg.DatabasePath = filepath.Join(t.TempDir(), "asm.db")
-	handler := makeIndexHandler(&Deps{DB: db, Cfg: cfg})
-
+func TestDashboardOverviewServesSPA(t *testing.T) {
+	mux, _ := testDashboardMux(t)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-
-	handler(rec, req)
-
+	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/ status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-
-	body := rec.Body.String()
-	for _, href := range []string{
-		`href="/domains"`,
-		`href="/subdomains"`,
-		`href="/ports"`,
-		`href="/certificates"`,
-		`href="/urls"`,
-		`href="/apis"`,
-		`href="/emails"`,
-		`href="/cloud"`,
-	} {
-		if !strings.Contains(body, href) {
-			t.Fatalf("dashboard overview missing stat-card link %s", href)
-		}
+	if !strings.Contains(rec.Body.String(), `id="root"`) {
+		t.Fatalf("expected TypeScript SPA shell, body = %s", rec.Body.String())
 	}
 }
 
@@ -310,6 +269,29 @@ func TestDashboardOpsStartHandlerRequiresToken(t *testing.T) {
 	if authRec.Code != http.StatusOK {
 		t.Fatalf("authenticated status = %d, body = %s", authRec.Code, authRec.Body.String())
 	}
+	waitForRunIdle(t, ops)
+}
+
+func waitForRunIdle(t *testing.T, ops *dashboardOps) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		data := ops.pageData()
+		if len(data.Runs) > 0 {
+			running := false
+			for _, run := range data.Runs {
+				if run.Status == "running" {
+					running = true
+					break
+				}
+			}
+			if !running {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("dashboard run did not finish before test cleanup")
 }
 
 func TestDashboardOpsRejectsMissingTarget(t *testing.T) {
@@ -360,68 +342,18 @@ func TestIsLoopbackHost(t *testing.T) {
 	}
 }
 
-func TestDomainDetailRejectsInvalidPath(t *testing.T) {
-	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
-	if err != nil {
-		t.Fatalf("creating database: %v", err)
-	}
-	defer db.Close()
-
-	handler := makeDomainDetailHandler(&Deps{DB: db, Cfg: config.Default()})
-	req := httptest.NewRequest(http.MethodGet, "/domains/example.com/not-a-domain", nil)
+func TestDomainDetailAPIRejectsInvalidPath(t *testing.T) {
+	mux, _ := testDashboardMux(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/domains/example.com/not-a-domain", nil)
 	rec := httptest.NewRecorder()
-	handler(rec, req)
+	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404, body = %s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestParseDomainDetailPath(t *testing.T) {
-	cases := []struct {
-		path   string
-		domain string
-		action string
-		ok     bool
-	}{
-		{"/domains/example.com", "example.com", "", true},
-		{"/domains/example.com/", "example.com", "", true},
-		{"/domains/example.com/refresh", "example.com", "refresh", true},
-		{"/domains/example.com/modal/ports", "example.com", "ports", true},
-		{"/domains/example.com/modal/certificates", "example.com", "certificates", true},
-		{"/domains/example.com/modal/technologies", "example.com", "technologies", true},
-		{"/domains/example.com/modal/dns", "example.com", "dns", true},
-		{"/domains/example.com/not-a-domain", "", "", false},
-		{"/domains/example.com/modal/nope", "", "", false},
-	}
-	for _, tc := range cases {
-		got, ok := parseDomainDetailPath(tc.path)
-		if ok != tc.ok {
-			t.Fatalf("parseDomainDetailPath(%q) ok=%v, want %v", tc.path, ok, tc.ok)
-		}
-		if !ok {
-			continue
-		}
-		if got.domain != tc.domain || got.action != tc.action {
-			t.Fatalf("parseDomainDetailPath(%q) = %+v, want domain=%s action=%s", tc.path, got, tc.domain, tc.action)
-		}
-	}
-}
-
-func TestDomainDetailAssetModalsLoadHostRecords(t *testing.T) {
-	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
-	if err != nil {
-		t.Fatalf("creating database: %v", err)
-	}
-	defer db.Close()
-
-	if _, err := db.Domains.Add("example.com"); err != nil {
-		t.Fatalf("Add domain: %v", err)
-	}
-	if err := db.Ports.Add(&database.Port{
-		Host: "api.example.com", Port: 443, Protocol: "tcp", State: "open", Service: "https",
-	}); err != nil {
-		t.Fatalf("Add port: %v", err)
-	}
+func TestDomainDetailJSONListsHostRecords(t *testing.T) {
+	mux, db := testDashboardMux(t)
 	now := time.Now()
 	if err := db.Certificates.Add(&database.Certificate{
 		Host: "api.example.com", Port: 443, Subject: "api.example.com",
@@ -443,35 +375,25 @@ func TestDomainDetailAssetModalsLoadHostRecords(t *testing.T) {
 		t.Fatalf("insert dns: %v", err)
 	}
 
-	handler := makeDomainDetailHandler(&Deps{DB: db, Cfg: config.Default()})
-
 	pageReq := httptest.NewRequest(http.MethodGet, "/domains/example.com", nil)
 	pageRec := httptest.NewRecorder()
-	handler(pageRec, pageReq)
+	mux.ServeHTTP(pageRec, pageReq)
 	if pageRec.Code != http.StatusOK {
 		t.Fatalf("page status = %d, body = %s", pageRec.Code, pageRec.Body.String())
 	}
-	page := pageRec.Body.String()
-	if strings.Contains(page, `x-data="{ activeModal: null }"`) {
-		t.Fatal("domain page still uses Alpine activeModal for asset dialogs")
-	}
-	if !strings.Contains(page, `id="modal-ports"`) || !strings.Contains(page, "openAssetModal('ports')") {
-		t.Fatal("domain page missing vanilla ports modal")
+	if !strings.Contains(pageRec.Body.String(), `id="root"`) {
+		t.Fatal("domain page should serve the TypeScript SPA")
 	}
 
 	for _, kind := range []string{"ports", "certificates", "technologies", "dns"} {
-		req := httptest.NewRequest(http.MethodGet, "/domains/example.com/modal/"+kind, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/domains/example.com/assets/"+kind, nil)
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		mux.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
-			t.Fatalf("%s modal status = %d, body = %s", kind, rec.Code, rec.Body.String())
+			t.Fatalf("%s assets status = %d, body = %s", kind, rec.Code, rec.Body.String())
 		}
-		body := rec.Body.String()
-		if !strings.Contains(body, "api.example.com") {
-			t.Fatalf("%s modal missing subdomain host, body = %s", kind, body)
-		}
-		if !strings.Contains(body, `data-search="`) {
-			t.Fatalf("%s modal missing data-search filter attribute", kind)
+		if !strings.Contains(rec.Body.String(), "api.example.com") {
+			t.Fatalf("%s assets missing subdomain host, body = %s", kind, rec.Body.String())
 		}
 	}
 }
@@ -505,41 +427,9 @@ func TestStatsHandlerJSONIncludesStatus(t *testing.T) {
 	}
 }
 
-func TestDomainsPartialRejectsInvalidDate(t *testing.T) {
-	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
-	if err != nil {
-		t.Fatalf("creating database: %v", err)
-	}
-	defer db.Close()
-
-	handler := makeDomainsPartialHandler(&Deps{DB: db, Cfg: config.Default()})
-	req := httptest.NewRequest(http.MethodGet, "/partials/domains?from=not-a-date", nil)
-	rec := httptest.NewRecorder()
-	handler(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestDomainsPageHasFilterErrorHandling(t *testing.T) {
-	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
-	if err != nil {
-		t.Fatalf("creating database: %v", err)
-	}
-	defer db.Close()
-
-	handler := makeDomainsHandler(&Deps{DB: db, Cfg: config.Default()})
-	req := httptest.NewRequest(http.MethodGet, "/domains", nil)
-	rec := httptest.NewRecorder()
-	handler(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "htmx:responseError") {
-		t.Fatal("/domains is missing HTMX error handling")
-	}
-	if !strings.Contains(body, "htmx:sendError") {
-		t.Fatal("/domains is missing HTMX network error handling")
+func TestFilterDomainStatsRejectsInvalidDate(t *testing.T) {
+	_, err := filterDomainStats(nil, map[string][]string{"from": {"not-a-date"}})
+	if err == nil || !strings.Contains(err.Error(), "invalid from date") {
+		t.Fatalf("err = %v, want invalid from date", err)
 	}
 }

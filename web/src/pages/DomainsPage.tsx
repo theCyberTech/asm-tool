@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchDomains, fetchOverview } from "../api/client";
+import { fetchDomains } from "../api/client";
 import { Layout } from "../components/Layout";
 import { ErrorAlert, LoadingState } from "../components/Status";
 import { useApi } from "../hooks/useApi";
@@ -10,15 +10,13 @@ export function DomainsPage() {
   const [query, setQuery] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const overviewLoader = useCallback(() => fetchOverview(), []);
-  const { data: overview } = useApi(overviewLoader);
 
   const filters = useMemo(() => ({ q: query, from, to }), [from, query, to]);
   const domainLoader = useCallback(() => fetchDomains(filters), [filters]);
   const { data, error, loading } = useApi(domainLoader);
 
   return (
-    <Layout activePage="domains" stats={overview?.stats} findings={overview?.findings}>
+    <Layout activePage="domains">
       <div className="page-header">
         <div>
           <h1 className="page-title">Domains</h1>
