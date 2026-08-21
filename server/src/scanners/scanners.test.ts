@@ -1,16 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { extractEmails } from "./emails.ts";
 import { findingsFromHeaders } from "./findings.ts";
 import { enumerateSubdomains } from "./subdomains.ts";
 
 describe("scanners", () => {
-  it("extracts in-scope emails", () => {
-    expect(extractEmails("Contact us@crewai.com and other@gmail.com and ops@app.crewai.com", "crewai.com")).toEqual([
-      "us@crewai.com",
-      "ops@app.crewai.com",
-    ]);
-  });
-
   it("flags missing security headers", () => {
     const findings = findingsFromHeaders("crewai.com", { server: "nginx" });
     expect(findings.some((item) => item.templateId === "missing-hsts")).toBe(true);

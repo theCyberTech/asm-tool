@@ -3,7 +3,7 @@ import { discoverApis } from "./apis.ts";
 import { checkCertificate } from "./certificates.ts";
 import { probeCloudBuckets } from "./cloud.ts";
 import { queryDns } from "./dns.ts";
-import { extractEmails } from "./emails.ts";
+import { enumerateEmails, extractFromHtml } from "./emails.ts";
 import { findingsFromHeaders } from "./findings.ts";
 import { scanPorts } from "./ports.ts";
 import { enumerateSubdomains } from "./subdomains.ts";
@@ -121,8 +121,8 @@ export async function runModule(
           for (const finding of findingsFromHeaders(host, tech.headers)) {
             store.saveFinding(finding);
           }
-          for (const email of extractEmails(tech.body, domain)) {
-            store.saveEmail(domain, email, "http");
+          for (const found of extractFromHtml(tech.body, domain)) {
+            store.saveEmail(domain, found.address, found.source);
           }
           log.info(`${host}: ${tech.statusCode} ${tech.technologies || "no tech"}`);
         } catch (err) {
@@ -145,20 +145,15 @@ export async function runModule(
       return;
     }
     case "emails": {
-      const hosts = scanHosts(store, domain);
-      let count = 0;
-      for (const host of hosts) {
-        try {
-          const tech = await fingerprintHost(host, fetchImpl);
-          for (const email of extractEmails(tech.body, domain)) {
-            store.saveEmail(domain, email, "http");
-            count += 1;
-          }
-        } catch (err) {
-          log.warn(`${host}: ${err instanceof Error ? err.message : String(err)}`);
-        }
+      const extraUrls = store.listUrls(domain).map((row) => String(row.url ?? ""));
+      const result = await enumerateEmails(domain, { fetchImpl, extraUrls });
+      for (const err of result.errors) {
+        log.warn(err);
       }
-      log.info(`stored ${count} emails`);
+      for (const found of result.emails) {
+        store.saveEmail(domain, found.address, found.source);
+      }
+      log.info(`stored ${result.emails.length} emails`);
       return;
     }
     case "cloudstorage": {
@@ -208,6 +203,7 @@ export async function runModule(
         runModule(store, "apis", domain, log, deps),
         runModule(store, "cloudstorage", domain, log, deps),
         runModule(store, "takeover", domain, log, deps),
+        runModule(store, "emails", domain, log, deps),
       ]);
       store.markScanned(domain);
       log.info(`full scan complete for ${domain}`);
