@@ -92,5 +92,7 @@ describe("dashboard pages", () => {
     expect(await screen.findByRole("heading", { name: "All Domains" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Domains", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "example.com" })).toHaveAttribute("href", "/domains/example.com");
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Search domains")).not.toBeInTheDocument();
   });
 });

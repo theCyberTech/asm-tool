@@ -7,11 +7,10 @@ import { useApi } from "../hooks/useApi";
 import { formatDate } from "../lib/format";
 
 export function DomainsPage() {
-  const [query, setQuery] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  const filters = useMemo(() => ({ q: query, from, to }), [from, query, to]);
+  const filters = useMemo(() => ({ from, to }), [from, to]);
   const domainLoader = useCallback(() => fetchDomains(filters), [filters]);
   const { data, error, loading } = useApi(domainLoader);
 
@@ -25,20 +24,6 @@ export function DomainsPage() {
       </div>
 
       <div className="search-filter-bar">
-        <div className="search-input-container">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            className="form-input"
-            style={{ paddingLeft: "2rem" }}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search domains"
-            aria-label="Search domains"
-          />
-        </div>
         <input className="form-input" type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label="From date" />
         <input className="form-input" type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label="To date" />
       </div>
