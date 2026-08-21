@@ -25,8 +25,27 @@ export async function fetchText(
   return { status: response.status, body, headers: response.headers };
 }
 
+export async function fetchTextRetry(
+  url: string,
+  init: FetchTextInit = {},
+  fetchImpl: typeof fetch = fetch,
+  attempts = 3,
+): Promise<{ status: number; body: string; headers: Headers }> {
+  let last = { status: 0, body: "", headers: new Headers() };
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    last = await fetchText(url, init, fetchImpl);
+    if (last.status < 500 && last.status !== 429) {
+      return last;
+    }
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+  }
+  return last;
+}
+
 export async function fetchJSON<T>(url: string, fetchImpl: typeof fetch = fetch): Promise<T> {
-  const { status, body } = await fetchText(url, { headers: { Accept: "application/json" } }, fetchImpl);
+  const { status, body } = await fetchTextRetry(url, { headers: { Accept: "application/json" } }, fetchImpl);
   if (status >= 400) {
     throw new Error(`GET ${url} failed: ${status}`);
   }

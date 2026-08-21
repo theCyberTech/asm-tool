@@ -1,4 +1,4 @@
-import { fetchText } from "../lib/http.ts";
+import { fetchTextRetry } from "../lib/http.ts";
 
 const INTERESTING = /(\.git|backup|config|\.env|admin|api|swagger|graphql|wp-login|phpinfo)/i;
 
@@ -24,7 +24,7 @@ function categorize(url: string): string {
 
 export async function enumerateUrls(domain: string, fetchImpl: typeof fetch = fetch, limit = 200): Promise<UrlEnumResult> {
   const endpoint = `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(`*.${domain}/*`)}&output=json&fl=original&collapse=urlkey&limit=${limit}`;
-  const { status, body } = await fetchText(endpoint, { headers: { Accept: "application/json" } }, fetchImpl);
+  const { status, body } = await fetchTextRetry(endpoint, { headers: { Accept: "application/json" } }, fetchImpl);
   if (status >= 400) {
     return { urls: [], error: `wayback CDX ${status}` };
   }

@@ -8,6 +8,7 @@ describe("email discovery", () => {
       "ops@app.crewai.com",
     ]);
     expect(extractEmails("background-image: url(icon@2x.png)", "crewai.com")).toEqual([]);
+    expect(extractEmails("Windows 22@crewai.com snippet", "crewai.com")).toEqual([]);
   });
 
   it("still parses mailto and json-ld on pages fingerprinting already fetched", () => {
@@ -36,11 +37,23 @@ describe("email discovery", () => {
       if (url.includes("hunter.io")) {
         return new Response(JSON.stringify({ data: { emails: [{ value: "jane@crewai.com" }, { value: "other@gmail.com" }] } }), { status: 200 });
       }
-      if (url.includes("api.github.com/search/commits")) {
-        return new Response(JSON.stringify({ items: [{ commit: { author: { email: "dev@crewai.com" } } }] }), { status: 200 });
+      if (url.includes("api.github.com/repos/") && url.includes("/commits")) {
+        return new Response(JSON.stringify([{ commit: { author: { email: "dev@crewai.com" } } }]), { status: 200 });
+      }
+      if (url.includes("api.github.com/orgs/") && url.includes("/repos")) {
+        return new Response(JSON.stringify([{ full_name: "crewAIInc/crewAI" }]), { status: 200 });
+      }
+      if (url.includes("api.github.com/users/") && url.includes("/repos")) {
+        return new Response("[]", { status: 200 });
+      }
+      if (url.includes("registry.npmjs.org")) {
+        return new Response(JSON.stringify({ author: { email: "packages@crewai.com" } }), { status: 200 });
+      }
+      if (url.includes("pypi.org")) {
+        return new Response(JSON.stringify({ info: { author_email: "pypi@crewai.com" } }), { status: 200 });
       }
       if (url.includes("api.github.com")) {
-        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+        return new Response("[]", { status: 404 });
       }
       if (url.includes("keyserver.ubuntu.com") || url.includes("pgp.mit.edu")) {
         return new Response("uid Jane Doe <pgp@crewai.com>", { status: 200 });
@@ -51,13 +64,10 @@ describe("email discovery", () => {
       if (url.includes("duckduckgo.com")) {
         return new Response("careers listing jobs@crewai.com", { status: 200 });
       }
-      if (url.includes("skymem.info")) {
-        return new Response("skymem result media@crewai.com", { status: 200 });
-      }
       if (url.includes("urlscan.io")) {
         return new Response(JSON.stringify({ results: [{ page: { url: "https://crewai.com" } }], emails: ["osint@crewai.com"] }), { status: 200 });
       }
-      if (url.includes("rdap.org")) {
+      if (url.includes("rdap.verisign.com") || url.includes("rdap.org")) {
         return new Response(JSON.stringify({ entities: [{ vcardArray: ["vcard", [["email", {}, "text", "admin@crewai.com"]]] }] }), { status: 200 });
       }
       return new Response("unexpected " + url, { status: 500 });
@@ -92,9 +102,10 @@ describe("email discovery", () => {
         "duckduckgo:jobs@crewai.com",
         "github:dev@crewai.com",
         "hunter:jane@crewai.com",
+        "npm:packages@crewai.com",
         "pgp:pgp@crewai.com",
+        "pypi:pypi@crewai.com",
         "rdap:admin@crewai.com",
-        "skymem:media@crewai.com",
         "urlscan:osint@crewai.com",
       ].sort(),
     );
