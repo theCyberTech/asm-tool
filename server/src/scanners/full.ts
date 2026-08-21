@@ -33,6 +33,20 @@ function scanHosts(store: Store, domain: string): string[] {
   return [domain, ...rest];
 }
 
+async function runIsolated(
+  store: Store,
+  moduleId: string,
+  domain: string,
+  log: ScanLogger,
+  deps: ScanDeps,
+): Promise<void> {
+  try {
+    await runModule(store, moduleId, domain, log, deps);
+  } catch (err) {
+    log.warn(`${moduleId} failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 export async function runModule(
   store: Store,
   moduleId: string,
@@ -66,11 +80,14 @@ export async function runModule(
       return;
     }
     case "urls": {
-      const urls = await enumerateUrls(domain, fetchImpl);
-      for (const url of urls) {
+      const result = await enumerateUrls(domain, fetchImpl);
+      if (result.error) {
+        log.warn(result.error);
+      }
+      for (const url of result.urls) {
         store.saveUrl(domain, url.url, url.source, url.category, url.interesting);
       }
-      log.info(`stored ${urls.length} URLs`);
+      log.info(`stored ${result.urls.length} URLs`);
       return;
     }
     case "certificates": {
@@ -191,19 +208,19 @@ export async function runModule(
       return;
     case "scan": {
       log.info("full scan: discover, then dns/urls, ports, and host checks");
-      await runModule(store, "discover", domain, log, deps);
+      await runIsolated(store, "discover", domain, log, deps);
       await Promise.all([
-        runModule(store, "dns", domain, log, deps),
-        runModule(store, "urls", domain, log, deps),
+        runIsolated(store, "dns", domain, log, deps),
+        runIsolated(store, "urls", domain, log, deps),
       ]);
-      await runModule(store, "portscan", domain, log, deps);
+      await runIsolated(store, "portscan", domain, log, deps);
       await Promise.all([
-        runModule(store, "certificates", domain, log, deps),
-        runModule(store, "fingerprint", domain, log, deps),
-        runModule(store, "apis", domain, log, deps),
-        runModule(store, "cloudstorage", domain, log, deps),
-        runModule(store, "takeover", domain, log, deps),
-        runModule(store, "emails", domain, log, deps),
+        runIsolated(store, "certificates", domain, log, deps),
+        runIsolated(store, "fingerprint", domain, log, deps),
+        runIsolated(store, "apis", domain, log, deps),
+        runIsolated(store, "cloudstorage", domain, log, deps),
+        runIsolated(store, "takeover", domain, log, deps),
+        runIsolated(store, "emails", domain, log, deps),
       ]);
       store.markScanned(domain);
       log.info(`full scan complete for ${domain}`);
