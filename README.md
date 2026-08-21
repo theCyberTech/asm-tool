@@ -127,8 +127,8 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 # Custom port
 ./asm.sh dashboard --port 3000
 
-# Non-loopback binds require a token:
-# ASM_DASHBOARD_TOKEN=secret ./asm.sh dashboard --host 0.0.0.0
+# Bind on all interfaces
+./asm.sh dashboard --host 0.0.0.0
 ```
 
 ### Reporting
