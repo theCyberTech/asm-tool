@@ -35,29 +35,11 @@ func TestServeSPAReturnsIndexForClientRoute(t *testing.T) {
 }
 
 func TestServeSPAServesBuiltAssets(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	ServeIndex(rec, req)
-	body := rec.Body.String()
-	start := strings.Index(body, `src="`)
-	if start < 0 {
-		t.Fatalf("index missing script src: %s", body)
-	}
-	start += len(`src="`)
-	end := strings.Index(body[start:], `"`)
-	if end < 0 {
-		t.Fatal("unterminated script src")
-	}
-	assetPath := body[start : start+end]
-	if !strings.HasPrefix(assetPath, "/assets/") {
-		t.Fatalf("script src = %q, want /assets/...", assetPath)
-	}
-
-	assetReq := httptest.NewRequest(http.MethodGet, assetPath, nil)
+	assetReq := httptest.NewRequest(http.MethodGet, "/assets/index.js", nil)
 	assetRec := httptest.NewRecorder()
 	ServeSPA(assetRec, assetReq)
 	if assetRec.Code != http.StatusOK {
-		t.Fatalf("%s status = %d, body = %s", assetPath, assetRec.Code, assetRec.Body.String())
+		t.Fatalf("/assets/index.js status = %d, body = %s", assetRec.Code, assetRec.Body.String())
 	}
 	if !strings.Contains(assetRec.Header().Get("Content-Type"), "javascript") && assetRec.Body.Len() < 1000 {
 		t.Fatalf("asset content-type = %q len=%d", assetRec.Header().Get("Content-Type"), assetRec.Body.Len())
@@ -73,7 +55,7 @@ func TestServeSPAMissingAssetIsNotFound(t *testing.T) {
 	}
 }
 
-func TestServeIndexUsesClassicScript(t *testing.T) {
+func TestServeIndexInlinesDashboardBundle(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	ServeIndex(rec, req)
@@ -81,14 +63,25 @@ func TestServeIndexUsesClassicScript(t *testing.T) {
 	if rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store", rec.Header().Get("Cache-Control"))
 	}
-	if strings.Contains(body, `type="module"`) {
-		t.Fatalf("index still uses type=module, body = %s", body)
+	if strings.Contains(body, `src="/assets/`) {
+		t.Fatalf("index still loads an external asset")
 	}
-	if strings.Contains(body, "crossorigin") {
-		t.Fatalf("index still uses crossorigin, body = %s", body)
+	if rec.Body.Len() < 10000 {
+		t.Fatalf("inlined dashboard HTML too small: %d", rec.Body.Len())
 	}
-	if !strings.Contains(body, `src="/assets/index.js"`) && !strings.Contains(body, `src="/assets/index-`) {
-		t.Fatalf("index missing dashboard script, body = %s", body)
+	if !strings.Contains(body, `id="root"`) {
+		t.Fatal("inlined index missing root mount")
+	}
+}
+
+func TestInlineDashboardScriptReplacesExternalSrc(t *testing.T) {
+	html := `<html><body><div id="root"></div><script defer src="/assets/index.js"></script></body></html>`
+	out := inlineDashboardScript(html, "window.ASM_OK=1;</script>throw 1")
+	if strings.Contains(out, `src="/assets/index.js"`) {
+		t.Fatalf("src not inlined: %s", out)
+	}
+	if !strings.Contains(out, `<\/script>throw 1`) {
+		t.Fatalf("script close not escaped: %s", out)
 	}
 }
 
