@@ -86,13 +86,15 @@ and in `README.md`. Notes below cover non-obvious environment behavior.
 - The `dashboard` command listens on `127.0.0.1:8080` by default. If 8080 is
   busy it auto-increments up to +100. Health check: `GET /health`; data APIs
   under `/api/*` (e.g. `/api/stats`). Run it via `./asm.sh dashboard`.
-- Cursor's preview tab only forwards IPv4 sockets visible in `/proc/net/tcp`.
-  Dual-stack `tcp` binds on Linux appear only in `/proc/net/tcp6`, so the
-  preview opens `http://127.0.0.1:8080` and gets `ERR_CONNECTION_REFUSED`
-  even though `curl` inside the VM works. The dashboard now binds `tcp4` for
-  IPv4 hosts. In this environment start it with `--host 0.0.0.0 --port 8080`
-  so the preview forwarder can see `0.0.0.0:8080`. The Desktop Chrome pane
-  can use `http://127.0.0.1:8080` either way.
+- Cursor's Ports panel can show 8080 as forwarded (green) while the **Preview**
+  tab still reports `ERR_CONNECTION_REFUSED` on `http://127.0.0.1:8080`. That
+  preview browser is not the VM loopback; Cloud Agent port forwarding is meant
+  for the local Cursor Agents Window (plug icon → open forwarded port). Inside
+  this VM, open the dashboard in the **Desktop** pane's Chrome
+  (`http://127.0.0.1:8080`), which shares the VM network. Bind with
+  `./asm.sh dashboard --host 0.0.0.0 --port 8080` and `tcp4` so the port is
+  detected (`/proc/net/tcp`). Do not use the IDE Preview tab as the primary
+  check.
 - Scans are restricted to `crewai.com` and its subdomains via
   `target.NormalizeScanTarget`; other domains are rejected. Use `crewai.com`
   for any scan/e2e testing (e.g. `./asm.sh discover crewai.com`).
