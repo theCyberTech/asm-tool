@@ -176,6 +176,35 @@ func TestFindAvailableAddrReturnsRequestedPortWhenFree(t *testing.T) {
 	}
 }
 
+func TestListenNetworkUsesTCP4ForIPv4Hosts(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "0.0.0.0", "localhost"} {
+		if got := listenNetwork(host); got != "tcp4" {
+			t.Fatalf("listenNetwork(%q) = %q, want tcp4", host, got)
+		}
+	}
+	for _, host := range []string{"::1", "[::1]", "::"} {
+		if got := listenNetwork(host); got != "tcp6" {
+			t.Fatalf("listenNetwork(%q) = %q, want tcp6", host, got)
+		}
+	}
+}
+
+func TestListenDashboardBindsIPv4(t *testing.T) {
+	ln, err := listenDashboard("127.0.0.1", 0)
+	if err != nil {
+		t.Fatalf("listenDashboard: %v", err)
+	}
+	defer ln.Close()
+
+	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("addr type %T, want *net.TCPAddr", ln.Addr())
+	}
+	if tcpAddr.IP.To4() == nil {
+		t.Fatalf("bound IP %v is not IPv4", tcpAddr.IP)
+	}
+}
+
 func TestFindAvailableAddrSkipsInUsePort(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
