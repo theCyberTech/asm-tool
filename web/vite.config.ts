@@ -6,12 +6,24 @@ import { dirname, resolve } from "node:path";
 const rootDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "strip-crossorigin",
+      transformIndexHtml: {
+        order: "post",
+        handler(html) {
+          return html.replace(/ crossorigin(="[^"]*")?/g, "");
+        },
+      },
+    },
+  ],
   base: "/",
   build: {
     outDir: resolve(rootDir, "../asm-go/internal/dashboard/webdist"),
     emptyOutDir: false,
     sourcemap: false,
+    modulePreload: false,
   },
   server: {
     port: 5173,

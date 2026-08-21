@@ -105,7 +105,7 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      newDashboardMux(deps, ops),
+		Handler:      withPreviewHeaders(newDashboardMux(deps, ops)),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -165,6 +165,20 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 
 	fmt.Println(labelStyle.Render("Server stopped"))
 	return nil
+}
+
+func withPreviewHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, X-ASM-Token")
+		w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func newDashboardMux(deps *Deps, ops *dashboardOps) *http.ServeMux {

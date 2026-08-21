@@ -23,6 +23,12 @@ func TestServeSPAReturnsIndex(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `id="root"`) {
 		t.Fatalf("SPA index missing root mount, body = %s", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), "CrewAI - ASM loading") {
+		t.Fatalf("SPA index missing visible fallback, body = %s", rec.Body.String())
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("ACA origin = %q", rec.Header().Get("Access-Control-Allow-Origin"))
+	}
 }
 
 func TestServeSPAReturnsIndexForClientRoute(t *testing.T) {
@@ -42,18 +48,12 @@ func TestServeSPAServesBuiltAssets(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ServeIndex(rec, req)
 	body := rec.Body.String()
-	start := strings.Index(body, `src="`)
-	if start < 0 {
-		t.Fatalf("index missing script src: %s", body)
+	assetPath, ok := jsAssetPath(body)
+	if !ok {
+		t.Fatalf("index missing hashed JS src: %s", body)
 	}
-	start += len(`src="`)
-	end := strings.Index(body[start:], `"`)
-	if end < 0 {
-		t.Fatal("unterminated script src")
-	}
-	assetPath := body[start : start+end]
-	if !strings.HasPrefix(assetPath, "/assets/") {
-		t.Fatalf("script src = %q, want /assets/...", assetPath)
+	if strings.Contains(body, " crossorigin") {
+		t.Fatalf("module script should not use crossorigin in preview browsers, body = %s", body)
 	}
 
 	assetReq := httptest.NewRequest(http.MethodGet, assetPath, nil)
@@ -86,4 +86,22 @@ func TestServeSPAKeepsPreviousHashedBundle(t *testing.T) {
 	if !strings.Contains(rec.Header().Get("Content-Type"), "javascript") && rec.Body.Len() < 1000 {
 		t.Fatalf("previous bundle content-type = %q len=%d", rec.Header().Get("Content-Type"), rec.Body.Len())
 	}
+}
+
+func jsAssetPath(body string) (string, bool) {
+	const prefix = `src="/assets/`
+	start := strings.Index(body, prefix)
+	if start < 0 {
+		return "", false
+	}
+	start += len(`src="`)
+	end := strings.Index(body[start:], `"`)
+	if end < 0 {
+		return "", false
+	}
+	path := body[start : start+end]
+	if !strings.HasPrefix(path, "/assets/") || !strings.HasSuffix(path, ".js") {
+		return "", false
+	}
+	return path, true
 }
