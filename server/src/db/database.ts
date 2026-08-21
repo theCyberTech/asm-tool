@@ -13,6 +13,7 @@ export function openDatabase(databasePath: string): DatabaseSync {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
+  db.exec("DROP TABLE IF EXISTS emails");
   return db;
 }
 
