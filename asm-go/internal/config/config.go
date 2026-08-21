@@ -100,10 +100,9 @@ type ScheduleConfig struct {
 }
 
 type DashboardConfig struct {
-	Host      string `mapstructure:"host"`
-	Port      int    `mapstructure:"port"`
-	EnableOps bool   `mapstructure:"enable_ops"`
-	Token     string `mapstructure:"token"`
+	Host  string `mapstructure:"host"`
+	Port  int    `mapstructure:"port"`
+	Token string `mapstructure:"token"`
 }
 
 // Default returns a Config with sensible defaults

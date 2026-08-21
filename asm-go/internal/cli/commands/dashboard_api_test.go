@@ -35,7 +35,6 @@ func testDashboardMux(t *testing.T) (*http.ServeMux, *database.Database) {
 	ops := newTestDashboardOps(t, makeScript(t, "echo ok\nexit 0\n"))
 	ops.defs = ops.operationDefinitions()
 	ops.actions = ops.operationOptions()
-	ops.enabled = true
 
 	cfg := config.Default()
 	cfg.DatabasePath = filepath.Join(t.TempDir(), "asm.db")

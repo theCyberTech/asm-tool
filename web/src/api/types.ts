@@ -224,7 +224,6 @@ export type RunRecord = {
 
 export type OperationsResponse = {
   status: string;
-  enabled: boolean;
   actions: OperationAction[];
   runs: RunRecord[];
   running_count: number;

@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOperations, startRun } from "../api/client";
 import type { OperationAction } from "../api/types";
 import { Layout } from "../components/Layout";
-import { ErrorAlert, LoadingState, WarningAlert } from "../components/Status";
+import { ErrorAlert, LoadingState } from "../components/Status";
 import { useApi } from "../hooks/useApi";
 import { formatDateTime, severityClass } from "../lib/format";
 
@@ -84,10 +84,6 @@ export function OperationsPage() {
       {formError ? <ErrorAlert message={formError} /> : null}
       {loading && !data ? <LoadingState label="Loading operations" /> : null}
 
-      {data && !data.enabled ? (
-        <WarningAlert message="Operations are disabled. Start the dashboard with --enable-ops to run scans from the UI." />
-      ) : null}
-
       {data ? (
         <div className="ops-grid">
           <div className="card">
@@ -118,7 +114,6 @@ export function OperationsPage() {
                     className="form-input"
                     value={action?.id ?? ""}
                     onChange={(event) => setActionId(event.target.value)}
-                    disabled={!data.enabled}
                   >
                     {data.actions.map((item) => (
                       <option key={item.id} value={item.id}>
@@ -141,9 +136,8 @@ export function OperationsPage() {
                   setNuclei={setNuclei}
                   verbose={verbose}
                   setVerbose={setVerbose}
-                  disabled={!data.enabled}
                 />
-                <button type="submit" className="btn btn-primary" disabled={!data.enabled || busy}>
+                <button type="submit" className="btn btn-primary" disabled={busy}>
                   {busy ? "Starting…" : "Start run"}
                 </button>
               </form>
@@ -205,7 +199,6 @@ function ActionFields({
   setNuclei,
   verbose,
   setVerbose,
-  disabled,
 }: {
   action?: OperationAction;
   target: string;
@@ -220,7 +213,6 @@ function ActionFields({
   setNuclei: (value: boolean) => void;
   verbose: boolean;
   setVerbose: (value: boolean) => void;
-  disabled: boolean;
 }) {
   if (!action) {
     return null;
@@ -237,14 +229,14 @@ function ActionFields({
             className="form-input"
             value={target}
             onChange={(event) => setTarget(event.target.value)}
-            disabled={disabled || allKnown}
+            disabled={allKnown}
             placeholder="example.com"
           />
         </div>
       ) : null}
       {action.supports_all_known ? (
         <label className="checkbox-row">
-          <input type="checkbox" checked={allKnown} onChange={(event) => setAllKnown(event.target.checked)} disabled={disabled} />
+          <input type="checkbox" checked={allKnown} onChange={(event) => setAllKnown(event.target.checked)} />
           All known domains
         </label>
       ) : null}
@@ -253,7 +245,7 @@ function ActionFields({
           <label className="form-label" htmlFor="ops-ports">
             Ports
           </label>
-          <input id="ops-ports" className="form-input" value={ports} onChange={(event) => setPorts(event.target.value)} disabled={disabled} placeholder="80,443,8080" />
+          <input id="ops-ports" className="form-input" value={ports} onChange={(event) => setPorts(event.target.value)} placeholder="80,443,8080" />
         </div>
       ) : null}
       {action.supports_output_format ? (
@@ -261,7 +253,7 @@ function ActionFields({
           <label className="form-label" htmlFor="ops-format">
             Output format
           </label>
-          <select id="ops-format" className="form-input" value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)} disabled={disabled}>
+          <select id="ops-format" className="form-input" value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)}>
             <option value="">None</option>
             <option value="json">JSON</option>
             <option value="markdown">Markdown</option>
@@ -271,12 +263,12 @@ function ActionFields({
       ) : null}
       {action.supports_nuclei ? (
         <label className="checkbox-row">
-          <input type="checkbox" checked={nuclei} onChange={(event) => setNuclei(event.target.checked)} disabled={disabled} />
+          <input type="checkbox" checked={nuclei} onChange={(event) => setNuclei(event.target.checked)} />
           Include Nuclei
         </label>
       ) : null}
       <label className="checkbox-row">
-        <input type="checkbox" checked={verbose} onChange={(event) => setVerbose(event.target.checked)} disabled={disabled} />
+        <input type="checkbox" checked={verbose} onChange={(event) => setVerbose(event.target.checked)} />
         Verbose
       </label>
     </>

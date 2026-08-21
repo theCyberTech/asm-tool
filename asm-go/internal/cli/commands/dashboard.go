@@ -19,17 +19,15 @@ import (
 )
 
 var (
-	dashboardPort      int
-	dashboardHost      string
-	dashboardEnableOps bool
-	dashboardOpsToken  string
+	dashboardPort     int
+	dashboardHost     string
+	dashboardOpsToken string
 )
 
 type dashboardOptions struct {
-	host      string
-	port      int
-	enableOps bool
-	token     string
+	host  string
+	port  int
+	token string
 }
 
 type statsAPIResponse struct {
@@ -43,7 +41,7 @@ func DashboardCmd(deps *Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dashboard",
 		Short: "Start the web dashboard server",
-		Long:  "Start an HTTP server that serves the ASM dashboard for visualizing attack surface data.",
+		Long:  "Start an HTTP server that serves the ASM dashboard and Operations scan runner.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts, err := resolveDashboardOptions(cmd, deps)
 			if err != nil {
@@ -55,7 +53,6 @@ func DashboardCmd(deps *Deps) *cobra.Command {
 
 	cmd.Flags().IntVarP(&dashboardPort, "port", "p", 8080, "port to listen on")
 	cmd.Flags().StringVar(&dashboardHost, "host", "127.0.0.1", "host to bind to")
-	cmd.Flags().BoolVar(&dashboardEnableOps, "enable-ops", false, "Enable the Operations page and run API (disabled by default)")
 	cmd.Flags().StringVar(&dashboardOpsToken, "ops-token", "", "Shared secret for Operations (ASM_DASHBOARD_TOKEN preferred)")
 
 	return cmd
@@ -63,10 +60,9 @@ func DashboardCmd(deps *Deps) *cobra.Command {
 
 func resolveDashboardOptions(cmd *cobra.Command, deps *Deps) (dashboardOptions, error) {
 	opts := dashboardOptions{
-		host:      dashboardHost,
-		port:      dashboardPort,
-		enableOps: dashboardEnableOps,
-		token:     dashboardOpsToken,
+		host:  dashboardHost,
+		port:  dashboardPort,
+		token: dashboardOpsToken,
 	}
 	if deps != nil && deps.Cfg != nil {
 		if !cmd.Flags().Changed("host") && deps.Cfg.Dashboard.Host != "" {
@@ -75,16 +71,13 @@ func resolveDashboardOptions(cmd *cobra.Command, deps *Deps) (dashboardOptions, 
 		if !cmd.Flags().Changed("port") && deps.Cfg.Dashboard.Port > 0 {
 			opts.port = deps.Cfg.Dashboard.Port
 		}
-		if !cmd.Flags().Changed("enable-ops") {
-			opts.enableOps = deps.Cfg.Dashboard.EnableOps
-		}
 		if !cmd.Flags().Changed("ops-token") && strings.TrimSpace(opts.token) == "" {
 			opts.token = deps.Cfg.Dashboard.Token
 		}
 	}
 	opts.token = strings.TrimSpace(opts.token)
 
-	if opts.enableOps && !isLoopbackHost(opts.host) && opts.token == "" {
+	if !isLoopbackHost(opts.host) && opts.token == "" {
 		return opts, fmt.Errorf("operations require a token when binding to %s; set ASM_DASHBOARD_TOKEN or --ops-token", opts.host)
 	}
 	return opts, nil
@@ -112,7 +105,6 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 	}
 
 	ops := newDashboardOps(deps)
-	ops.enabled = opts.enableOps
 	ops.token = opts.token
 
 	server := &http.Server{
@@ -140,12 +132,9 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 			labelStyle.Render("Note:"),
 			valueStyle.Render(fmt.Sprintf("Port %d was in use, using %s instead", opts.port, addr)))
 	}
-	opsStatus := "disabled"
-	if opts.enableOps {
-		opsStatus = "enabled"
-		if opts.token != "" {
-			opsStatus = "enabled (token required)"
-		}
+	opsStatus := "enabled"
+	if opts.token != "" {
+		opsStatus = "enabled (token required)"
 	}
 	fmt.Printf("  %s %s\n",
 		labelStyle.Render("Operations:"),

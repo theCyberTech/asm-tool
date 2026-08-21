@@ -39,7 +39,6 @@ type dashboardOps struct {
 	logPath    string
 	actions    []dashboard.OperationOption
 	defs       map[string]operationDefinition
-	enabled    bool
 	token      string
 }
 
@@ -116,14 +115,6 @@ func detectToolDirs(cwd string) (string, string) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-func (o *dashboardOps) requireEnabled(w http.ResponseWriter, r *http.Request) bool {
-	if o.enabled {
-		return true
-	}
-	http.Error(w, "operations are disabled; start the dashboard with --enable-ops", http.StatusForbidden)
-	return false
 }
 
 func (o *dashboardOps) authorize(w http.ResponseWriter, r *http.Request) bool {
@@ -362,7 +353,7 @@ func (o *dashboardOps) operationOptions() []dashboard.OperationOption {
 }
 
 func (o *dashboardOps) handleRunsPartial(w http.ResponseWriter, r *http.Request) {
-	if !o.requireEnabled(w, r) || !o.authorize(w, r) {
+	if !o.authorize(w, r) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -378,7 +369,7 @@ func (o *dashboardOps) handleOperationsJSON(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if o.enabled && !o.authorize(w, r) {
+	if !o.authorize(w, r) {
 		return
 	}
 	writeJSON(w, http.StatusOK, dashboard.OperationsJSON(o.pageData()))
@@ -390,7 +381,7 @@ func (o *dashboardOps) handleRunsJSON(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !o.requireEnabled(w, r) || !o.authorize(w, r) {
+	if !o.authorize(w, r) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -405,10 +396,6 @@ func (o *dashboardOps) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !o.requireEnabled(w, r) {
-		return
-	}
-
 	isJSON := strings.Contains(r.Header.Get("Content-Type"), "application/json")
 	if !isJSON {
 		if err := r.ParseForm(); err != nil {
@@ -482,7 +469,6 @@ func (o *dashboardOps) pageData() *dashboard.OperationsData {
 	}
 
 	return &dashboard.OperationsData{
-		Enabled:      o.enabled,
 		Actions:      o.actions,
 		Runs:         runs,
 		RunningCount: running,
