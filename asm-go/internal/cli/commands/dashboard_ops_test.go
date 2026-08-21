@@ -176,6 +176,20 @@ func TestFindAvailableAddrReturnsRequestedPortWhenFree(t *testing.T) {
 	}
 }
 
+func TestListenDashboardAcceptsIPv4(t *testing.T) {
+	ln, err := listenDashboard("127.0.0.1", 0)
+	if err != nil {
+		t.Fatalf("listenDashboard: %v", err)
+	}
+	defer ln.Close()
+
+	conn, err := net.Dial("tcp4", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("dial tcp4 %s: %v", ln.Addr(), err)
+	}
+	_ = conn.Close()
+}
+
 func TestFindAvailableAddrSkipsInUsePort(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

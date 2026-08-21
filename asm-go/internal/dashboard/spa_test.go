@@ -72,3 +72,34 @@ func TestServeSPAMissingAssetIsNotFound(t *testing.T) {
 		t.Fatalf("status = %d, want 404, body = %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestServeIndexUsesClassicScript(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	ServeIndex(rec, req)
+	body := rec.Body.String()
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", rec.Header().Get("Cache-Control"))
+	}
+	if strings.Contains(body, `type="module"`) {
+		t.Fatalf("index still uses type=module, body = %s", body)
+	}
+	if strings.Contains(body, "crossorigin") {
+		t.Fatalf("index still uses crossorigin, body = %s", body)
+	}
+	if !strings.Contains(body, `src="/assets/index.js"`) && !strings.Contains(body, `src="/assets/index-`) {
+		t.Fatalf("index missing dashboard script, body = %s", body)
+	}
+}
+
+func TestServeSPAAliasesHashedIndexJS(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/assets/index-staleCachedHash.js", nil)
+	rec := httptest.NewRecorder()
+	ServeSPA(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec.Body.Len() < 1000 {
+		t.Fatalf("aliased bundle too small: %d", rec.Body.Len())
+	}
+}

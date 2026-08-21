@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"unicode"
 )
 
 //go:embed all:webdist
@@ -35,6 +36,9 @@ func ServeSPA(w http.ResponseWriter, r *http.Request) {
 
 	rel := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 	if rel != "" && rel != "." && !strings.Contains(rel, "..") {
+		if serveDashboardJS(w, r, fsys, rel) {
+			return
+		}
 		if f, err := fsys.Open(rel); err == nil {
 			_ = f.Close()
 			http.FileServer(httpFS).ServeHTTP(w, r)
@@ -62,8 +66,68 @@ func ServeIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
+}
+
+func serveDashboardJS(w http.ResponseWriter, r *http.Request, fsys fs.FS, rel string) bool {
+	if rel != "assets/index.js" && !hashedIndexJSRequest(rel) {
+		return false
+	}
+	fallback, ok := currentIndexJS(fsys)
+	if !ok {
+		return false
+	}
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeFileFS(w, r, fsys, fallback)
+	return true
+}
+
+func currentIndexJS(fsys fs.FS) (string, bool) {
+	if f, err := fsys.Open("assets/index.js"); err == nil {
+		_ = f.Close()
+		return "assets/index.js", true
+	}
+	data, err := fs.ReadFile(fsys, "index.html")
+	if err != nil {
+		return "", false
+	}
+	html := string(data)
+	for {
+		idx := strings.Index(html, "/assets/")
+		if idx < 0 {
+			return "", false
+		}
+		rest := html[idx+1:]
+		end := strings.IndexAny(rest, `"' >`)
+		if end > 0 {
+			rel := rest[:end]
+			if strings.HasPrefix(rel, "assets/index") && strings.HasSuffix(rel, ".js") {
+				if f, err := fsys.Open(rel); err == nil {
+					_ = f.Close()
+					return rel, true
+				}
+			}
+		}
+		html = html[idx+1:]
+	}
+}
+
+func hashedIndexJSRequest(rel string) bool {
+	if !strings.HasPrefix(rel, "assets/index-") || !strings.HasSuffix(rel, ".js") {
+		return false
+	}
+	name := strings.TrimSuffix(strings.TrimPrefix(rel, "assets/index-"), ".js")
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func looksLikeStaticAsset(rel string) bool {
