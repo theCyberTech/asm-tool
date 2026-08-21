@@ -22,7 +22,6 @@ export function Layout({ activePage, stats, findings, runningCount, children }: 
       certificates: "Certificates",
       urls: "URLs",
       apis: "APIs",
-      emails: "Emails",
       cloud: "Cloud Storage",
       findings: "Findings",
       takeovers: "Takeovers",
@@ -113,7 +112,6 @@ function Sidebar({
     { to: "/certificates", page: "certificates", label: "Certificates", badge: stats?.certificates, icon: lockIcon },
     { to: "/urls", page: "urls", label: "URLs", badge: stats?.urls, icon: linkIcon },
     { to: "/apis", page: "apis", label: "APIs", badge: stats?.apis, icon: fileIcon },
-    { to: "/emails", page: "emails", label: "Emails", badge: stats?.emails, icon: mailIcon },
     { to: "/cloud", page: "cloud", label: "Cloud Storage", badge: stats?.cloud_buckets, icon: cloudIcon },
   ];
 
@@ -203,13 +201,6 @@ const fileIcon = (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
     <polyline points="14 2 14 8 20 8" />
-  </svg>
-);
-
-const mailIcon = (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-    <polyline points="22,6 12,13 2,6" />
   </svg>
 );
 

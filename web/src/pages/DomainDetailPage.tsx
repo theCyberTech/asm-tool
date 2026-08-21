@@ -19,7 +19,6 @@ const MODULES: Array<{ kind: DomainAssetKind; label: string; countKey: keyof imp
   { kind: "vulnerabilities", label: "Vulnerabilities", countKey: "vuln_count" },
   { kind: "urls", label: "URLs", countKey: "url_count" },
   { kind: "apis", label: "APIs", countKey: "api_count" },
-  { kind: "emails", label: "Emails", countKey: "email_count" },
   { kind: "cloud", label: "Cloud Storage", countKey: "cloud_count" },
   { kind: "takeovers", label: "Takeovers", countKey: "takeover_count" },
 ];

@@ -82,12 +82,6 @@ export function domainAssetColumns(kind: DomainAssetKind): Array<Column<Record<s
         col("title", "Title"),
         col("version", "Version"),
       ];
-    case "emails":
-      return [
-        col("address", "Address"),
-        col("source", "Source"),
-        col("discovered_at", "Discovered", { value: (row) => formatDate(text(row.discovered_at)) }),
-      ];
     case "cloud":
       return [
         col("provider", "Provider"),

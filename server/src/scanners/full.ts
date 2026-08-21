@@ -3,7 +3,6 @@ import { discoverApis } from "./apis.ts";
 import { checkCertificate } from "./certificates.ts";
 import { probeCloudBuckets } from "./cloud.ts";
 import { queryDns } from "./dns.ts";
-import { enumerateEmails, extractFromHtml } from "./emails.ts";
 import { findingsFromHeaders } from "./findings.ts";
 import { scanPorts } from "./ports.ts";
 import { enumerateSubdomains } from "./subdomains.ts";
@@ -138,9 +137,6 @@ export async function runModule(
           for (const finding of findingsFromHeaders(host, tech.headers)) {
             store.saveFinding(finding);
           }
-          for (const found of extractFromHtml(tech.body, domain)) {
-            store.saveEmail(domain, found.address, found.source);
-          }
           log.info(`${host}: ${tech.statusCode} ${tech.technologies || "no tech"}`);
         } catch (err) {
           log.warn(`${host}: ${err instanceof Error ? err.message : String(err)}`);
@@ -160,17 +156,6 @@ export async function runModule(
         }
       }
       log.info(`found ${count} API endpoints`);
-      return;
-    }
-    case "emails": {
-      const result = await enumerateEmails(domain, { fetchImpl });
-      for (const err of result.errors) {
-        log.warn(err);
-      }
-      for (const found of result.emails) {
-        store.saveEmail(domain, found.address, found.source);
-      }
-      log.info(`stored ${result.emails.length} emails`);
       return;
     }
     case "cloudstorage": {
@@ -220,7 +205,6 @@ export async function runModule(
         runIsolated(store, "apis", domain, log, deps),
         runIsolated(store, "cloudstorage", domain, log, deps),
         runIsolated(store, "takeover", domain, log, deps),
-        runIsolated(store, "emails", domain, log, deps),
       ]);
       store.markScanned(domain);
       log.info(`full scan complete for ${domain}`);

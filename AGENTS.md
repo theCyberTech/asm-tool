@@ -4,7 +4,7 @@
 
 ASM Tool is a TypeScript web app for attack surface management. It monitors
 crewai.com (and its subdomains) for subdomains, open ports, certificates,
-technologies, DNS records, URLs, APIs, emails, cloud buckets, and takeover
+technologies, DNS records, URLs, APIs, cloud buckets, and takeover
 risks. The React UI talks to a Node/Hono backend that runs scans in-process
 and stores results in SQLite.
 

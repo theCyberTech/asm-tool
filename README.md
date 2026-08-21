@@ -1,6 +1,6 @@
 # ASM Tool
 
-A local-first **web** attack surface management app. It monitors **crewai.com** (and its subdomains) for subdomains, open ports, certificates, technologies, DNS records, URLs, APIs, emails, cloud buckets, and takeover risks.
+A local-first **web** attack surface management app. It monitors **crewai.com** (and its subdomains) for subdomains, open ports, certificates, technologies, DNS records, URLs, APIs, cloud buckets, and takeover risks.
 
 The product is a TypeScript frontend and TypeScript backend. Open the UI, start a scan from Operations, and browse results in the dashboard.
 
@@ -16,7 +16,7 @@ The product is a TypeScript frontend and TypeScript backend. Open the UI, start 
 - **Technology Fingerprinting** — Headers, titles, and common stacks
 - **DNS Monitoring** — A, AAAA, MX, NS, TXT, SOA, CAA
 - **Subdomain Takeover Detection** — CNAME fingerprint checks
-- **Email & Cloud Enumeration** — Emails from HTTP bodies and S3 name probes
+- **Cloud Enumeration** — S3 name probes
 - **Header findings** — Missing HSTS/CSP and similar misconfigurations
 - **Dashboard** — TypeScript React UI served by the TypeScript backend
 

@@ -86,6 +86,27 @@ describe("api", () => {
     const body = (await response.json()) as { actions: Array<{ id: string }> };
     expect(body.actions[0]?.id).toBe("scan");
     expect(body.actions.some((item) => item.id === "status")).toBe(false);
+    expect(body.actions.some((item) => item.id === "emails")).toBe(false);
+  });
+
+  it("rejects email enumeration and hides email assets", async () => {
+    const store = new Store(openDatabase(":memory:"));
+    store.ensureDomain("crewai.com");
+    const app = createApp(store, testConfig());
+
+    const started = await app.request("/api/runs/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "emails", target: "crewai.com" }),
+    });
+    expect(started.status).toBe(400);
+
+    const assets = await app.request("/api/assets/emails");
+    expect(assets.status).toBe(404);
+
+    const overview = await app.request("/api/overview");
+    const body = (await overview.json()) as { stats: Record<string, unknown> };
+    expect(body.stats).not.toHaveProperty("emails");
   });
 
   it("streams job logs while a run is still in progress", async () => {

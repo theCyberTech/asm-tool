@@ -23,7 +23,6 @@ export const ACTIONS: OperationAction[] = [
   { id: "takeover", label: "Takeover check", requires_target: true, supports_all_known: true, supports_ports: false, supports_output_format: false, supports_nuclei: false },
   { id: "fingerprint", label: "Fingerprint", requires_target: true, supports_all_known: true, supports_ports: false, supports_output_format: false, supports_nuclei: false },
   { id: "apis", label: "API discovery", requires_target: true, supports_all_known: true, supports_ports: false, supports_output_format: false, supports_nuclei: false },
-  { id: "emails", label: "Email enumeration", requires_target: true, supports_all_known: true, supports_ports: false, supports_output_format: false, supports_nuclei: false },
   { id: "cloudstorage", label: "Cloud storage", requires_target: true, supports_all_known: true, supports_ports: false, supports_output_format: false, supports_nuclei: false },
   { id: "portscan", label: "Port scan", requires_target: true, supports_all_known: true, supports_ports: true, supports_output_format: false, supports_nuclei: false },
   { id: "nuclei", label: "Nuclei scan", requires_target: true, supports_all_known: true, supports_ports: false, supports_output_format: false, supports_nuclei: false },
