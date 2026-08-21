@@ -15,7 +15,6 @@ export type OperationAction = {
 };
 
 export const ACTIONS: OperationAction[] = [
-  { id: "status", label: "Status", requires_target: false, supports_all_known: false, supports_ports: false, supports_output_format: false, supports_nuclei: false },
   { id: "scan", label: "Full scan", requires_target: true, supports_all_known: false, supports_ports: false, supports_output_format: true, supports_nuclei: true },
   { id: "discover", label: "Discover subdomains", requires_target: true, supports_all_known: true, supports_ports: false, supports_output_format: false, supports_nuclei: false },
   { id: "dns", label: "DNS check", requires_target: true, supports_all_known: true, supports_ports: false, supports_output_format: false, supports_nuclei: false },
@@ -100,9 +99,21 @@ export class JobRunner {
   private async execute(id: number, action: string, targets: string[], ports: number[]): Promise<void> {
     const logs: string[] = [];
     const warnings: string[] = [];
+    const flush = () => {
+      this.store.updateRun(id, {
+        stdout: logs.join("\n"),
+        stderr: warnings.join("\n"),
+      });
+    };
     const log = {
-      info: (message: string) => logs.push(message),
-      warn: (message: string) => warnings.push(message),
+      info: (message: string) => {
+        logs.push(message);
+        flush();
+      },
+      warn: (message: string) => {
+        warnings.push(message);
+        flush();
+      },
     };
     try {
       for (const target of targets) {

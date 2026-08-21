@@ -78,12 +78,73 @@ describe("api", () => {
     expect(finished.status).toBe("succeeded");
     expect(store.listSubdomains("crewai.com").map((row) => row.subdomain)).toContain("app.crewai.com");
   });
+
+  it("lists full scan as the default operations action", async () => {
+    const store = new Store(openDatabase(":memory:"));
+    const app = createApp(store, testConfig());
+    const response = await app.request("/api/operations");
+    const body = (await response.json()) as { actions: Array<{ id: string }> };
+    expect(body.actions[0]?.id).toBe("scan");
+    expect(body.actions.some((item) => item.id === "status")).toBe(false);
+  });
+
+  it("streams job logs while a run is still in progress", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const store = new Store(openDatabase(":memory:"));
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("certspotter")) {
+        await gate;
+        return new Response(JSON.stringify([{ dns_names: ["app.crewai.com"] }]), { status: 200 });
+      }
+      if (url.includes("hackertarget")) {
+        return new Response("crewai.com,1.1.1.1\n", { status: 200 });
+      }
+      if (url.includes("crt.sh")) {
+        return new Response("[]", { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+    const app = createApp(store, testConfig(), fetchImpl);
+    const started = await app.request("/api/runs/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "discover", target: "crewai.com" }),
+    });
+    expect(started.status).toBe(200);
+    const payload = (await started.json()) as { run: { id: number } };
+
+    let seen = "";
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const ops = await app.request("/api/operations");
+      const opsBody = (await ops.json()) as { runs: Array<{ id: number; status: string; stdout: string }> };
+      const run = opsBody.runs.find((item) => item.id === payload.run.id);
+      if (run?.stdout.includes("running discover on crewai.com")) {
+        expect(run.status).toBe("running");
+        seen = run.stdout;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(seen).toContain("running discover on crewai.com");
+    expect(seen).toContain("discover: starting for crewai.com");
+
+    release();
+    const finished = await waitForRun(app, payload.run.id);
+    expect(finished.status).toBe("succeeded");
+    expect(finished.stdout).toContain("found 2 subdomains");
+  });
 });
 
 async function waitForRun(app: ReturnType<typeof createApp>, id: number) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     const ops = await app.request("/api/operations");
-    const opsBody = (await ops.json()) as { runs: Array<{ id: number; status: string; action: string }> };
+    const opsBody = (await ops.json()) as {
+      runs: Array<{ id: number; status: string; action: string; stdout: string }>;
+    };
     const run = opsBody.runs.find((item) => item.id === id);
     if (run && run.status !== "running") {
       return run;
