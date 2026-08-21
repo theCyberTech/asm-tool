@@ -318,15 +318,21 @@ func TestDashboardOpsOmitsBuildAndTestActions(t *testing.T) {
 	}
 }
 
-func TestResolveDashboardOptionsRequiresTokenOffLoopback(t *testing.T) {
+func TestResolveDashboardOptionsAllowsOffLoopbackWithoutToken(t *testing.T) {
 	deps := &Deps{Cfg: config.Default()}
 	cmd := DashboardCmd(deps)
 	if err := cmd.ParseFlags([]string{"--host", "0.0.0.0"}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
-	_, err := resolveDashboardOptions(cmd, deps)
-	if err == nil {
-		t.Fatal("expected token requirement when binding to 0.0.0.0")
+	opts, err := resolveDashboardOptions(cmd, deps)
+	if err != nil {
+		t.Fatalf("resolveDashboardOptions: %v", err)
+	}
+	if opts.host != "0.0.0.0" {
+		t.Fatalf("host = %q, want 0.0.0.0", opts.host)
+	}
+	if opts.token != "" {
+		t.Fatalf("token = %q, want empty", opts.token)
 	}
 }
 

@@ -54,5 +54,5 @@ schedule:
 dashboard:
   host: "127.0.0.1"
   port: 8080
-  # Prefer ASM_DASHBOARD_TOKEN over a file value. Required when host is not loopback.
+  # Optional Operations token. Prefer ASM_DASHBOARD_TOKEN over a file value.
   # token: ""
