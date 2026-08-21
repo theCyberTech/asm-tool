@@ -122,7 +122,6 @@ func TestDashboardOpsStartHandlerReturnsRunsPartial(t *testing.T) {
 	ops := newTestDashboardOps(t, script)
 	ops.defs = ops.operationDefinitions()
 	ops.actions = ops.operationOptions()
-	ops.enabled = true
 
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/start", strings.NewReader("action=status"))
 	req.Host = "127.0.0.1:8080"
@@ -208,9 +207,10 @@ func TestDashboardOverviewServesSPA(t *testing.T) {
 	}
 }
 
-func TestDashboardOpsStartHandlerDisabledByDefault(t *testing.T) {
-	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
+func TestDashboardOpsStartHandlerAvailableByDefault(t *testing.T) {
+	ops := newTestDashboardOps(t, makeScript(t, "echo ok\nexit 0\n"))
 	ops.defs = ops.operationDefinitions()
+	ops.actions = ops.operationOptions()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/start", strings.NewReader("action=status"))
 	req.Host = "127.0.0.1:8080"
@@ -220,15 +220,15 @@ func TestDashboardOpsStartHandlerDisabledByDefault(t *testing.T) {
 
 	ops.handleStartRun(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403, body = %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
 	}
+	waitForRunIdle(t, ops)
 }
 
 func TestDashboardOpsStartHandlerRejectsCrossOrigin(t *testing.T) {
 	ops := newTestDashboardOps(t, makeScript(t, "exit 0\n"))
 	ops.defs = ops.operationDefinitions()
-	ops.enabled = true
 
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/start", strings.NewReader("action=status"))
 	req.Host = "127.0.0.1:8080"
@@ -247,7 +247,6 @@ func TestDashboardOpsStartHandlerRequiresToken(t *testing.T) {
 	ops := newTestDashboardOps(t, makeScript(t, "echo ok\nexit 0\n"))
 	ops.defs = ops.operationDefinitions()
 	ops.actions = ops.operationOptions()
-	ops.enabled = true
 	ops.token = "secret-token"
 
 	unauth := httptest.NewRequest(http.MethodPost, "/api/runs/start", strings.NewReader("action=status"))
@@ -322,12 +321,12 @@ func TestDashboardOpsOmitsBuildAndTestActions(t *testing.T) {
 func TestResolveDashboardOptionsRequiresTokenOffLoopback(t *testing.T) {
 	deps := &Deps{Cfg: config.Default()}
 	cmd := DashboardCmd(deps)
-	if err := cmd.ParseFlags([]string{"--host", "0.0.0.0", "--enable-ops"}); err != nil {
+	if err := cmd.ParseFlags([]string{"--host", "0.0.0.0"}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
 	_, err := resolveDashboardOptions(cmd, deps)
 	if err == nil {
-		t.Fatal("expected token requirement when enabling ops on 0.0.0.0")
+		t.Fatal("expected token requirement when binding to 0.0.0.0")
 	}
 }
 

@@ -79,7 +79,7 @@
         <p class="page-description">Run and monitor ASM scans from this host</p>
     </div>
     <div class="flex gap-sm">
-        {{if and .Operations .Operations.Enabled}}
+        {{if .Operations}}
         <button class="btn btn-secondary" hx-get="/partials/runs" hx-target="#runs-panel" hx-swap="outerHTML">
             Refresh
             {{template "loading-indicator" .}}
@@ -89,16 +89,6 @@
 </div>
 
 {{with .Operations}}
-{{if not .Enabled}}
-<div class="card">
-    <div class="card-body">
-        <h3>Operations are disabled</h3>
-        <p>The dashboard does not start scans or other commands unless you opt in.</p>
-        <p>Enable with <span class="text-mono">./asm.sh dashboard --enable-ops</span>.</p>
-        <p>Binding outside loopback also requires <span class="text-mono">ASM_DASHBOARD_TOKEN</span> or <span class="text-mono">--ops-token</span>.</p>
-    </div>
-</div>
-{{else}}
 <div class="stats-grid ops-stats">
     <div class="stat-card">
         <div class="stat-label">Running</div>
@@ -200,7 +190,6 @@
         {{template "runs-panel" $}}
     </div>
 </div>
-{{end}}
 {{end}}
 {{end}}
 
