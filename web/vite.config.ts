@@ -13,7 +13,13 @@ export default defineConfig({
       transformIndexHtml: {
         order: "post",
         handler(html) {
-          return html.replace(/ crossorigin(="[^"]*")?/g, "");
+          let out = html.replace(/ crossorigin(="[^"]*")?/g, "").replace(/\s+type="module"/g, "");
+          const match = out.match(/<script src="(\/assets\/[^"]+\.js)"><\/script>/);
+          if (match) {
+            out = out.replace(match[0], "");
+            out = out.replace("</body>", `    <script defer src="${match[1]}"></script>\n  </body>`);
+          }
+          return out;
         },
       },
     },
@@ -24,6 +30,16 @@ export default defineConfig({
     emptyOutDir: false,
     sourcemap: false,
     modulePreload: false,
+    rollupOptions: {
+      output: {
+        format: "iife",
+        name: "ASMDashboard",
+        inlineDynamicImports: true,
+        entryFileNames: "assets/index.js",
+        chunkFileNames: "assets/index.js",
+        assetFileNames: "assets/[name][extname]",
+      },
+    },
   },
   server: {
     port: 5173,

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -95,10 +96,11 @@ func isLoopbackHost(host string) bool {
 }
 
 func runDashboard(deps *Deps, opts dashboardOptions) error {
-	addr, err := findAvailableAddr(opts.host, opts.port)
+	ln, err := listenDashboard(opts.host, opts.port)
 	if err != nil {
 		return err
 	}
+	addr := ln.Addr().String()
 
 	ops := newDashboardOps(deps)
 	ops.token = opts.token
@@ -114,7 +116,7 @@ func runDashboard(deps *Deps, opts dashboardOptions) error {
 	serverErrors := make(chan error, 1)
 
 	go func() {
-		serverErrors <- server.ListenAndServe()
+		serverErrors <- server.Serve(ln)
 	}()
 
 	fmt.Println()
@@ -172,7 +174,6 @@ func withPreviewHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, X-ASM-Token")
-		w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -198,20 +199,30 @@ func newDashboardMux(deps *Deps, ops *dashboardOps) *http.ServeMux {
 	return mux
 }
 
+// listenDashboard binds an IPv4 listener so Cursor port-forwarding can see 0.0.0.0:port.
+func listenDashboard(host string, port int) (net.Listener, error) {
+	if port == 0 {
+		return net.Listen("tcp4", net.JoinHostPort(host, "0"))
+	}
+	for p := port; p <= port+100; p++ {
+		ln, err := net.Listen("tcp4", net.JoinHostPort(host, strconv.Itoa(p)))
+		if err == nil {
+			return ln, nil
+		}
+	}
+	return nil, fmt.Errorf("no available port found starting from %d", port)
+}
+
 // findAvailableAddr returns the address for the requested host and port.
 // If the requested port is already in use, it scans upward for the next
 // available port.
 func findAvailableAddr(host string, port int) (string, error) {
-	for p := port; p <= port+100; p++ {
-		addr := fmt.Sprintf("%s:%d", host, p)
-		ln, err := net.Listen("tcp", addr)
-		if err != nil {
-			continue
-		}
-		ln.Close()
-		return addr, nil
+	ln, err := listenDashboard(host, port)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("no available port found starting from %d", port)
+	defer ln.Close()
+	return ln.Addr().String(), nil
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {

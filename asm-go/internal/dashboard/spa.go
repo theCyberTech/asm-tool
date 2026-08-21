@@ -74,7 +74,6 @@ func ServeIndex(w http.ResponseWriter, r *http.Request) {
 
 func writePreviewHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
 }
 
 func looksLikeStaticAsset(rel string) bool {
