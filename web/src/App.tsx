@@ -12,6 +12,7 @@ export function App() {
       <Route path="/domains" element={<DomainsPage />} />
       <Route path="/domains/:name" element={<DomainDetailPage />} />
       <Route path="/operations" element={<OperationsPage />} />
+      <Route path="/emails" element={<Navigate to="/" replace />} />
       <Route path="/:kind" element={<AssetListPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -5,7 +5,6 @@ export type Stats = {
   certificates: number;
   urls: number;
   apis: number;
-  emails: number;
   cloud_buckets: number;
   takeovers: number;
 };
@@ -64,7 +63,6 @@ export type DomainDetailStats = {
   vuln_count: number;
   url_count: number;
   api_count: number;
-  email_count: number;
   cloud_count: number;
   takeover_count: number;
 };
@@ -140,12 +138,6 @@ export type APIEndpoint = {
   discovered_at: string;
 };
 
-export type Email = {
-  address: string;
-  source: string;
-  discovered_at: string;
-};
-
 export type CloudStorage = {
   provider: string;
   bucket_name: string;
@@ -180,7 +172,6 @@ export type DomainDetail = {
   findings: Finding[];
   urls: DiscoveredURL[];
   apis: APIEndpoint[];
-  emails: Email[];
   cloud_storage: CloudStorage[];
   takeovers: Takeover[];
   change_events: ChangeEvent[];
@@ -255,7 +246,6 @@ export type AssetKind =
   | "certificates"
   | "urls"
   | "apis"
-  | "emails"
   | "cloud"
   | "findings"
   | "takeovers";

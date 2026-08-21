@@ -12,7 +12,6 @@ const ASSET_TITLES: Record<string, string> = {
   certificates: "Certificates",
   urls: "URLs",
   apis: "API Endpoints",
-  emails: "Email Addresses",
   cloud: "Cloud Storage",
   findings: "Findings",
   takeovers: "Takeovers",
@@ -48,8 +47,6 @@ function domainAssets(store: Store, domain: string, kind: string): unknown[] {
       return store.listUrls(domain);
     case "apis":
       return store.listApis(domain);
-    case "emails":
-      return store.listEmails(domain);
     case "cloud":
       return store.listCloud(domain);
     case "takeovers":
@@ -71,8 +68,6 @@ function globalAssets(store: Store, kind: string): unknown[] {
       return store.listUrls();
     case "apis":
       return store.listApis();
-    case "emails":
-      return store.listEmails();
     case "cloud":
       return store.listCloud();
     case "findings":
@@ -186,7 +181,6 @@ export function createApp(store: Store, config: AppConfig, fetchImpl: typeof fet
       findings: store.listFindings(domain),
       urls: store.listUrls(domain),
       apis: store.listApis(domain),
-      emails: store.listEmails(domain),
       cloud_storage: store.listCloud(domain),
       takeovers: store.listTakeovers(domain),
       change_events: store.getChangeEvents(domain, 20),

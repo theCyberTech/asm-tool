@@ -3,7 +3,6 @@ import { discoverApis } from "./apis.ts";
 import { checkCertificate } from "./certificates.ts";
 import { probeCloudBuckets } from "./cloud.ts";
 import { queryDns } from "./dns.ts";
-import { extractEmails } from "./emails.ts";
 import { findingsFromHeaders } from "./findings.ts";
 import { scanPorts } from "./ports.ts";
 import { enumerateSubdomains } from "./subdomains.ts";
@@ -31,6 +30,20 @@ function scanHosts(store: Store, domain: string): string[] {
   }
   const rest = hosts.filter((host) => host !== domain).slice(0, HOST_SCAN_LIMIT - 1);
   return [domain, ...rest];
+}
+
+async function runIsolated(
+  store: Store,
+  moduleId: string,
+  domain: string,
+  log: ScanLogger,
+  deps: ScanDeps,
+): Promise<void> {
+  try {
+    await runModule(store, moduleId, domain, log, deps);
+  } catch (err) {
+    log.warn(`${moduleId} failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export async function runModule(
@@ -66,11 +79,14 @@ export async function runModule(
       return;
     }
     case "urls": {
-      const urls = await enumerateUrls(domain, fetchImpl);
-      for (const url of urls) {
+      const result = await enumerateUrls(domain, fetchImpl);
+      if (result.error) {
+        log.warn(result.error);
+      }
+      for (const url of result.urls) {
         store.saveUrl(domain, url.url, url.source, url.category, url.interesting);
       }
-      log.info(`stored ${urls.length} URLs`);
+      log.info(`stored ${result.urls.length} URLs`);
       return;
     }
     case "certificates": {
@@ -121,14 +137,12 @@ export async function runModule(
           for (const finding of findingsFromHeaders(host, tech.headers)) {
             store.saveFinding(finding);
           }
-          for (const email of extractEmails(tech.body, domain)) {
-            store.saveEmail(domain, email, "http");
-          }
           log.info(`${host}: ${tech.statusCode} ${tech.technologies || "no tech"}`);
         } catch (err) {
           log.warn(`${host}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      log.info("fingerprint complete");
       return;
     }
     case "apis": {
@@ -142,23 +156,6 @@ export async function runModule(
         }
       }
       log.info(`found ${count} API endpoints`);
-      return;
-    }
-    case "emails": {
-      const hosts = scanHosts(store, domain);
-      let count = 0;
-      for (const host of hosts) {
-        try {
-          const tech = await fingerprintHost(host, fetchImpl);
-          for (const email of extractEmails(tech.body, domain)) {
-            store.saveEmail(domain, email, "http");
-            count += 1;
-          }
-        } catch (err) {
-          log.warn(`${host}: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-      log.info(`stored ${count} emails`);
       return;
     }
     case "cloudstorage": {
@@ -196,18 +193,18 @@ export async function runModule(
       return;
     case "scan": {
       log.info("full scan: discover, then dns/urls, ports, and host checks");
-      await runModule(store, "discover", domain, log, deps);
+      await runIsolated(store, "discover", domain, log, deps);
       await Promise.all([
-        runModule(store, "dns", domain, log, deps),
-        runModule(store, "urls", domain, log, deps),
+        runIsolated(store, "dns", domain, log, deps),
+        runIsolated(store, "urls", domain, log, deps),
       ]);
-      await runModule(store, "portscan", domain, log, deps);
+      await runIsolated(store, "portscan", domain, log, deps);
       await Promise.all([
-        runModule(store, "certificates", domain, log, deps),
-        runModule(store, "fingerprint", domain, log, deps),
-        runModule(store, "apis", domain, log, deps),
-        runModule(store, "cloudstorage", domain, log, deps),
-        runModule(store, "takeover", domain, log, deps),
+        runIsolated(store, "certificates", domain, log, deps),
+        runIsolated(store, "fingerprint", domain, log, deps),
+        runIsolated(store, "apis", domain, log, deps),
+        runIsolated(store, "cloudstorage", domain, log, deps),
+        runIsolated(store, "takeover", domain, log, deps),
       ]);
       store.markScanned(domain);
       log.info(`full scan complete for ${domain}`);

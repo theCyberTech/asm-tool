@@ -1,16 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { extractEmails } from "./emails.ts";
 import { findingsFromHeaders } from "./findings.ts";
 import { enumerateSubdomains } from "./subdomains.ts";
+import { enumerateUrls } from "./urls.ts";
 
 describe("scanners", () => {
-  it("extracts in-scope emails", () => {
-    expect(extractEmails("Contact us@crewai.com and other@gmail.com and ops@app.crewai.com", "crewai.com")).toEqual([
-      "us@crewai.com",
-      "ops@app.crewai.com",
-    ]);
-  });
-
   it("flags missing security headers", () => {
     const findings = findingsFromHeaders("crewai.com", { server: "nginx" });
     expect(findings.some((item) => item.templateId === "missing-hsts")).toBe(true);
@@ -33,5 +26,12 @@ describe("scanners", () => {
     const result = await enumerateSubdomains("crewai.com", fetchImpl);
     expect(result.subdomains).toEqual(["app.crewai.com", "crewai.com", "docs.crewai.com", "www.crewai.com"]);
     expect(result.errors).toEqual([]);
+  });
+
+  it("treats Wayback rate limits as an empty URL set instead of failing", async () => {
+    const fetchImpl: typeof fetch = async () => new Response("Slow down", { status: 429 });
+    const result = await enumerateUrls("crewai.com", fetchImpl);
+    expect(result.urls).toEqual([]);
+    expect(result.error).toBe("wayback CDX 429");
   });
 });

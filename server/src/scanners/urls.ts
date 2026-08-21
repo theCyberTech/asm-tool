@@ -1,4 +1,4 @@
-import { fetchJSON } from "../lib/http.ts";
+import { fetchTextRetry } from "../lib/http.ts";
 
 const INTERESTING = /(\.git|backup|config|\.env|admin|api|swagger|graphql|wp-login|phpinfo)/i;
 
@@ -9,6 +9,11 @@ export type UrlRecord = {
   interesting: boolean;
 };
 
+export type UrlEnumResult = {
+  urls: UrlRecord[];
+  error?: string;
+};
+
 function categorize(url: string): string {
   if (/\/api\/|graphql|swagger|openapi/i.test(url)) return "api";
   if (/\.js(\?|$)/i.test(url)) return "js";
@@ -17,26 +22,33 @@ function categorize(url: string): string {
   return "other";
 }
 
-export async function enumerateUrls(domain: string, fetchImpl: typeof fetch = fetch, limit = 200): Promise<UrlRecord[]> {
-  const data = await fetchJSON<unknown[]>(
-    `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(`*.${domain}/*`)}&output=json&fl=original&collapse=urlkey&limit=${limit}`,
-    fetchImpl,
-  );
+export async function enumerateUrls(domain: string, fetchImpl: typeof fetch = fetch, limit = 200): Promise<UrlEnumResult> {
+  const endpoint = `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(`*.${domain}/*`)}&output=json&fl=original&collapse=urlkey&limit=${limit}`;
+  const { status, body } = await fetchTextRetry(endpoint, { headers: { Accept: "application/json" } }, fetchImpl);
+  if (status >= 400) {
+    return { urls: [], error: `wayback CDX ${status}` };
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(body) as unknown;
+  } catch {
+    return { urls: [], error: "wayback CDX returned invalid JSON" };
+  }
   const rows = Array.isArray(data) ? data.slice(1) : [];
   const seen = new Set<string>();
-  const out: UrlRecord[] = [];
+  const urls: UrlRecord[] = [];
   for (const row of rows) {
     const url = Array.isArray(row) ? String(row[0] ?? "") : "";
     if (!url || seen.has(url)) {
       continue;
     }
     seen.add(url);
-    out.push({
+    urls.push({
       url,
       source: "wayback",
       category: categorize(url),
       interesting: INTERESTING.test(url),
     });
   }
-  return out;
+  return { urls };
 }

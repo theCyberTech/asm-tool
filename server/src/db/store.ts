@@ -20,7 +20,6 @@ export type Stats = {
   certificates: number;
   urls: number;
   apis: number;
-  emails: number;
   cloud_buckets: number;
   takeovers: number;
 };
@@ -105,7 +104,6 @@ export class Store {
       certificates: count(this.db, "SELECT COUNT(*) AS n FROM certificates"),
       urls: count(this.db, "SELECT COUNT(*) AS n FROM urls"),
       apis: count(this.db, "SELECT COUNT(*) AS n FROM apis"),
-      emails: count(this.db, "SELECT COUNT(*) AS n FROM emails"),
       cloud_buckets: count(this.db, "SELECT COUNT(*) AS n FROM cloud_storage WHERE status = 'open'"),
       takeovers: count(this.db, "SELECT COUNT(*) AS n FROM takeovers WHERE status = 'open'"),
     };
@@ -422,26 +420,6 @@ export class Store {
     return this.db.prepare("SELECT url, api_type, title, version, discovered_at FROM apis ORDER BY url").all().map(map);
   }
 
-  saveEmail(domain: string, email: string, source: string): void {
-    this.db
-      .prepare(
-        `INSERT INTO emails (domain, email, source, discovered_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(email) DO UPDATE SET source = excluded.source`,
-      )
-      .run(domain, email, source, nowIso());
-  }
-
-  listEmails(domain?: string): Array<Record<string, unknown>> {
-    const map = (row: unknown) => {
-      const rec = asRecord(row);
-      return { address: rec.email, source: rec.source, discovered_at: rec.discovered_at };
-    };
-    if (domain) {
-      return this.db.prepare("SELECT email, source, discovered_at FROM emails WHERE domain = ? ORDER BY email").all(domain).map(map);
-    }
-    return this.db.prepare("SELECT email, source, discovered_at FROM emails ORDER BY email").all().map(map);
-  }
-
   saveCloud(record: {
     provider: "s3" | "azure" | "gcs";
     bucketName: string;
@@ -545,7 +523,6 @@ export class Store {
       vuln_count: count(this.db, "SELECT COUNT(*) AS n FROM findings WHERE status = 'open' AND (host = ? OR host LIKE ?)", [domain, like]),
       url_count: count(this.db, "SELECT COUNT(*) AS n FROM urls WHERE domain = ? OR domain LIKE ?", [domain, like]),
       api_count: count(this.db, "SELECT COUNT(*) AS n FROM apis WHERE url LIKE ?", [`%${domain}%`]),
-      email_count: count(this.db, "SELECT COUNT(*) AS n FROM emails WHERE domain = ?", [domain]),
       cloud_count: count(this.db, "SELECT COUNT(*) AS n FROM cloud_storage WHERE domain = ?", [domain]),
       takeover_count: count(this.db, "SELECT COUNT(*) AS n FROM takeovers WHERE status = 'open' AND (subdomain = ? OR subdomain LIKE ?)", [domain, like]),
     };
