@@ -19,6 +19,21 @@ import (
 // Format represents the report output format
 type Format string
 
+// ParseFormat maps a user-supplied format string (json, markdown/md, html)
+// to a Format.
+func ParseFormat(s string) (Format, error) {
+	switch strings.ToLower(s) {
+	case "json":
+		return FormatJSON, nil
+	case "markdown", "md":
+		return FormatMarkdown, nil
+	case "html":
+		return FormatHTML, nil
+	default:
+		return "", fmt.Errorf("unsupported format: %s", s)
+	}
+}
+
 const (
 	FormatJSON     Format = "json"
 	FormatMarkdown Format = "markdown"

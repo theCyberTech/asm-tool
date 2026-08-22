@@ -219,15 +219,8 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 		rep := reporter.DefaultReporter()
 		rep.OutputDir = opts.outputDir
 
-		var format reporter.Format
-		switch strings.ToLower(opts.outputFormat) {
-		case "json":
-			format = reporter.FormatJSON
-		case "markdown", "md":
-			format = reporter.FormatMarkdown
-		case "html":
-			format = reporter.FormatHTML
-		default:
+		format, perr := reporter.ParseFormat(opts.outputFormat)
+		if perr != nil {
 			fmt.Printf("%s Unknown format: %s\n", highStyle.Render("[!]"), opts.outputFormat)
 			return nil
 		}

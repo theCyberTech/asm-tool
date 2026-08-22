@@ -214,16 +214,9 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	rep := reporter.DefaultReporter()
 	rep.OutputDir = outputDir
 
-	var format reporter.Format
-	switch strings.ToLower(outputFormat) {
-	case "json":
-		format = reporter.FormatJSON
-	case "markdown", "md":
-		format = reporter.FormatMarkdown
-	case "html":
-		format = reporter.FormatHTML
-	default:
-		return fmt.Errorf("unsupported format: %s", outputFormat)
+	format, err := reporter.ParseFormat(outputFormat)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println(strings.Repeat("-", 50))
@@ -296,16 +289,9 @@ func runReportConvert(inputFile, outputFormat, outputDir string) error {
 	rep := reporter.DefaultReporter()
 	rep.OutputDir = outputDir
 
-	var format reporter.Format
-	switch strings.ToLower(outputFormat) {
-	case "json":
-		format = reporter.FormatJSON
-	case "markdown", "md":
-		format = reporter.FormatMarkdown
-	case "html":
-		format = reporter.FormatHTML
-	default:
-		return fmt.Errorf("unsupported format: %s", outputFormat)
+	format, err := reporter.ParseFormat(outputFormat)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println(strings.Repeat("-", 50))
