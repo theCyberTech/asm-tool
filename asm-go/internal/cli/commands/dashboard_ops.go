@@ -3,10 +3,12 @@ package commands
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +39,7 @@ type dashboardOps struct {
 	logPath    string
 	actions    []dashboard.OperationOption
 	defs       map[string]operationDefinition
+	token      string
 }
 
 type operationDefinition struct {
@@ -45,13 +48,13 @@ type operationDefinition struct {
 }
 
 type operationRequest struct {
-	Action       string
-	Target       string
-	AllKnown     bool
-	Ports        string
-	OutputFormat string
-	Nuclei       bool
-	Verbose      bool
+	Action       string `json:"action"`
+	Target       string `json:"target"`
+	AllKnown     bool   `json:"all_known"`
+	Ports        string `json:"ports"`
+	OutputFormat string `json:"output_format"`
+	Nuclei       bool   `json:"nuclei"`
+	Verbose      bool   `json:"verbose"`
 }
 
 type commandSpec struct {
@@ -114,6 +117,71 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+func (o *dashboardOps) authorize(w http.ResponseWriter, r *http.Request) bool {
+	if o.token == "" {
+		return true
+	}
+	if o.requestHasValidToken(r) {
+		return true
+	}
+	w.Header().Set("WWW-Authenticate", `Basic realm="ASM Operations"`)
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return false
+}
+
+func (o *dashboardOps) requestHasValidToken(r *http.Request) bool {
+	if o.token == "" {
+		return false
+	}
+	if tokenMatches(requestToken(r), o.token) {
+		return true
+	}
+	user, pass, ok := r.BasicAuth()
+	if !ok {
+		return false
+	}
+	if user != "asm" && user != "" {
+		return false
+	}
+	return tokenMatches(pass, o.token)
+}
+
+func requestToken(r *http.Request) string {
+	if h := strings.TrimSpace(r.Header.Get("X-ASM-Token")); h != "" {
+		return h
+	}
+	const bearer = "bearer "
+	if auth := strings.TrimSpace(r.Header.Get("Authorization")); len(auth) > len(bearer) && strings.EqualFold(auth[:len(bearer)], bearer) {
+		return strings.TrimSpace(auth[len(bearer):])
+	}
+	if t := strings.TrimSpace(r.URL.Query().Get("token")); t != "" {
+		return t
+	}
+	return strings.TrimSpace(r.FormValue("ops_token"))
+}
+
+func tokenMatches(got, want string) bool {
+	if want == "" || len(got) != len(want) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+func sameOriginRequest(r *http.Request) bool {
+	src := r.Header.Get("Origin")
+	if src == "" {
+		src = r.Header.Get("Referer")
+	}
+	if src == "" || src == "null" {
+		return false
+	}
+	u, err := url.Parse(src)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
+}
+
 func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 	cli := func(args ...string) commandSpec {
 		base := make([]string, 0, len(args)+4)
@@ -132,7 +200,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 		if req.AllKnown {
 			args = append(args, "--all-known")
 		} else {
-			normalized, err := target.NormalizeTarget(req.Target)
+			normalized, err := target.NormalizeScanTarget(req.Target)
 			if err != nil {
 				return commandSpec{}, err
 			}
@@ -149,21 +217,9 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 			},
 		},
 		{
-			OperationOption: dashboard.OperationOption{ID: "build", Label: "Build"},
-			build: func(req operationRequest) (commandSpec, error) {
-				return commandSpec{Name: "go", Args: []string{"build", "-o", "asm-go", "./cmd/asm"}, Dir: o.goDir}, nil
-			},
-		},
-		{
-			OperationOption: dashboard.OperationOption{ID: "test", Label: "Test"},
-			build: func(req operationRequest) (commandSpec, error) {
-				return commandSpec{Name: "go", Args: []string{"test", "./..."}, Dir: o.goDir}, nil
-			},
-		},
-		{
 			OperationOption: dashboard.OperationOption{ID: "scan", Label: "Full scan", RequiresTarget: true, SupportsOutputFormat: true, SupportsNuclei: true},
 			build: func(req operationRequest) (commandSpec, error) {
-				normalized, err := target.NormalizeTarget(req.Target)
+				normalized, err := target.NormalizeScanTarget(req.Target)
 				if err != nil {
 					return commandSpec{}, err
 				}
@@ -223,12 +279,6 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 			},
 		},
 		{
-			OperationOption: dashboard.OperationOption{ID: "emails", Label: "Email enumeration", RequiresTarget: true, SupportsAllKnown: true},
-			build: func(req operationRequest) (commandSpec, error) {
-				return buildDomainCommand("emails", req)
-			},
-		},
-		{
 			OperationOption: dashboard.OperationOption{ID: "cloudstorage", Label: "Cloud storage", RequiresTarget: true, SupportsAllKnown: true},
 			build: func(req operationRequest) (commandSpec, error) {
 				return buildDomainCommand("cloudstorage", req)
@@ -260,7 +310,7 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 		{
 			OperationOption: dashboard.OperationOption{ID: "report", Label: "Generate report", RequiresTarget: true, SupportsOutputFormat: true},
 			build: func(req operationRequest) (commandSpec, error) {
-				normalized, err := target.NormalizeTarget(req.Target)
+				normalized, err := target.NormalizeScanTarget(req.Target)
 				if err != nil {
 					return commandSpec{}, err
 				}
@@ -283,8 +333,8 @@ func (o *dashboardOps) operationDefinitions() map[string]operationDefinition {
 
 func (o *dashboardOps) operationOptions() []dashboard.OperationOption {
 	order := []string{
-		"status", "build", "test", "scan", "discover", "dns", "urls",
-		"certificates", "takeover", "fingerprint", "apis", "emails",
+		"scan", "discover", "dns", "urls",
+		"certificates", "takeover", "fingerprint", "apis",
 		"cloudstorage", "portscan", "nuclei", "report",
 	}
 	options := make([]dashboard.OperationOption, 0, len(order))
@@ -296,30 +346,27 @@ func (o *dashboardOps) operationOptions() []dashboard.OperationOption {
 	return options
 }
 
-func makeOperationsHandler(deps *Deps, ops *dashboardOps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/operations" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-		data := getPageData(deps, "operations")
-		data.Operations = ops.pageData()
-
-		if err := dashboard.RenderPage(w, "operations-base", data); err != nil {
-			http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-}
-
 func (o *dashboardOps) handleRunsPartial(w http.ResponseWriter, r *http.Request) {
+	if !o.authorize(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	data := dashboard.PageData{ActivePage: "operations", Operations: o.pageData()}
 	if err := dashboard.RenderPartial(w, "runs-panel", data); err != nil {
 		http.Error(w, "Failed to render runs: "+err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (o *dashboardOps) handleOperationsJSON(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !o.authorize(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, dashboard.OperationsJSON(o.pageData()))
 }
 
 func (o *dashboardOps) handleRunsJSON(w http.ResponseWriter, r *http.Request) {
@@ -328,8 +375,13 @@ func (o *dashboardOps) handleRunsJSON(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(o.pageData().Runs)
+	if !o.authorize(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"runs":   o.pageData().Runs,
+	})
 }
 
 func (o *dashboardOps) handleStartRun(w http.ResponseWriter, r *http.Request) {
@@ -338,23 +390,59 @@ func (o *dashboardOps) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
+	isJSON := strings.Contains(r.Header.Get("Content-Type"), "application/json")
+	if !isJSON {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+	}
+	if !o.authorize(w, r) {
+		return
+	}
+	if !o.requestHasValidToken(r) && !sameOriginRequest(r) {
+		http.Error(w, "csrf check failed", http.StatusForbidden)
 		return
 	}
 
-	req := operationRequest{
-		Action:       r.FormValue("action"),
-		Target:       r.FormValue("target"),
-		AllKnown:     r.FormValue("all_known") == "on",
-		Ports:        r.FormValue("ports"),
-		OutputFormat: r.FormValue("output_format"),
-		Nuclei:       r.FormValue("nuclei") == "on",
-		Verbose:      r.FormValue("verbose") == "on",
+	var req operationRequest
+	if isJSON {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"status":  "error",
+				"message": "invalid json",
+			})
+			return
+		}
+	} else {
+		req = operationRequest{
+			Action:       r.FormValue("action"),
+			Target:       r.FormValue("target"),
+			AllKnown:     r.FormValue("all_known") == "on",
+			Ports:        r.FormValue("ports"),
+			OutputFormat: r.FormValue("output_format"),
+			Nuclei:       r.FormValue("nuclei") == "on",
+			Verbose:      r.FormValue("verbose") == "on",
+		}
 	}
 
-	if _, err := o.start(req); err != nil {
+	run, err := o.start(req)
+	if err != nil {
+		if isJSON || wantsJSON(r) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"status":  "error",
+				"message": err.Error(),
+			})
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if isJSON || wantsJSON(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "ok",
+			"run":    run,
+		})
 		return
 	}
 	o.handleRunsPartial(w, r)
@@ -395,6 +483,9 @@ func (o *dashboardOps) start(req operationRequest) (dashboard.RunRecord, error) 
 	}
 	if req.AllKnown && !def.SupportsAllKnown {
 		return dashboard.RunRecord{}, fmt.Errorf("%s does not support all-known mode", def.Label)
+	}
+	if def.RequiresTarget && !req.AllKnown && strings.TrimSpace(req.Target) == "" {
+		return dashboard.RunRecord{}, fmt.Errorf("%s requires a target domain", def.Label)
 	}
 
 	spec, err := def.build(req)
@@ -439,9 +530,20 @@ func (o *dashboardOps) execute(id int64, spec commandSpec) {
 	cmd := exec.CommandContext(ctx, spec.Name, spec.Args...)
 	cmd.Dir = spec.Dir
 
-	var stdout, stderr limitedBuffer
+	var stdout, stderr liveBuffer
 	stdout.limit = maxDashboardOutputBytes
 	stderr.limit = maxDashboardOutputBytes
+	flush := func() {
+		out, outTrunc := stdout.snapshot()
+		errOut, errTrunc := stderr.snapshot()
+		o.updateRun(id, func(run *dashboard.RunRecord) {
+			run.Stdout = out
+			run.Stderr = errOut
+			run.Truncated = outTrunc || errTrunc
+		})
+	}
+	stdout.onChange = flush
+	stderr.onChange = flush
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -461,15 +563,17 @@ func (o *dashboardOps) execute(id int64, spec commandSpec) {
 	}
 
 	var finishedRun dashboard.RunRecord
+	out, outTrunc := stdout.snapshot()
+	errOut, errTrunc := stderr.snapshot()
 	o.updateRun(id, func(run *dashboard.RunRecord) {
 		run.Status = status
 		run.ExitCode = exitCode
 		run.FinishedAt = &finished
 		run.Duration = finished.Sub(run.StartedAt).Round(time.Millisecond).String()
-		run.Stdout = stdout.String()
-		run.Stderr = stderr.String()
+		run.Stdout = out
+		run.Stderr = errOut
 		run.Error = errorMessage
-		run.Truncated = stdout.truncated || stderr.truncated
+		run.Truncated = outTrunc || errTrunc
 		finishedRun = *run
 	})
 	o.appendHistory(finishedRun)
@@ -547,6 +651,28 @@ func shellQuote(value string) string {
 		return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 	}
 	return value
+}
+
+type liveBuffer struct {
+	mu sync.Mutex
+	limitedBuffer
+	onChange func()
+}
+
+func (b *liveBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	n, err := b.limitedBuffer.Write(p)
+	b.mu.Unlock()
+	if b.onChange != nil {
+		b.onChange()
+	}
+	return n, err
+}
+
+func (b *liveBuffer) snapshot() (string, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.limitedBuffer.String(), b.truncated
 }
 
 type limitedBuffer struct {

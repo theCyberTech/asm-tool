@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -157,7 +158,7 @@ func TestRunOnceReturnsScanError(t *testing.T) {
 	want := errors.New("scan failed")
 	s.execute = func(JobType, string) (*parallel.ScanResult, error) { return nil, want }
 
-	err = s.RunOnce(JobFullScan, []string{"example.com"})
+	err = s.RunOnce(JobFullScan, []string{"crewai.com"})
 	if !errors.Is(err, want) {
 		t.Fatalf("RunOnce() error = %v, want wrapped %v", err, want)
 	}
@@ -178,12 +179,12 @@ func TestRunDomainSkipsWhenAlreadyRunning(t *testing.T) {
 		executions.Add(1)
 		close(started)
 		<-release
-		return &parallel.ScanResult{Domain: "example.com"}, nil
+		return &parallel.ScanResult{Domain: "crewai.com"}, nil
 	}
 
 	done := make(chan error, 1)
 	go func() {
-		done <- s.runDomain(JobFullScan, "example.com")
+		done <- s.runDomain(JobFullScan, "crewai.com")
 	}()
 
 	select {
@@ -192,7 +193,7 @@ func TestRunDomainSkipsWhenAlreadyRunning(t *testing.T) {
 		t.Fatal("first run did not start")
 	}
 
-	if err := s.runDomain(JobFullScan, "example.com"); err != nil {
+	if err := s.runDomain(JobFullScan, "crewai.com"); err != nil {
 		t.Fatalf("overlapping runDomain() error = %v", err)
 	}
 	if got := executions.Load(); got != 1 {
@@ -232,5 +233,31 @@ func TestNotifyPostsToSlack(t *testing.T) {
 
 	if got.Load() != 1 {
 		t.Fatalf("slack webhook hits = %d, want 1", got.Load())
+	}
+}
+
+func TestRunDomainRejectsOutOfScope(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "asm.db"))
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	s := New(config.Default(), db, nil, log.New(io.Discard, "", 0))
+	called := false
+	s.execute = func(JobType, string) (*parallel.ScanResult, error) {
+		called = true
+		return &parallel.ScanResult{}, nil
+	}
+
+	err = s.runDomain(JobFullScan, "google.com")
+	if err == nil {
+		t.Fatal("runDomain accepted google.com")
+	}
+	if !strings.Contains(err.Error(), "restricted to crewai.com") {
+		t.Fatalf("runDomain error = %q, want restricted to crewai.com", err.Error())
+	}
+	if called {
+		t.Fatal("execute should not run for an out-of-scope domain")
 	}
 }

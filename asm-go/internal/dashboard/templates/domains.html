@@ -9,11 +9,14 @@
     <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
     <style>{{template "styles" .}}</style>
 </head>
-<body hx-boost="true" x-data="{}">
+<body hx-boost="true" x-data="toastManager()">
     {{template "nav" .}}
     <div class="layout">
         {{template "sidebar" .}}
         <main class="main-content">
+            {{if .Warning}}
+            <div class="alert alert-warning mb-md">{{.Warning}}</div>
+            {{end}}
             <div class="page-header">
                 <div>
                     <h1 class="page-title">Domains</h1>
@@ -26,6 +29,45 @@
     </div>
 
     {{template "domain-filter-scripts" .}}
+    <div class="toast-container" id="toast-container">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="toast" :class="'toast-' + toast.type" x-show="toast.visible">
+                <span class="toast-message" x-text="toast.message"></span>
+                <button class="toast-close" @click="removeToast(toast.id)">x</button>
+            </div>
+        </template>
+    </div>
+    <script>
+    function toastManager() {
+        return {
+            toasts: [],
+            toastCounter: 0,
+            addToast(message, type = 'info', duration = 5000) {
+                const id = ++this.toastCounter;
+                const toast = { id, message, type, visible: true };
+                this.toasts.push(toast);
+                if (duration > 0) setTimeout(() => this.removeToast(id), duration);
+            },
+            removeToast(id) {
+                const toast = this.toasts.find(t => t.id === id);
+                if (toast) {
+                    toast.visible = false;
+                    setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 300);
+                }
+            },
+            showError(message) { this.addToast(message, 'error', 8000); }
+        };
+    }
+    document.body.addEventListener('htmx:responseError', function(evt) {
+        const root = document.body;
+        if (root.__x) root.__x.$data.showError(evt.detail.xhr.responseText || 'Failed to filter domains');
+    });
+    document.body.addEventListener('htmx:sendError', function() {
+        const root = document.body;
+        if (root.__x) root.__x.$data.showError('Network error. Please check your connection');
+    });
+    </script>
+    {{template "dashboard-scripts" .}}
 </body>
 </html>
 {{end}}

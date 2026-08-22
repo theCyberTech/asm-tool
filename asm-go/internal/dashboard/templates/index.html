@@ -55,10 +55,6 @@
         <div class="stat-label">APIs</div>
         <div class="stat-value">{{.Stats.APIs}}</div>
     </a>
-    <a class="stat-card stat-card-link" href="/emails" aria-label="View email addresses">
-        <div class="stat-label">Emails</div>
-        <div class="stat-value">{{.Stats.Emails}}</div>
-    </a>
     <a class="stat-card stat-card-link" href="/cloud" aria-label="View cloud buckets">
         <div class="stat-label">Cloud Buckets</div>
         <div class="stat-value">{{.Stats.CloudBuckets}}</div>
@@ -156,7 +152,7 @@
                 <tbody>
                     {{range .ChangeEvents}}
                     <tr>
-                        <td><a href="/domains/{{.Domain}}" class="text-mono">{{.Domain}}</a></td>
+                        <td><a href="/domains/{{.Domain}}" class="text-mono" hx-boost="false">{{.Domain}}</a></td>
                         <td>
                             {{if eq .Severity "critical"}}<span class="severity severity-critical">critical</span>
                             {{else if eq .Severity "high"}}<span class="severity severity-high">high</span>
@@ -199,7 +195,9 @@
                        hx-trigger="keyup changed delay:300ms, search"
                        hx-target="#domains-table-body"
                        hx-include="#date-from, #date-to"
+                       hx-indicator="#domain-filter-spinner"
                        name="q">
+                <span id="domain-filter-spinner" class="htmx-indicator"><span class="spinner"></span></span>
             </div>
             <div class="filter-group">
                 <label class="filter-label">Scanned after:</label>
@@ -267,7 +265,7 @@
 {{range .Domains}}
 <tr class="domain-row" style="cursor: pointer;" onclick="window.location='/domains/{{.Domain}}'">
     <td>
-        <a href="/domains/{{.Domain}}" class="domain-link">
+        <a href="/domains/{{.Domain}}" class="domain-link" hx-boost="false">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px; color: var(--accent-blue);">
                 <circle cx="12" cy="12" r="10"/>
                 <line x1="2" y1="12" x2="22" y2="12"/>

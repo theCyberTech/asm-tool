@@ -143,16 +143,6 @@ CREATE TABLE IF NOT EXISTS apis (
     discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Email addresses
-CREATE TABLE IF NOT EXISTS emails (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    domain TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
-    source TEXT,
-    discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_emails_domain ON emails(domain);
-
 -- Screenshots
 CREATE TABLE IF NOT EXISTS screenshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

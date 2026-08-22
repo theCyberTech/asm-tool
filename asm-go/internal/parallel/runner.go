@@ -12,30 +12,29 @@ import (
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
 	"github.com/asm-tool/asm-go/internal/scanner/dns"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 	"github.com/asm-tool/asm-go/internal/scanner/subdomains"
 	"github.com/asm-tool/asm-go/internal/scanner/takeover"
 	"github.com/asm-tool/asm-go/internal/scanner/technologies"
 	"github.com/asm-tool/asm-go/internal/scanner/urls"
+	"github.com/asm-tool/asm-go/internal/target"
 )
 
 // ModuleType identifies a scanner module.
 type ModuleType string
 
 const (
-	ModuleSubdomains    ModuleType = "subdomains"
-	ModulePorts         ModuleType = "ports"
-	ModuleCertificates  ModuleType = "certificates"
-	ModuleDNS           ModuleType = "dns"
-	ModuleTakeover      ModuleType = "takeover"
-	ModuleTechnologies  ModuleType = "technologies"
-	ModuleURLs          ModuleType = "urls"
-	ModuleAPIs          ModuleType = "apis"
-	ModuleEmails        ModuleType = "emails"
-	ModuleCloudStorage  ModuleType = "cloudstorage"
-	ModuleNuclei        ModuleType = "nuclei"
+	ModuleSubdomains   ModuleType = "subdomains"
+	ModulePorts        ModuleType = "ports"
+	ModuleCertificates ModuleType = "certificates"
+	ModuleDNS          ModuleType = "dns"
+	ModuleTakeover     ModuleType = "takeover"
+	ModuleTechnologies ModuleType = "technologies"
+	ModuleURLs         ModuleType = "urls"
+	ModuleAPIs         ModuleType = "apis"
+	ModuleCloudStorage ModuleType = "cloudstorage"
+	ModuleNuclei       ModuleType = "nuclei"
 )
 
 // ProgressCallback is called when a module completes.
@@ -56,7 +55,6 @@ type ScanResult struct {
 	Technologies    []*technologies.Result
 	URLs            []urls.URL
 	APIs            []apis.API
-	Emails          []emails.Email
 	CloudStorage    []cloud.Bucket
 	Vulnerabilities []*nuclei.Finding
 	Errors          map[ModuleType]error
@@ -76,7 +74,7 @@ func (r *Runner) Run(ctx context.Context, domain string, cfg RunConfig, enabled 
 		Errors:    make(map[ModuleType]error),
 	}
 
-	// URLs, emails, and cloud modules read the domain from cfg.Subdomains.Domain.
+	// URLs and cloud modules read the domain from cfg.Subdomains.Domain.
 	applyRunDomain(&cfg, domain)
 
 	// Phase 1: Subdomain enumeration (sequential — results feed Phase 2).
@@ -96,6 +94,7 @@ func (r *Runner) Run(ctx context.Context, domain string, cfg RunConfig, enabled 
 	if len(hosts) == 0 {
 		hosts = []string{domain}
 	}
+	hosts = target.CapScanHosts(domain, hosts)
 
 	// Phase 2: Independent modules in parallel.
 	var wg sync.WaitGroup
@@ -130,7 +129,7 @@ func (r *Runner) Run(ctx context.Context, domain string, cfg RunConfig, enabled 
 }
 
 // applyRunDomain copies the scan target onto RunConfig so modules that
-// read cfg.Subdomains.Domain (urls, emails, cloud) receive the domain.
+// read cfg.Subdomains.Domain (urls, cloud) receive the domain.
 func applyRunDomain(cfg *RunConfig, domain string) {
 	if cfg == nil {
 		return
@@ -150,7 +149,6 @@ func enabledModules(enabled map[ModuleType]bool) []ModuleType {
 		ModuleTechnologies,
 		ModuleURLs,
 		ModuleAPIs,
-		ModuleEmails,
 		ModuleCloudStorage,
 		ModuleNuclei,
 	} {
@@ -194,10 +192,6 @@ func runModule(ctx context.Context, mod ModuleType, cfg RunConfig, hosts []strin
 	case ModuleAPIs:
 		r := apis.Scan(ctx, cfg.APIs, hosts)
 		result.APIs = r.APIs
-		return r.Err
-	case ModuleEmails:
-		r := emails.Scan(ctx, cfg.Emails, cfg.Subdomains.Domain)
-		result.Emails = r.Emails
 		return r.Err
 	case ModuleCloudStorage:
 		r := cloud.Scan(ctx, cfg.Cloud, cfg.Subdomains.Domain)

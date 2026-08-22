@@ -12,7 +12,6 @@ import (
 	"github.com/asm-tool/asm-go/internal/scanner/apis"
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 	"github.com/asm-tool/asm-go/internal/scanner/takeover"
@@ -33,12 +32,6 @@ func TestScannerHelpersPersistDashboardData(t *testing.T) {
 		{URL: "https://www.example.com/openapi.json", Type: "openapi", Title: "Example API", Version: "3.0.0", EndpointsCount: 1, Endpoints: []string{"/users"}},
 	}); err != nil {
 		t.Fatalf("SaveAPIs err=%v, want nil", err)
-	}
-
-	if _, err := SaveEmails(db, []emails.Email{
-		{Domain: "example.com", Address: "security@example.com", Source: "crtsh", Type: "role"},
-	}); err != nil {
-		t.Fatalf("SaveEmails err=%v, want nil", err)
 	}
 
 	if _, err := SaveCloudBuckets(db, []cloud.Bucket{
@@ -88,7 +81,7 @@ func TestScannerHelpersPersistDashboardData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStats returned error: %v", err)
 	}
-	if stats.URLs != 1 || stats.APIs != 1 || stats.Emails != 1 || stats.CloudBuckets != 1 || stats.Takeovers != 1 || stats.Findings != 1 {
+	if stats.URLs != 1 || stats.APIs != 1 || stats.CloudBuckets != 1 || stats.Takeovers != 1 || stats.Findings != 1 {
 		t.Fatalf("stats = %+v, want saved scanner counts", stats)
 	}
 
@@ -96,7 +89,7 @@ func TestScannerHelpersPersistDashboardData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDomainDetailStats returned error: %v", err)
 	}
-	if detail.URLCount != 1 || detail.APICount != 1 || detail.EmailCount != 1 || detail.CloudCount != 1 || detail.TechnologyCount != 1 || detail.TakeoverCount != 1 {
+	if detail.URLCount != 1 || detail.APICount != 1 || detail.CloudCount != 1 || detail.TechnologyCount != 1 || detail.TakeoverCount != 1 {
 		t.Fatalf("domain detail stats = %+v, want saved scanner counts", detail)
 	}
 
@@ -147,18 +140,12 @@ func TestSaveAllBatchesHighVolumeResults(t *testing.T) {
 	const n = 250
 	subs := make([]string, n)
 	urlList := make([]urls.URL, n)
-	emailList := make([]emails.Email, n)
 	for i := 0; i < n; i++ {
 		subs[i] = fmt.Sprintf("s%d.example.com", i)
 		urlList[i] = urls.URL{
 			Domain: "example.com",
 			URL:    fmt.Sprintf("https://example.com/p/%d", i),
 			Source: "wayback",
-		}
-		emailList[i] = emails.Email{
-			Domain:  "example.com",
-			Address: fmt.Sprintf("u%d@example.com", i),
-			Source:  "hunter",
 		}
 	}
 
@@ -172,8 +159,7 @@ func TestSaveAllBatchesHighVolumeResults(t *testing.T) {
 				{Port: 443, State: "open", Service: "https"},
 			},
 		}},
-		URLs:   urlList,
-		Emails: emailList,
+		URLs: urlList,
 	})
 	if err != nil {
 		t.Fatalf("SaveAll: %v", err)
@@ -183,8 +169,8 @@ func TestSaveAllBatchesHighVolumeResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStats: %v", err)
 	}
-	if stats.Subdomains != n || stats.URLs != n || stats.Emails != n || stats.Ports != 2 {
-		t.Fatalf("stats = %+v, want %d subdomains/urls/emails and 2 ports", stats, n)
+	if stats.Subdomains != n || stats.URLs != n || stats.Ports != 2 {
+		t.Fatalf("stats = %+v, want %d subdomains/urls and 2 ports", stats, n)
 	}
 }
 

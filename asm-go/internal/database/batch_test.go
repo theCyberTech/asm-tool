@@ -141,6 +141,14 @@ func TestSaveURLsBatch(t *testing.T) {
 		t.Fatalf("got %d URLs, want 250", len(got))
 	}
 
+	limited, err := db.GetURLsForDomainLimit("example.com", 10)
+	if err != nil {
+		t.Fatalf("GetURLsForDomainLimit: %v", err)
+	}
+	if len(limited) != 10 {
+		t.Fatalf("GetURLsForDomainLimit = %d, want 10", len(limited))
+	}
+
 	var found bool
 	for _, u := range got {
 		if u.URL == "https://example.com/p/0" {
@@ -152,28 +160,6 @@ func TestSaveURLsBatch(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("missing expected URL")
-	}
-}
-
-func TestSaveEmailsBatch(t *testing.T) {
-	db := newTestDB(t)
-
-	records := []EmailRecord{
-		{Domain: "example.com", Address: "a@example.com", Source: "hunter"},
-		{Domain: "example.com", Address: "b@example.com", Source: "github"},
-		{Domain: "example.com", Address: "a@example.com", Source: "skymem"},
-		{Domain: "example.com", Address: "", Source: "ignore"},
-	}
-	if err := db.SaveEmails(records); err != nil {
-		t.Fatalf("SaveEmails: %v", err)
-	}
-
-	got, err := db.GetEmailsForDomain("example.com")
-	if err != nil {
-		t.Fatalf("GetEmailsForDomain: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("got %d emails, want 2", len(got))
 	}
 }
 

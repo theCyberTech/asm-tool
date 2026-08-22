@@ -48,9 +48,10 @@ func ScanCmd(deps *Deps) *cobra.Command {
 - Technology fingerprinting
 - URL enumeration
 - API discovery
-- Email enumeration
 - Cloud storage detection
 - Vulnerability scanning (optional, requires nuclei)
+
+Scanning is restricted to crewai.com and its subdomains.
 
 Modules run in parallel where possible for optimal performance.
 Results can be output to JSON, Markdown, or HTML reports.`,
@@ -76,7 +77,7 @@ Results can be output to JSON, Markdown, or HTML reports.`,
 		},
 	}
 
-	cmd.Flags().StringSliceVar(&skipModules, "skip", nil, "Modules to skip (subdomains,ports,certificates,dns,takeover,technologies,urls,apis,emails,cloudstorage,nuclei)")
+	cmd.Flags().StringSliceVar(&skipModules, "skip", nil, "Modules to skip (subdomains,ports,certificates,dns,takeover,technologies,urls,apis,cloudstorage,nuclei)")
 	cmd.Flags().StringSliceVar(&onlyModules, "only", nil, "Only run these modules")
 	cmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format: json, markdown, html (default: no file output)")
 	cmd.Flags().StringVar(&outputDir, "output-dir", "reports", "Directory for report output")
@@ -109,7 +110,7 @@ type scanOptions struct {
 }
 
 func runFullScan(db *database.Database, cfg *config.Config, domain string, opts scanOptions) error {
-	normalizedDomain, err := target.NormalizeTarget(domain)
+	normalizedDomain, err := target.NormalizeScanTarget(domain)
 	if err != nil {
 		return err
 	}
@@ -218,15 +219,8 @@ func runFullScan(db *database.Database, cfg *config.Config, domain string, opts 
 		rep := reporter.DefaultReporter()
 		rep.OutputDir = opts.outputDir
 
-		var format reporter.Format
-		switch strings.ToLower(opts.outputFormat) {
-		case "json":
-			format = reporter.FormatJSON
-		case "markdown", "md":
-			format = reporter.FormatMarkdown
-		case "html":
-			format = reporter.FormatHTML
-		default:
+		format, perr := reporter.ParseFormat(opts.outputFormat)
+		if perr != nil {
 			fmt.Printf("%s Unknown format: %s\n", highStyle.Render("[!]"), opts.outputFormat)
 			return nil
 		}
@@ -311,9 +305,6 @@ func buildScanConfig(cfg *config.Config, opts scanOptions) parallel.RunConfig {
 	)
 	out.Nuclei.RateLimit = cfg.Scanning.RateLimit
 	out.Nuclei.ExcludeTags = splitCSV(cfg.Nuclei.ExcludeTags)
-
-	// Email / Hunter
-	out.Emails.HunterAPIKey = cfg.Hunter.APIKey
 
 	// Insecure
 	out.Certificates.InsecureSkipVerify = cfg.Scanning.InsecureSkipVerify
@@ -466,8 +457,6 @@ func parseModule(name string) (parallel.ModuleType, bool) {
 		return parallel.ModuleURLs, true
 	case "apis", "api":
 		return parallel.ModuleAPIs, true
-	case "emails", "email":
-		return parallel.ModuleEmails, true
 	case "cloudstorage", "cloud", "buckets", "bucket":
 		return parallel.ModuleCloudStorage, true
 	case "nuclei", "vuln", "vulns", "vulnerability", "vulnerabilities":
@@ -509,7 +498,6 @@ func printScanSummary(result *parallel.ScanResult) {
 
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("URLs:", 20)), len(result.URLs))
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("APIs:", 20)), len(result.APIs))
-	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Emails:", 20)), len(result.Emails))
 	fmt.Printf("  %s %d\n", labelStyle.Render(padRight("Cloud Buckets:", 20)), len(result.CloudStorage))
 
 	// Count nuclei vulnerabilities by severity

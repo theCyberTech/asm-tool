@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ASM Tool is a Go-based attack surface management tool for security practitioners. It monitors domains for subdomains, open ports, certificates, technologies, DNS records, vulnerabilities, URLs, subdomain takeovers, API endpoints, email addresses, and cloud storage buckets. It also provides a local web dashboard and cron-based scheduled scans with Slack/email notifications.
+ASM Tool is a Go-based attack surface management tool for security practitioners. It monitors domains for subdomains, open ports, certificates, technologies, DNS records, vulnerabilities, URLs, subdomain takeovers, API endpoints, and cloud storage buckets. It also provides a local web dashboard and cron-based scheduled scans with Slack/email notifications.
 
 ## Common Commands
 
@@ -15,11 +15,14 @@ cd asm-go && go build -o asm-go ./cmd/asm
 # Run tests
 go test ./... -v
 
+# TypeScript dashboard
+cd web && npm test && npm run build
+
 # Initialize project (repo root)
 ./asm.sh init
 
 # Run a scan
-./asm.sh scan example.com
+./asm.sh scan crewai.com
 
 # Check status
 ./asm.sh status
@@ -33,6 +36,7 @@ go test ./... -v
 ### Layer Structure
 
 ```
+web/                             # TypeScript + React dashboard (Vite)
 asm-go/
 ├── cmd/asm/main.go              # CLI entry point (Cobra)
 ├── internal/
@@ -50,11 +54,10 @@ asm-go/
 │   │   ├── technologies/        # Tech fingerprinting
 │   │   ├── urls/                # URL enumeration
 │   │   ├── apis/                # API discovery
-│   │   ├── emails/              # Email enumeration
 │   │   ├── cloud/               # Cloud storage detection
 │   │   └── nuclei/              # Nuclei integration
-│   ├── cli/commands/            # CLI command implementations
-│   ├── dashboard/               # Embedded HTML dashboard and ops UI
+│   ├── cli/commands/            # CLI command handlers
+│   ├── dashboard/               # Embedded TypeScript SPA and JSON types
 │   ├── scheduler/               # Cron-based scheduled scan jobs
 │   ├── reporter/                # JSON/Markdown/HTML reports
 │   ├── notifier/                # Slack/email notifications

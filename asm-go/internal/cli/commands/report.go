@@ -10,7 +10,6 @@ import (
 	"github.com/asm-tool/asm-go/internal/database"
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 	"github.com/asm-tool/asm-go/internal/scanner/takeover"
@@ -178,19 +177,6 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	}
 	fmt.Printf("  %s %d APIs\n", labelStyle.Render("Loaded:"), len(result.APIs))
 
-	// Get emails
-	dbEmails, err := db.GetEmailsForDomain(domain)
-	if err == nil {
-		for _, e := range dbEmails {
-			result.Emails = append(result.Emails, emails.Email{
-				Address: e.Address,
-				Domain:  e.Domain,
-				Source:  e.Source,
-			})
-		}
-	}
-	fmt.Printf("  %s %d emails\n", labelStyle.Render("Loaded:"), len(result.Emails))
-
 	// Get cloud storage
 	buckets, err := db.GetCloudStorageForDomain(domain)
 	if err == nil {
@@ -228,16 +214,9 @@ func runReportFromDB(db *database.Database, domain, outputFormat, outputDir stri
 	rep := reporter.DefaultReporter()
 	rep.OutputDir = outputDir
 
-	var format reporter.Format
-	switch strings.ToLower(outputFormat) {
-	case "json":
-		format = reporter.FormatJSON
-	case "markdown", "md":
-		format = reporter.FormatMarkdown
-	case "html":
-		format = reporter.FormatHTML
-	default:
-		return fmt.Errorf("unsupported format: %s", outputFormat)
+	format, err := reporter.ParseFormat(outputFormat)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println(strings.Repeat("-", 50))
@@ -310,16 +289,9 @@ func runReportConvert(inputFile, outputFormat, outputDir string) error {
 	rep := reporter.DefaultReporter()
 	rep.OutputDir = outputDir
 
-	var format reporter.Format
-	switch strings.ToLower(outputFormat) {
-	case "json":
-		format = reporter.FormatJSON
-	case "markdown", "md":
-		format = reporter.FormatMarkdown
-	case "html":
-		format = reporter.FormatHTML
-	default:
-		return fmt.Errorf("unsupported format: %s", outputFormat)
+	format, err := reporter.ParseFormat(outputFormat)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println(strings.Repeat("-", 50))

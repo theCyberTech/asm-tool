@@ -23,7 +23,7 @@ func main() {
 		Short: "ASM - Attack Surface Management Tool",
 		Long: `ASM is a high-performance attack surface management tool for security practitioners.
 It monitors domains for subdomains, open ports, certificates, technologies,
-DNS records, vulnerabilities, URLs, subdomain takeovers, API endpoints, and email addresses.`,
+DNS records, vulnerabilities, URLs, subdomain takeovers, and API endpoints.`,
 		PersistentPreRunE: initConfig,
 		PersistentPostRun: cleanup,
 	}
@@ -42,7 +42,6 @@ DNS records, vulnerabilities, URLs, subdomain takeovers, API endpoints, and emai
 	rootCmd.AddCommand(commands.FingerprintCmd(deps))
 	rootCmd.AddCommand(commands.URLsCmd(deps))
 	rootCmd.AddCommand(commands.APIsCmd(deps))
-	rootCmd.AddCommand(commands.EmailsCmd(deps))
 	rootCmd.AddCommand(commands.CloudStorageCmd(deps))
 	rootCmd.AddCommand(commands.ScanCmd(deps))
 	rootCmd.AddCommand(commands.ReportCmd(deps))

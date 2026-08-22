@@ -15,6 +15,7 @@ import (
 	"github.com/asm-tool/asm-go/internal/notifier"
 	"github.com/asm-tool/asm-go/internal/parallel"
 	"github.com/asm-tool/asm-go/internal/persistence"
+	"github.com/asm-tool/asm-go/internal/target"
 )
 
 // JobType identifies a scheduled job.
@@ -193,10 +194,10 @@ func parseField(field string, min, max int) (fieldSet, error) {
 
 // Scheduler manages cron-based recurring scans.
 type Scheduler struct {
-	cfg    *config.Config
-	db     *database.Database
-	store  persistence.Store
-	logger *log.Logger
+	cfg     *config.Config
+	db      *database.Database
+	store   persistence.Store
+	logger  *log.Logger
 	execute func(JobType, string) (*parallel.ScanResult, error)
 	mu      sync.Mutex
 	jobs    []job
@@ -225,9 +226,9 @@ func New(cfg *config.Config, db *database.Database, store persistence.Store, log
 
 // RegisterJobs registers all configured cron jobs.
 func (s *Scheduler) RegisterJobs() error {
-	domains := s.cfg.Domains
+	domains := target.FilterAllowedScanTargets(s.cfg.Domains)
 	if len(domains) == 0 {
-		return fmt.Errorf("no domains configured — add domains to config.yaml under 'domains:'")
+		return fmt.Errorf("no in-scope domains configured — scans are restricted to %s", target.AllowedRootDomain)
 	}
 
 	// Full scan job
@@ -320,8 +321,8 @@ func (s *Scheduler) NextRuns(n int) []NextRun {
 	for _, j := range s.jobs {
 		next := j.schedule.Next(time.Now())
 		runs = append(runs, NextRun{
-			Job:    j.name,
-			Next:   next,
+			Job:     j.name,
+			Next:    next,
 			Domains: j.domains,
 		})
 	}
@@ -358,6 +359,12 @@ func (s *Scheduler) runJob(jobType JobType, domains []string) error {
 
 // runDomain executes a scheduled job for a single domain.
 func (s *Scheduler) runDomain(jobType JobType, domain string) error {
+	normalized, err := target.NormalizeScanTarget(domain)
+	if err != nil {
+		return err
+	}
+	domain = normalized
+
 	key := string(jobType) + ":" + domain
 	s.mu.Lock()
 	if s.running == nil {
@@ -419,6 +426,12 @@ func (s *Scheduler) runDomain(jobType JobType, domain string) error {
 
 // executeScan runs the appropriate scan for the job type.
 func (s *Scheduler) executeScan(jobType JobType, domain string) (*parallel.ScanResult, error) {
+	normalized, err := target.NormalizeScanTarget(domain)
+	if err != nil {
+		return nil, err
+	}
+	domain = normalized
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Hour)
 	defer cancel()
 
@@ -502,9 +515,6 @@ func (s *Scheduler) buildConfig(jobType JobType) parallel.RunConfig {
 	}
 	cfg.Nuclei.RateLimit = s.cfg.Scanning.RateLimit
 	cfg.Nuclei.ExcludeTags = splitCSV(s.cfg.Nuclei.ExcludeTags)
-
-	// Email / Hunter
-	cfg.Emails.HunterAPIKey = s.cfg.Hunter.APIKey
 
 	// Cloud
 	cfg.Cloud.InsecureSkipVerify = s.cfg.Scanning.InsecureSkipVerify

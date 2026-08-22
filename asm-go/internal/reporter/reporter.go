@@ -19,6 +19,21 @@ import (
 // Format represents the report output format
 type Format string
 
+// ParseFormat maps a user-supplied format string (json, markdown/md, html)
+// to a Format.
+func ParseFormat(s string) (Format, error) {
+	switch strings.ToLower(s) {
+	case "json":
+		return FormatJSON, nil
+	case "markdown", "md":
+		return FormatMarkdown, nil
+	case "html":
+		return FormatHTML, nil
+	default:
+		return "", fmt.Errorf("unsupported format: %s", s)
+	}
+}
+
 const (
 	FormatJSON     Format = "json"
 	FormatMarkdown Format = "markdown"
@@ -90,7 +105,6 @@ type JSONReport struct {
 	Technologies    []TechEntry         `json:"technologies,omitempty"`
 	URLs            []URLEntry          `json:"urls,omitempty"`
 	APIs            []APIEntry          `json:"apis,omitempty"`
-	Emails          []EmailEntry        `json:"emails,omitempty"`
 	CloudStorage    []CloudStorageEntry `json:"cloud_storage,omitempty"`
 	Vulnerabilities []VulnEntry         `json:"vulnerabilities,omitempty"`
 	Errors          map[string]string   `json:"errors,omitempty"`
@@ -104,7 +118,6 @@ type ReportSummary struct {
 	TechCount        int `json:"technology_count"`
 	URLCount         int `json:"url_count"`
 	APICount         int `json:"api_count"`
-	EmailCount       int `json:"email_count"`
 	BucketCount      int `json:"bucket_count"`
 	PublicBuckets    int `json:"public_buckets"`
 	VulnCount        int `json:"vulnerability_count"`
@@ -160,12 +173,6 @@ type APIEntry struct {
 	Version string `json:"version,omitempty"`
 }
 
-type EmailEntry struct {
-	Address string `json:"address"`
-	Type    string `json:"type"`
-	Source  string `json:"source"`
-}
-
 type CloudStorageEntry struct {
 	Provider    string `json:"provider"`
 	BucketName  string `json:"bucket_name"`
@@ -201,7 +208,6 @@ func (r *Reporter) generateJSON(result *parallel.ScanResult) (string, error) {
 			TechCount:        countTechnologies(result),
 			URLCount:         len(result.URLs),
 			APICount:         len(result.APIs),
-			EmailCount:       len(result.Emails),
 			BucketCount:      len(result.CloudStorage),
 			PublicBuckets:    countPublicBuckets(result),
 			VulnCount:        groupedVulns.Total,
@@ -296,15 +302,6 @@ func (r *Reporter) generateJSON(result *parallel.ScanResult) (string, error) {
 		})
 	}
 
-	// Convert emails
-	for _, e := range result.Emails {
-		report.Emails = append(report.Emails, EmailEntry{
-			Address: e.Address,
-			Type:    e.Type,
-			Source:  e.Source,
-		})
-	}
-
 	// Convert cloud storage
 	for _, b := range result.CloudStorage {
 		report.CloudStorage = append(report.CloudStorage, CloudStorageEntry{
@@ -364,7 +361,6 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 	sb.WriteString(fmt.Sprintf("| Technologies | %d |\n", countTechnologies(result)))
 	sb.WriteString(fmt.Sprintf("| URLs | %d |\n", len(result.URLs)))
 	sb.WriteString(fmt.Sprintf("| APIs | %d |\n", len(result.APIs)))
-	sb.WriteString(fmt.Sprintf("| Emails | %d |\n", len(result.Emails)))
 	sb.WriteString(fmt.Sprintf("| Cloud Buckets | %d (public: %d) |\n", len(result.CloudStorage), countPublicBuckets(result)))
 	if groupedVulns.Total > 0 {
 		sb.WriteString(fmt.Sprintf("| **Vulnerabilities** | **%d** (critical: %d, high: %d, medium: %d) |\n", groupedVulns.Total, len(groupedVulns.Critical), len(groupedVulns.High), len(groupedVulns.Medium)))
@@ -456,15 +452,6 @@ func (r *Reporter) generateMarkdown(result *parallel.ScanResult) (string, error)
 		sb.WriteString("|----------|--------|--------------|----------|\n")
 		for _, b := range publicBuckets {
 			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", strings.ToUpper(b.Provider), b.BucketName, b.AccessLevel, strings.ToUpper(b.Severity)))
-		}
-		sb.WriteString("\n")
-	}
-
-	// Emails
-	if len(result.Emails) > 0 {
-		sb.WriteString("## Email Addresses\n\n")
-		for _, e := range result.Emails {
-			sb.WriteString(fmt.Sprintf("- %s (%s)\n", e.Address, e.Type))
 		}
 		sb.WriteString("\n")
 	}
@@ -606,10 +593,6 @@ func (r *Reporter) generateHTML(result *parallel.ScanResult) (string, error) {
                     <div class="label">APIs</div>
                 </div>
                 <div class="summary-item">
-                    <div class="number">{{.EmailCount}}</div>
-                    <div class="label">Emails</div>
-                </div>
-                <div class="summary-item">
                     <div class="number">{{.BucketCount}}</div>
                     <div class="label">Buckets</div>
                 </div>
@@ -696,15 +679,6 @@ func (r *Reporter) generateHTML(result *parallel.ScanResult) (string, error) {
         </div>
         {{end}}
 
-        {{if .Emails}}
-        <div class="card">
-            <h2>Email Addresses</h2>
-            <ul>
-                {{range .Emails}}<li>{{.Address}} ({{.Type}})</li>{{end}}
-            </ul>
-        </div>
-        {{end}}
-
         {{if .CriticalVulns}}
         <div class="card">
             <h2>Critical Vulnerabilities</h2>
@@ -783,7 +757,6 @@ func (r *Reporter) generateHTML(result *parallel.ScanResult) (string, error) {
 		"TechCount":      countTechnologies(result),
 		"URLCount":       len(result.URLs),
 		"APICount":       len(result.APIs),
-		"EmailCount":     len(result.Emails),
 		"BucketCount":    len(result.CloudStorage),
 		"VulnCount":      groupedVulns.Total,
 		"Subdomains":     result.Subdomains,
@@ -792,7 +765,6 @@ func (r *Reporter) generateHTML(result *parallel.ScanResult) (string, error) {
 		"VulnTakeovers":  getVulnerableTakeovers(result),
 		"PublicBuckets":  getPublicBuckets(result),
 		"APIs":           result.APIs,
-		"Emails":         result.Emails,
 		"CriticalVulns":  groupedVulns.Critical,
 		"HighVulns":      groupedVulns.High,
 		"MediumVulns":    groupedVulns.Medium,

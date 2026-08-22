@@ -27,7 +27,6 @@
         </main>
     </div>
 
-    <!-- Toast Container -->
     <div class="toast-container" id="toast-container">
         <template x-for="toast in toasts" :key="toast.id">
             <div class="toast" :class="'toast-' + toast.type" x-show="toast.visible"
@@ -138,6 +137,7 @@
         }
     });
     </script>
+    {{template "dashboard-scripts" .}}
 </body>
 </html>
 {{end}}
@@ -175,6 +175,9 @@
     </div>
 </div>
 {{else}}
+{{if .Warning}}
+<div class="alert alert-warning mb-md">{{.Warning}}</div>
+{{end}}
 <div class="page-header">
     <div>
         <div class="flex items-center gap-md mb-sm">
@@ -216,8 +219,13 @@
 
 {{define "domain-detail-content"}}
 <!-- Stats Overview - Clickable cards that open modals -->
-<div class="stats-grid" x-data="{ activeModal: null }">
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'subdomains'">
+<div class="stats-grid">
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/subdomains"
+            hx-target="#modal-body-subdomains"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('subdomains')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
@@ -225,8 +233,13 @@
         </div>
         <div class="stat-label">Subdomains</div>
         <div class="stat-value">{{.DomainDetail.Stats.SubdomainCount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'ports'">
+    </button>
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/ports"
+            hx-target="#modal-body-ports"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('ports')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>
@@ -234,8 +247,13 @@
         </div>
         <div class="stat-label">Open Ports</div>
         <div class="stat-value">{{.DomainDetail.Stats.PortCount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'certificates'">
+    </button>
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/certificates"
+            hx-target="#modal-body-certificates"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('certificates')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -243,8 +261,13 @@
         </div>
         <div class="stat-label">Certificates</div>
         <div class="stat-value">{{.DomainDetail.Stats.CertificateCount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'technologies'">
+    </button>
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/technologies"
+            hx-target="#modal-body-technologies"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('technologies')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
@@ -252,8 +275,13 @@
         </div>
         <div class="stat-label">Technologies</div>
         <div class="stat-value">{{.DomainDetail.Stats.TechnologyCount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'dns'">
+    </button>
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/dns"
+            hx-target="#modal-body-dns"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('dns')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
@@ -261,8 +289,13 @@
         </div>
         <div class="stat-label">DNS Records</div>
         <div class="stat-value">{{.DomainDetail.Stats.DNSRecordCount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'vulnerabilities'">
+    </button>
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/vulnerabilities"
+            hx-target="#modal-body-vulnerabilities"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('vulnerabilities')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -270,8 +303,13 @@
         </div>
         <div class="stat-label">Vulnerabilities</div>
         <div class="stat-value {{if .DomainDetail.Stats.VulnCount}}severity-high{{end}}">{{.DomainDetail.Stats.VulnCount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'urls'">
+    </button>
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/urls"
+            hx-target="#modal-body-urls"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('urls')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
@@ -279,8 +317,13 @@
         </div>
         <div class="stat-label">URLs</div>
         <div class="stat-value">{{.DomainDetail.Stats.URLCount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'apis'">
+    </button>
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/apis"
+            hx-target="#modal-body-apis"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('apis')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
@@ -288,17 +331,13 @@
         </div>
         <div class="stat-label">APIs</div>
         <div class="stat-value">{{.DomainDetail.Stats.APICount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'emails'">
-        <div class="stat-card-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
-            </svg>
-        </div>
-        <div class="stat-label">Emails</div>
-        <div class="stat-value">{{.DomainDetail.Stats.EmailCount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'cloud'">
+    </button>
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/cloud"
+            hx-target="#modal-body-cloud"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('cloud')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
@@ -306,8 +345,13 @@
         </div>
         <div class="stat-label">Cloud Storage</div>
         <div class="stat-value {{if .DomainDetail.Stats.CloudCount}}severity-medium{{end}}">{{.DomainDetail.Stats.CloudCount}}</div>
-    </div>
-    <div class="stat-card stat-card-clickable" @click="activeModal = 'takeovers'">
+    </button>
+    <button type="button" class="stat-card stat-card-clickable"
+            hx-get="/domains/{{.DomainDetail.Domain}}/modal/takeovers"
+            hx-target="#modal-body-takeovers"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            onclick="openAssetModal('takeovers')">
         <div class="stat-card-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
@@ -315,9 +359,9 @@
         </div>
         <div class="stat-label">Takeovers</div>
         <div class="stat-value {{if .DomainDetail.Stats.TakeoverCount}}severity-critical{{end}}">{{.DomainDetail.Stats.TakeoverCount}}</div>
-    </div>
-
-    <!-- Modals -->
+    </button>
+</div>
+<div class="modal-layer">
     {{template "subdomains-modal" .}}
     {{template "ports-modal" .}}
     {{template "certificates-modal" .}}
@@ -326,7 +370,6 @@
     {{template "vulnerabilities-modal" .}}
     {{template "urls-modal" .}}
     {{template "apis-modal" .}}
-    {{template "emails-modal" .}}
     {{template "cloud-modal" .}}
     {{template "takeovers-modal" .}}
 </div>
@@ -392,7 +435,7 @@
             </svg>
             Open Ports
         </h2>
-        <span class="badge badge-yellow">{{len .DomainDetail.Ports}} open</span>
+        <span class="badge badge-yellow">{{.DomainDetail.Stats.PortCount}} open</span>
     </div>
     <div class="card-body">
         {{if .DomainDetail.Ports}}
@@ -420,6 +463,9 @@
                 </tbody>
             </table>
         </div>
+        {{if gt .DomainDetail.Stats.PortCount (len .DomainDetail.Ports)}}
+        <p class="text-muted" style="margin-top: 0.75rem;">Showing {{len .DomainDetail.Ports}} of {{.DomainDetail.Stats.PortCount}}. Click Open Ports above to view all.</p>
+        {{end}}
         {{else}}
         <div class="empty-state">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -445,7 +491,7 @@
             </svg>
             TLS Certificates
         </h2>
-        <span class="badge badge-green">{{len .DomainDetail.Certificates}} found</span>
+        <span class="badge badge-green">{{.DomainDetail.Stats.CertificateCount}} found</span>
     </div>
     <div class="card-body">
         {{if .DomainDetail.Certificates}}
@@ -483,6 +529,9 @@
                 </tbody>
             </table>
         </div>
+        {{if gt .DomainDetail.Stats.CertificateCount (len .DomainDetail.Certificates)}}
+        <p class="text-muted" style="margin-top: 0.75rem;">Showing {{len .DomainDetail.Certificates}} of {{.DomainDetail.Stats.CertificateCount}}. Click Certificates above to view all.</p>
+        {{end}}
         {{else}}
         <div class="empty-state">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -506,7 +555,7 @@
             </svg>
             Technologies
         </h2>
-        <span class="badge badge-purple">{{len .DomainDetail.Technologies}} hosts</span>
+        <span class="badge badge-purple">{{.DomainDetail.Stats.TechnologyCount}} hosts</span>
     </div>
     <div class="card-body">
         {{if .DomainDetail.Technologies}}
@@ -544,6 +593,9 @@
                 </tbody>
             </table>
         </div>
+        {{if gt .DomainDetail.Stats.TechnologyCount (len .DomainDetail.Technologies)}}
+        <p class="text-muted" style="margin-top: 0.75rem;">Showing {{len .DomainDetail.Technologies}} of {{.DomainDetail.Stats.TechnologyCount}}. Click Technologies above to view all.</p>
+        {{end}}
         {{else}}
         <div class="empty-state">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -567,7 +619,7 @@
             </svg>
             DNS Records
         </h2>
-        <span class="badge badge-blue">{{len .DomainDetail.DNSRecords}} records</span>
+        <span class="badge badge-blue">{{.DomainDetail.Stats.DNSRecordCount}} records</span>
     </div>
     <div class="card-body">
         {{if .DomainDetail.DNSRecords}}
@@ -591,6 +643,9 @@
                 </tbody>
             </table>
         </div>
+        {{if gt .DomainDetail.Stats.DNSRecordCount (len .DomainDetail.DNSRecords)}}
+        <p class="text-muted" style="margin-top: 0.75rem;">Showing {{len .DomainDetail.DNSRecords}} of {{.DomainDetail.Stats.DNSRecordCount}}. Click DNS Records above to view all.</p>
+        {{end}}
         {{else}}
         <div class="empty-state">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -688,7 +743,7 @@
                     {{range .DomainDetail.URLs}}
                     <tr>
                         <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
-                        <td>{{if .Category.Valid}}{{.Category.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td>{{if .Category}}{{.Category}}{{else}}<span class="text-muted">-</span>{{end}}</td>
                         <td>{{if .Interesting}}<span class="badge badge-yellow">Yes</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
                         <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                     </tr>
@@ -737,9 +792,9 @@
                     {{range .DomainDetail.APIs}}
                     <tr>
                         <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
-                        <td>{{if .Type.Valid}}<span class="badge badge-blue">{{.Type.String}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
-                        <td>{{if .Title.Valid}}{{.Title.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
-                        <td class="text-muted">{{if .Version.Valid}}{{.Version.String}}{{else}}-{{end}}</td>
+                        <td>{{if .Type}}<span class="badge badge-blue">{{.Type}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td>{{if .Title}}{{.Title}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                        <td class="text-muted">{{if .Version}}{{.Version}}{{else}}-{{end}}</td>
                         <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                     </tr>
                     {{end}}
@@ -753,53 +808,6 @@
             </svg>
             <h3>No API endpoints discovered</h3>
             <p>Run API discovery to find API endpoints</p>
-        </div>
-        {{end}}
-    </div>
-</div>
-
-<!-- Emails Card -->
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                <polyline points="22,6 12,13 2,6"/>
-            </svg>
-            Email Addresses
-        </h2>
-        <span class="badge badge-blue">{{len .DomainDetail.Emails}} found</span>
-    </div>
-    <div class="card-body">
-        {{if .DomainDetail.Emails}}
-        <div class="table-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Email</th>
-                        <th>Source</th>
-                        <th>Discovered</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range .DomainDetail.Emails}}
-                    <tr>
-                        <td><span class="text-mono">{{.Address}}</span></td>
-                        <td class="text-muted">{{.Source}}</td>
-                        <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-        </div>
-        {{else}}
-        <div class="empty-state">
-            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                <polyline points="22,6 12,13 2,6"/>
-            </svg>
-            <h3>No email addresses found</h3>
-            <p>Run email enumeration to discover addresses</p>
         </div>
         {{end}}
     </div>
@@ -986,23 +994,31 @@
     ============================================ */}}
 
 {{define "subdomains-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'subdomains' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '', sortCol: 'subdomain', sortDir: 'asc' }">
+<div class="modal-backdrop" id="modal-subdomains" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
                 Subdomains
-                <span class="badge badge-blue">{{len .DomainDetail.Subdomains}}</span>
+                <span class="badge badge-blue">{{.DomainDetail.Stats.SubdomainCount}}</span>
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-subdomains">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "subdomains-modal-body"}}
+<div x-data="{ search: '', sortCol: 'subdomain', sortDir: 'asc' }">
             <div class="modal-search">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -1021,7 +1037,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Subdomains}}
-                        <tr x-show="!search || '{{.Subdomain}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Subdomain}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Subdomain}}</span></td>
                             <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                             <td class="text-muted">{{.LastSeen.Format "Jan 02, 2006"}}</td>
@@ -1036,29 +1052,35 @@
                 <p>Run subdomain enumeration to discover subdomains</p>
             </div>
             {{end}}
-        </div>
-    </div>
 </div>
 {{end}}
 
 {{define "ports-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'ports' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '' }">
+<div class="modal-backdrop" id="modal-ports" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>
                 </svg>
                 Open Ports
-                <span class="badge badge-yellow">{{len .DomainDetail.Ports}}</span>
+                <span class="badge badge-yellow">{{.DomainDetail.Stats.PortCount}}</span>
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-ports">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "ports-modal-body"}}
+<div x-data="{ search: '' }">
             <div class="modal-search">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -1080,7 +1102,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Ports}}
-                        <tr x-show="!search || '{{.Host}} {{.Port}} {{.Service}} {{.Product}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Host}} {{.Port}} {{.Service}} {{.Product}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Host}}</span></td>
                             <td><span class="badge badge-blue">{{.Port}}/{{.Protocol}}</span></td>
                             <td>{{if .Service}}{{.Service}}{{else}}<span class="text-muted">-</span>{{end}}</td>
@@ -1098,29 +1120,35 @@
                 <p>Run a port scan to discover open ports</p>
             </div>
             {{end}}
-        </div>
-    </div>
 </div>
 {{end}}
 
 {{define "certificates-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'certificates' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '' }">
+<div class="modal-backdrop" id="modal-certificates" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                 </svg>
                 TLS Certificates
-                <span class="badge badge-green">{{len .DomainDetail.Certificates}}</span>
+                <span class="badge badge-green">{{.DomainDetail.Stats.CertificateCount}}</span>
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-certificates">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "certificates-modal-body"}}
+<div x-data="{ search: '' }">
             <div class="modal-search">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -1142,7 +1170,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Certificates}}
-                        <tr x-show="!search || '{{.Host}} {{.Subject}} {{.Issuer}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Host}} {{.Subject}} {{.Issuer}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Host}}:{{.Port}}</span></td>
                             <td>{{.Subject}}</td>
                             <td class="text-muted">{{.Issuer}}</td>
@@ -1170,29 +1198,35 @@
                 <p>Run certificate checking to discover TLS certificates</p>
             </div>
             {{end}}
-        </div>
-    </div>
 </div>
 {{end}}
 
 {{define "technologies-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'technologies' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '' }">
+<div class="modal-backdrop" id="modal-technologies" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
                 </svg>
                 Technologies
-                <span class="badge badge-purple">{{len .DomainDetail.Technologies}}</span>
+                <span class="badge badge-purple">{{.DomainDetail.Stats.TechnologyCount}}</span>
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-technologies">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "technologies-modal-body"}}
+<div x-data="{ search: '' }">
             <div class="modal-search">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -1214,7 +1248,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Technologies}}
-                        <tr x-show="!search || '{{.Host}} {{.Title}} {{.Server}} {{.Technologies}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Host}} {{.Title}} {{.Server}} {{.Technologies}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Host}}</span></td>
                             <td>
                                 {{if and (ge .StatusCode 200) (lt .StatusCode 300)}}
@@ -1242,29 +1276,35 @@
                 <p>Run fingerprinting to detect technologies</p>
             </div>
             {{end}}
-        </div>
-    </div>
 </div>
 {{end}}
 
 {{define "dns-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'dns' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '' }">
+<div class="modal-backdrop" id="modal-dns" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
                 </svg>
                 DNS Records
-                <span class="badge badge-blue">{{len .DomainDetail.DNSRecords}}</span>
+                <span class="badge badge-blue">{{.DomainDetail.Stats.DNSRecordCount}}</span>
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-dns">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "dns-modal-body"}}
+<div x-data="{ search: '' }">
             <div class="modal-search">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -1283,7 +1323,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.DNSRecords}}
-                        <tr x-show="!search || '{{.Domain}} {{.Records}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.Domain}} {{.Records}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono">{{.Domain}}</span></td>
                             <td><pre style="margin: 0; background: transparent; border: none; padding: 0; font-size: 0.75rem; white-space: pre-wrap;">{{.Records}}</pre></td>
                             <td class="text-muted">{{.CheckedAt.Format "Jan 02, 2006"}}</td>
@@ -1298,14 +1338,12 @@
                 <p>Run DNS enumeration to discover records</p>
             </div>
             {{end}}
-        </div>
-    </div>
 </div>
 {{end}}
 
 {{define "vulnerabilities-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'vulnerabilities' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '', severityFilter: '' }">
+<div class="modal-backdrop" id="modal-vulnerabilities" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1313,18 +1351,26 @@
                 </svg>
                 Vulnerabilities
                 {{if .DomainDetail.Findings}}
-                <span class="badge badge-red">{{len .DomainDetail.Findings}}</span>
+                <span class="badge badge-red">{{.DomainDetail.Stats.VulnCount}}</span>
                 {{else}}
                 <span class="badge badge-green">0</span>
                 {{end}}
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-vulnerabilities">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "vulnerabilities-modal-body"}}
+<div x-data="{ search: '', severityFilter: '' }">
             <div class="flex gap-md mb-md">
                 <div class="modal-search" style="flex: 1; margin-bottom: 0;">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1356,7 +1402,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Findings}}
-                        <tr x-show="(!search || '{{.Name}} {{.Host}} {{.MatchedAt}} {{.Tags}}'.toLowerCase().includes(search.toLowerCase())) && (!severityFilter || '{{.Severity}}' === severityFilter)">
+                        <tr data-search="{{.Name}} {{.Host}} {{.MatchedAt}} {{.Tags}}" data-severity="{{.Severity}}" x-show="(!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())) && (!severityFilter || $el.dataset.severity === severityFilter)">
                             <td><span class="severity severity-{{.Severity}}">{{.Severity}}</span></td>
                             <td>{{.Name}}</td>
                             <td><span class="text-mono">{{.Host}}</span></td>
@@ -1374,29 +1420,35 @@
                 <p>Run vulnerability scanning with Nuclei to detect issues</p>
             </div>
             {{end}}
-        </div>
-    </div>
 </div>
 {{end}}
 
 {{define "urls-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'urls' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '', interestingOnly: false }">
+<div class="modal-backdrop" id="modal-urls" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
                 </svg>
                 URLs
-                <span class="badge badge-blue">{{len .DomainDetail.URLs}}</span>
+                <span class="badge badge-blue">{{.DomainDetail.Stats.URLCount}}</span>
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-urls">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "urls-modal-body"}}
+<div x-data="{ search: '', interestingOnly: false }">
             <div class="flex gap-md mb-md items-center">
                 <div class="modal-search" style="flex: 1; margin-bottom: 0;">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1408,6 +1460,9 @@
                     <input type="checkbox" x-model="interestingOnly"> Interesting only
                 </label>
             </div>
+            {{if gt .DomainDetail.Stats.URLCount (len .DomainDetail.URLs)}}
+            <div class="alert alert-warning mb-md">Showing {{len .DomainDetail.URLs}} of {{.DomainDetail.Stats.URLCount}} URLs.</div>
+            {{end}}
             {{if .DomainDetail.URLs}}
             <div class="table-container">
                 <table>
@@ -1421,9 +1476,9 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.URLs}}
-                        <tr x-show="(!search || '{{.URL}}'.toLowerCase().includes(search.toLowerCase())) && (!interestingOnly || {{.Interesting}})">
+                        <tr data-search="{{.URL}}" data-interesting="{{.Interesting}}" x-show="(!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())) && (!interestingOnly || $el.dataset.interesting === 'true')">
                             <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
-                            <td>{{if .Category.Valid}}{{.Category.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                            <td>{{if .Category}}{{.Category}}{{else}}<span class="text-muted">-</span>{{end}}</td>
                             <td>{{if .Interesting}}<span class="badge badge-yellow">Yes</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
                             <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                         </tr>
@@ -1437,29 +1492,35 @@
                 <p>Run URL enumeration to discover URLs</p>
             </div>
             {{end}}
-        </div>
-    </div>
 </div>
 {{end}}
 
 {{define "apis-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'apis' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '' }">
+<div class="modal-backdrop" id="modal-apis" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
                 </svg>
                 API Endpoints
-                <span class="badge badge-purple">{{len .DomainDetail.APIs}}</span>
+                <span class="badge badge-purple">{{.DomainDetail.Stats.APICount}}</span>
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-apis">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "apis-modal-body"}}
+<div x-data="{ search: '' }">
             <div class="modal-search">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -1480,11 +1541,11 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.APIs}}
-                        <tr x-show="!search || '{{.URL}} {{.Type.String}} {{.Title.String}}'.toLowerCase().includes(search.toLowerCase())">
+                        <tr data-search="{{.URL}} {{.Type}} {{.Title}}" x-show="!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())">
                             <td><span class="text-mono" style="font-size: 0.75rem; word-break: break-all;">{{.URL}}</span></td>
-                            <td>{{if .Type.Valid}}<span class="badge badge-blue">{{.Type.String}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
-                            <td>{{if .Title.Valid}}{{.Title.String}}{{else}}<span class="text-muted">-</span>{{end}}</td>
-                            <td class="text-muted">{{if .Version.Valid}}{{.Version.String}}{{else}}-{{end}}</td>
+                            <td>{{if .Type}}<span class="badge badge-blue">{{.Type}}</span>{{else}}<span class="text-muted">-</span>{{end}}</td>
+                            <td>{{if .Title}}{{.Title}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+                            <td class="text-muted">{{if .Version}}{{.Version}}{{else}}-{{end}}</td>
                             <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
                         </tr>
                         {{end}}
@@ -1497,70 +1558,12 @@
                 <p>Run API discovery to find API endpoints</p>
             </div>
             {{end}}
-        </div>
-    </div>
-</div>
-{{end}}
-
-{{define "emails-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'emails' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '' }">
-        <div class="modal-header">
-            <h2 class="modal-title">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
-                </svg>
-                Email Addresses
-                <span class="badge badge-blue">{{len .DomainDetail.Emails}}</span>
-            </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-            </button>
-        </div>
-        <div class="modal-body">
-            <div class="modal-search">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                <input type="text" placeholder="Search emails..." x-model="search">
-            </div>
-            {{if .DomainDetail.Emails}}
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th class="sortable">Email</th>
-                            <th class="sortable">Source</th>
-                            <th class="sortable">Discovered</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {{range .DomainDetail.Emails}}
-                        <tr x-show="!search || '{{.Address}} {{.Source}}'.toLowerCase().includes(search.toLowerCase())">
-                            <td><span class="text-mono">{{.Address}}</span></td>
-                            <td class="text-muted">{{.Source}}</td>
-                            <td class="text-muted">{{.DiscoveredAt.Format "Jan 02, 2006"}}</td>
-                        </tr>
-                        {{end}}
-                    </tbody>
-                </table>
-            </div>
-            {{else}}
-            <div class="empty-state">
-                <h3>No email addresses found</h3>
-                <p>Run email enumeration to discover addresses</p>
-            </div>
-            {{end}}
-        </div>
-    </div>
 </div>
 {{end}}
 
 {{define "cloud-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'cloud' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '', severityFilter: '' }">
+<div class="modal-backdrop" id="modal-cloud" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1568,18 +1571,26 @@
                 </svg>
                 Cloud Storage
                 {{if .DomainDetail.CloudStorage}}
-                <span class="badge badge-red">{{len .DomainDetail.CloudStorage}}</span>
+                <span class="badge badge-red">{{.DomainDetail.Stats.CloudCount}}</span>
                 {{else}}
                 <span class="badge badge-green">0</span>
                 {{end}}
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-cloud">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "cloud-modal-body"}}
+<div x-data="{ search: '', severityFilter: '' }">
             <div class="flex gap-md mb-md">
                 <div class="modal-search" style="flex: 1; margin-bottom: 0;">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1611,7 +1622,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.CloudStorage}}
-                        <tr x-show="(!search || '{{.BucketName}} {{.Provider}} {{.URL}}'.toLowerCase().includes(search.toLowerCase())) && (!severityFilter || '{{.Severity}}' === severityFilter)">
+                        <tr data-search="{{.BucketName}} {{.Provider}} {{.URL}}" data-severity="{{.Severity}}" x-show="(!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())) && (!severityFilter || $el.dataset.severity === severityFilter)">
                             <td>
                                 {{if eq .Provider "s3"}}
                                 <span class="badge badge-yellow">AWS S3</span>
@@ -1640,14 +1651,12 @@
                 <p>Run cloud storage detection to find exposed buckets</p>
             </div>
             {{end}}
-        </div>
-    </div>
 </div>
 {{end}}
 
 {{define "takeovers-modal"}}
-<div class="modal-backdrop" :class="{ 'active': activeModal === 'takeovers' }" @click.self="activeModal = null" @keydown.escape.window="activeModal = null">
-    <div class="modal" x-data="{ search: '', confidenceFilter: '' }">
+<div class="modal-backdrop" id="modal-takeovers" onclick="if (event.target === this) closeAssetModal(this)">
+    <div class="modal">
         <div class="modal-header">
             <h2 class="modal-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1655,18 +1664,26 @@
                 </svg>
                 Subdomain Takeovers
                 {{if .DomainDetail.Takeovers}}
-                <span class="badge badge-red">{{len .DomainDetail.Takeovers}}</span>
+                <span class="badge badge-red">{{.DomainDetail.Stats.TakeoverCount}}</span>
                 {{else}}
                 <span class="badge badge-green">0</span>
                 {{end}}
             </h2>
-            <button class="modal-close" @click="activeModal = null" aria-label="Close">
+            <button class="modal-close" onclick="closeAssetModal(this)" aria-label="Close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="modal-body-takeovers">
+            <div class="empty-state"><p class="text-muted">Click the card to load results…</p></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "takeovers-modal-body"}}
+<div x-data="{ search: '', confidenceFilter: '' }">
             <div class="flex gap-md mb-md">
                 <div class="modal-search" style="flex: 1; margin-bottom: 0;">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1697,7 +1714,7 @@
                     </thead>
                     <tbody>
                         {{range .DomainDetail.Takeovers}}
-                        <tr x-show="(!search || '{{.Subdomain}} {{.CNAME}} {{.Service}}'.toLowerCase().includes(search.toLowerCase())) && (!confidenceFilter || '{{.Confidence}}' === confidenceFilter)">
+                        <tr data-search="{{.Subdomain}} {{.CNAME}} {{.Service}}" data-confidence="{{.Confidence}}" x-show="(!search || ($el.dataset.search || '').toLowerCase().includes(search.toLowerCase())) && (!confidenceFilter || $el.dataset.confidence === confidenceFilter)">
                             <td><span class="text-mono">{{.Subdomain}}</span></td>
                             <td><span class="text-mono text-muted">{{.CNAME}}</span></td>
                             <td>{{.Service}}</td>
@@ -1724,7 +1741,5 @@
                 <p>Run subdomain takeover detection to find vulnerable subdomains</p>
             </div>
             {{end}}
-        </div>
-    </div>
 </div>
 {{end}}

@@ -7,7 +7,6 @@ import (
 	"github.com/asm-tool/asm-go/internal/scanner/certificates"
 	"github.com/asm-tool/asm-go/internal/scanner/cloud"
 	"github.com/asm-tool/asm-go/internal/scanner/dns"
-	"github.com/asm-tool/asm-go/internal/scanner/emails"
 	"github.com/asm-tool/asm-go/internal/scanner/nuclei"
 	"github.com/asm-tool/asm-go/internal/scanner/ports"
 	"github.com/asm-tool/asm-go/internal/scanner/subdomains"
@@ -28,7 +27,6 @@ type RunConfig struct {
 	Technologies technologies.Config
 	URLs         urls.Config
 	APIs         apis.Config
-	Emails       emails.Config
 	Cloud        cloud.Config
 	Nuclei       nuclei.Config
 }
@@ -44,7 +42,6 @@ func DefaultRunConfig() RunConfig {
 		Technologies: technologies.DefaultConfig(),
 		URLs:       urls.DefaultConfig(),
 		APIs:       apis.DefaultConfig(),
-		Emails:     emails.DefaultConfig(),
 		Cloud:      cloud.DefaultConfig(),
 		Nuclei:     nuclei.DefaultConfig(),
 	}
@@ -150,7 +147,6 @@ func AllModules() []ModuleType {
 		ModuleTechnologies,
 		ModuleURLs,
 		ModuleAPIs,
-		ModuleEmails,
 		ModuleCloudStorage,
 		ModuleNuclei,
 	}
@@ -175,8 +171,6 @@ func ParseModule(name string) ModuleType {
 		return ModuleURLs
 	case "apis", "api":
 		return ModuleAPIs
-	case "emails", "email":
-		return ModuleEmails
 	case "cloudstorage", "cloud", "buckets", "bucket":
 		return ModuleCloudStorage
 	case "nuclei", "vuln", "vulns", "vulnerability", "vulnerabilities":

@@ -15,16 +15,22 @@ A fast, local-first attack surface management tool for security teams. Find and 
 - **Technology Fingerprinting** — Identify frameworks, CDNs, libraries, and servers
 - **DNS Monitoring** — Track DNS record changes and check email security (SPF, DKIM, DMARC)
 - **Subdomain Takeover Detection** — Find DNS records that point to unclaimed services
-- **Email & Cloud Enumeration** — Find exposed email addresses and public cloud buckets (S3, Azure, GCS)
+- **Cloud Enumeration** — Find public cloud buckets (S3, Azure, GCS)
 - **Reporting** — Export findings as JSON, Markdown, or HTML
 - **Scheduled Scans** — Run scans on a cron schedule, with Slack or email notifications
-- **Dashboard** — Browse findings in a lightweight web UI
+- **Dashboard** — Browse findings in a TypeScript web UI served by the Go CLI
+
+## Scan scope
+
+Scans are hardcoded to **crewai.com** and its subdomains (`app.crewai.com`, and so on).
+Other domains are rejected at the CLI, dashboard operations panel, scheduler, and config loader.
 
 ## Installation
 
 ### Prerequisites
 
 - **Go 1.25+** (see `asm-go/go.mod`)
+- **Node.js 22+** to build the TypeScript dashboard (optional if you use a prebuilt `webdist`)
 - Optional: [Nuclei](https://github.com/projectdiscovery/nuclei) for vulnerability scanning
 
 ### Linux / macOS
@@ -37,6 +43,12 @@ cd asm-tool
 # Build the CLI binary (asm.sh expects asm-go/asm-go)
 cd asm-go
 go build -o asm-go ./cmd/asm
+cd ..
+
+# Optional: rebuild the TypeScript dashboard (embedded into the Go binary)
+cd web
+npm install
+npm run build
 cd ..
 
 # Initialize the project (creates config, data dirs)
@@ -64,7 +76,7 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 ./asm.sh init
 
 # Run a full scan
-./asm.sh scan example.com
+./asm.sh scan crewai.com
 
 # Check results
 ./asm.sh status
@@ -79,36 +91,35 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
 ```bash
 # Full scan (all enabled modules)
-./asm.sh scan example.com
+./asm.sh scan crewai.com
 
 # Scan with vulnerability detection
-./asm.sh scan example.com --nuclei
+./asm.sh scan crewai.com --nuclei
 
 # Skip or limit modules
-./asm.sh scan example.com --skip ports,dns
-./asm.sh scan example.com --only subdomains,ports
+./asm.sh scan crewai.com --skip ports,dns
+./asm.sh scan crewai.com --only subdomains,ports
 
 # Generate a report inline
-./asm.sh scan example.com --output html   # HTML report
-./asm.sh scan example.com --output json   # JSON report
-./asm.sh scan example.com --output markdown  # Markdown report
+./asm.sh scan crewai.com --output html   # HTML report
+./asm.sh scan crewai.com --output json   # JSON report
+./asm.sh scan crewai.com --output markdown  # Markdown report
 ```
 
 ### Individual Modules
 
 ```bash
-./asm.sh discover example.com          # Subdomain enumeration
-./asm.sh portscan example.com          # Port scanning
+./asm.sh discover crewai.com          # Subdomain enumeration
+./asm.sh portscan crewai.com          # Port scanning
 ./asm.sh portscan --all-known          # Scan all discovered subdomains
-./asm.sh certificates example.com      # Check SSL/TLS certificates
-./asm.sh dns example.com               # DNS record lookup
-./asm.sh takeover example.com          # Subdomain takeover detection
-./asm.sh fingerprint example.com       # Technology fingerprinting
-./asm.sh urls example.com              # URL enumeration
-./asm.sh apis example.com              # API endpoint discovery
-./asm.sh emails example.com            # Email enumeration
-./asm.sh cloudstorage example.com      # Cloud bucket detection
-./asm.sh nuclei example.com            # Vulnerability scanning
+./asm.sh certificates crewai.com      # Check SSL/TLS certificates
+./asm.sh dns crewai.com               # DNS record lookup
+./asm.sh takeover crewai.com          # Subdomain takeover detection
+./asm.sh fingerprint crewai.com       # Technology fingerprinting
+./asm.sh urls crewai.com              # URL enumeration
+./asm.sh apis crewai.com              # API endpoint discovery
+./asm.sh cloudstorage crewai.com      # Cloud bucket detection
+./asm.sh nuclei crewai.com            # Vulnerability scanning
 ```
 
 ### Dashboard
@@ -119,6 +130,9 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
 # Custom port
 ./asm.sh dashboard --port 3000
+
+# Bind on all interfaces
+./asm.sh dashboard --host 0.0.0.0
 ```
 
 ### Reporting
@@ -138,14 +152,14 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
 # Run a scheduled job manually
 ./asm.sh schedule run full_scan
-./asm.sh schedule run cert_check example.com
+./asm.sh schedule run cert_check crewai.com
 
 # View schedule and history
 ./asm.sh schedule
 ./asm.sh schedule history
 
 # Compare the last two persisted scans
-./asm.sh diff example.com
+./asm.sh diff crewai.com
 ```
 
 ## Configuration
@@ -153,10 +167,9 @@ go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 Edit `config.yaml` (created by `asm.sh init`):
 
 ```yaml
-# Domains to monitor
+# Domains to monitor (scans are hardcoded to crewai.com)
 domains:
-  - example.com
-  - api.example.com
+  - crewai.com
 
 # Scanning options
 scanning:
@@ -189,21 +202,18 @@ notifications:
 schedule:
   full_scan: "0 6 * * *"       # Daily at 6 AM
   cert_check: "0 */6 * * *"   # Every 6 hours
-
-# External API keys (optional)
-hunter:
-  api_key: "your-hunter-api-key"
 ```
 
 ## Architecture
 
 ```
+web/                             # TypeScript + React dashboard (Vite)
 asm-go/
 ├── cmd/asm/main.go              # CLI entry point (Cobra)
 ├── internal/
 │   ├── config/                  # YAML config (Viper)
 │   ├── database/                # SQLite ORM (sqlx)
-│   ├── scanner/                 # 11 scanning modules
+│   ├── scanner/                 # 10 scanning modules
 │   │   ├── subdomains/          # Multi-source enumeration
 │   │   ├── ports/               # Native TCP scanning
 │   │   ├── certificates/        # TLS monitoring
@@ -212,7 +222,6 @@ asm-go/
 │   │   ├── technologies/        # Tech fingerprinting
 │   │   ├── urls/                # URL discovery
 │   │   ├── apis/                # API detection
-│   │   ├── emails/              # Email enumeration
 │   │   ├── cloud/               # Cloud bucket detection
 │   │   └── nuclei/              # Vuln scanning
 │   ├── persistence/             # Unified Store interface
@@ -220,10 +229,13 @@ asm-go/
 │   ├── reporter/                # JSON/Markdown/HTML reports
 │   ├── notifier/                # Slack/email alerts
 │   ├── scheduler/               # Cron-based scheduling
+│   ├── dashboard/               # SPA embed + JSON API types
 │   └── cli/commands/            # CLI command handlers
 ├── data/                        # SQLite database
 └── reports/                     # Generated reports
 ```
+
+The dashboard is a TypeScript SPA in `web/`. `npm run build` writes hashed assets to `asm-go/internal/dashboard/webdist/`, which the Go server embeds and serves from `asm dashboard`. JSON APIs live under `/api/`. For local UI development, run `./asm.sh dashboard` and `npm run dev` in `web/` (Vite proxies `/api` to the Go server).
 
 ## Data Storage
 

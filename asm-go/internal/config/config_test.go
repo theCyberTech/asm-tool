@@ -31,6 +31,10 @@ func TestDefault(t *testing.T) {
 		t.Errorf("expected HTTP timeout 10s, got %v", cfg.Timeouts.HTTP)
 	}
 
+	if len(cfg.Domains) != 1 || cfg.Domains[0] != "crewai.com" {
+		t.Errorf("expected Domains [crewai.com], got %v", cfg.Domains)
+	}
+
 	if cfg.Notifications.Email.SMTPPort != 587 {
 		t.Errorf("expected SMTP port 587, got %d", cfg.Notifications.Email.SMTPPort)
 	}
@@ -160,9 +164,9 @@ notifications:
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	// Verify loaded values
-	if len(cfg.Domains) != 2 {
-		t.Errorf("expected 2 domains, got %d", len(cfg.Domains))
+	// Verify loaded values. YAML domains are ignored; scans are pinned to crewai.com.
+	if len(cfg.Domains) != 1 || cfg.Domains[0] != "crewai.com" {
+		t.Errorf("expected Domains [crewai.com], got %v", cfg.Domains)
 	}
 
 	if cfg.DatabasePath != "custom/path.db" {
@@ -191,6 +195,7 @@ func TestApplyEnvOverridesPrefersEnv(t *testing.T) {
 	t.Setenv("ASM_SMTP_USER", "env-user")
 	t.Setenv("ASM_SMTP_PASSWORD", "env-pass")
 	t.Setenv("ASM_SLACK_WEBHOOK", "https://hooks.slack.com/env")
+	t.Setenv("ASM_DASHBOARD_TOKEN", "env-dash-token")
 
 	ApplyEnvOverrides(cfg)
 
@@ -202,6 +207,9 @@ func TestApplyEnvOverridesPrefersEnv(t *testing.T) {
 	}
 	if cfg.Notifications.Slack.WebhookURL != "https://hooks.slack.com/env" {
 		t.Errorf("WebhookURL = %q, want env webhook", cfg.Notifications.Slack.WebhookURL)
+	}
+	if cfg.Dashboard.Token != "env-dash-token" {
+		t.Errorf("Dashboard.Token = %q, want env-dash-token", cfg.Dashboard.Token)
 	}
 }
 

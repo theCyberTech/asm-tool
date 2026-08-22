@@ -13,6 +13,7 @@ import (
 
 	"github.com/asm-tool/asm-go/internal/persistence"
 	"github.com/asm-tool/asm-go/internal/scheduler"
+	"github.com/asm-tool/asm-go/internal/target"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +32,7 @@ Examples:
   asm schedule start              # Start the scheduler daemon (foreground)
   asm schedule run full_scan      # Run a full scan immediately for all domains
   asm schedule run cert_check     # Run a cert check immediately for all domains
-  asm schedule run full_scan example.com  # Run a full scan for one domain
+  asm schedule run full_scan crewai.com  # Run a full scan for one domain
   asm schedule history            # Show recent run history`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return showScheduleStatus(deps)
@@ -61,7 +62,11 @@ Examples:
 			}
 			domains := deps.Cfg.Domains
 			if len(args) > 1 {
-				domains = []string{args[1]}
+				normalized, err := target.NormalizeScanTarget(args[1])
+				if err != nil {
+					return err
+				}
+				domains = []string{normalized}
 			}
 			return runScheduleOnce(deps, jobType, domains)
 		},
