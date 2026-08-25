@@ -86,6 +86,12 @@ and in `README.md`. Notes below cover non-obvious environment behavior.
 - The `dashboard` command listens on `127.0.0.1:8080` by default. If 8080 is
   busy it auto-increments up to +100. Health check: `GET /health`; data APIs
   under `/api/*` (e.g. `/api/stats`). Run it via `./asm.sh dashboard`.
+- Cloud Agent **Preview** uses Cursor's port-forward to `127.0.0.1:8080`. Keep
+  the default bind (`127.0.0.1`, dual-stack `tcp` / `ListenAndServe`). Binding
+  `0.0.0.0` or forcing `tcp4` breaks that preview tunnel even when `/health`
+  still works from inside the VM and the Ports panel still shows 8080 green.
+  After a dashboard restart, close and reopen the Preview tab so the forward
+  reattaches.
 - Scans are restricted to `crewai.com` and its subdomains via
   `target.NormalizeScanTarget`; other domains are rejected. Use `crewai.com`
   for any scan/e2e testing (e.g. `./asm.sh discover crewai.com`).
